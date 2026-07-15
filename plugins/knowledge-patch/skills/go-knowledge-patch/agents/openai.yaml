@@ -1,0 +1,3 @@
+interface:
+  display_name: "Go Knowledge Patch"
+  short_description: "Go 1.26.0: function iterators, os.Root, container-aware scheduling, Green Tea GC, post-quantum TLS, crypto hardening, testing/synctest, JSON v2, and..."

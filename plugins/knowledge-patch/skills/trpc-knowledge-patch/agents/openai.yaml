@@ -1,0 +1,3 @@
+interface:
+  display_name: "Trpc Knowledge Patch"
+  short_description: "tRPC 11.0: adds native non-JSON inputs, async-iterable streaming, SSE subscriptions, TanStack Query integration, App Router actions, local links, and static..."

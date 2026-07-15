@@ -1,0 +1,3 @@
+interface:
+  display_name: "Clerk Knowledge Patch"
+  short_description: "Clerk 1.0.0: Core 3 custom flows, token-aware authentication, Billing, API keys, Organizations, native Expo, and current JavaScript, Go, and Python SDK..."

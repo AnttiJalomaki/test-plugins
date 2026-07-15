@@ -1,0 +1,3 @@
+interface:
+  display_name: "Ratatui Knowledge Patch"
+  short_description: "Ratatui 0.29.0–0.31.0 adds modular crates and no_std support, typed layouts, richer table state, managed terminal lifecycles, higher-resolution canvas..."

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Rails Knowledge Patch"
+  short_description: "Ruby on Rails null: compatibility removals, Solid Queue, Active Job continuations, structured events, Propshaft, database controls, Turbo morphing, and Kamal..."

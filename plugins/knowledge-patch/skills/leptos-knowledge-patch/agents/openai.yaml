@@ -1,0 +1,3 @@
+interface:
+  display_name: "Leptos Knowledge Patch"
+  short_description: "Leptos 0.8.17: statically typed views, typed routing, awaitable resources, reactive stores, server-function streams, lazy routes, application-owned SSR..."

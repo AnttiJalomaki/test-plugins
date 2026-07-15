@@ -1,0 +1,3 @@
+interface:
+  display_name: "Typescript Knowledge Patch"
+  short_description: "TypeScript 5.9.0: deferred imports, pinned Node.js 20 modules, stricter buffer types, modernized configuration, and native compiler migration guidance. Load..."

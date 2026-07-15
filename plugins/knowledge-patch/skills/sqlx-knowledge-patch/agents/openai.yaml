@@ -1,0 +1,3 @@
+interface:
+  display_name: "Sqlx Knowledge Patch"
+  short_description: "Covers SQLx changes after 0.7.x, including Rust 1.94, runtime and TLS feature migration, sqlx.toml, SqlSafeStr queries, SQLite safety, migration APIs, and..."

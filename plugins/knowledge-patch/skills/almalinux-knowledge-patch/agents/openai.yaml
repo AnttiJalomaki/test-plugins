@@ -1,0 +1,3 @@
+interface:
+  display_name: "Almalinux Knowledge Patch"
+  short_description: "AlmaLinux changes after 9.3 through 10.2, including x86-64-v2 and i686 compatibility, Btrfs boot, post-quantum cryptography, RPMv6, ELevate paths, and 2026..."

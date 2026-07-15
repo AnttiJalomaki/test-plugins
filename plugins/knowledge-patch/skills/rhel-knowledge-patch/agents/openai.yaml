@@ -1,0 +1,3 @@
+interface:
+  display_name: "Rhel Knowledge Patch"
+  short_description: "RHEL version null: RHEL 10 platform upgrades, image mode and bootc, post-quantum crypto, DNF and RPM, Podman and Quadlet, IdM and SSSD, NetworkManager and..."

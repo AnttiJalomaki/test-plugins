@@ -1,0 +1,3 @@
+interface:
+  display_name: "Nginx Knowledge Patch"
+  short_description: "NGINX changes after stable 1.26.x and mainline 1.27.1 covering security fixes, upstream keepalive and HTTP/2 proxying, TLS and ECH, Early Hints, FreeNginx..."

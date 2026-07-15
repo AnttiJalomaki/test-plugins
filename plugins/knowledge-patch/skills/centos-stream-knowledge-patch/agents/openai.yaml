@@ -1,0 +1,3 @@
+interface:
+  display_name: "Centos Stream Knowledge Patch"
+  short_description: "CentOS Stream changes after CentOS Stream 9, covering Stream 10 hardware, upgrades, image mode, cryptography, identity, networking, storage, containers, RPM..."

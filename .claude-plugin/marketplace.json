@@ -1,0 +1,15 @@
+{
+  "name": "knowledge-patch-test",
+  "description": "Local test marketplace for the knowledge-patch monoplugin.",
+  "owner": {
+    "name": "Nevaberry"
+  },
+  "plugins": [
+    {
+      "name": "knowledge-patch",
+      "source": "./plugins/knowledge-patch",
+      "description": "Offline knowledge-patch monoplugin with native tech skills, catalogs, and priority activation state.",
+      "category": "development"
+    }
+  ]
+}

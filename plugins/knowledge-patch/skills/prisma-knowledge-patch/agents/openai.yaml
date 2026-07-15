@@ -1,0 +1,3 @@
+interface:
+  display_name: "Prisma Knowledge Patch"
+  short_description: "Prisma 7.3: explicit driver adapters, Prisma Config-owned datasources, ESM-first client generation, the Rust-free Query Compiler, mapped-enum semantics, SQL..."

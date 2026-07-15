@@ -1,0 +1,3 @@
+interface:
+  display_name: "Kubernetes Knowledge Patch"
+  short_description: "Kubernetes 1.35.0: cgroup v2-only kubelets, DRA v1 and device sharing, in-place Pod resize, Pod certificates, workload scheduling, Gateway API, admission..."

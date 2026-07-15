@@ -1,0 +1,3 @@
+interface:
+  display_name: "Zitadel Knowledge Patch"
+  short_description: "Zitadel 4.15.3: resource-based APIs, Login V2 and the Session API, Actions V2, hardened OIDC, SAML, SCIM, identity-provider, PostgreSQL, SDK, and operations..."

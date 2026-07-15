@@ -1,0 +1,2878 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-15T05:45:29Z",
+  "rules": [
+    {
+      "id": "almalinux-knowledge-patch",
+      "aliases": [
+        "alma",
+        "alma linux",
+        "almalinux",
+        "almalinux knowledge patch"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "enterprise-linux",
+        "packages",
+        "system-administration",
+        "security"
+      ],
+      "covered_version": "null",
+      "path": "skills/almalinux-knowledge-patch",
+      "coverage_path": "skills/almalinux-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=\"almalinux\"",
+          "**/Dockerfile::FROM almalinux",
+          "**/Containerfile::FROM almalinux"
+        ]
+      }
+    },
+    {
+      "id": "angular-knowledge-patch",
+      "aliases": [
+        "angular",
+        "angular cli",
+        "angular knowledge patch",
+        "ng",
+        "ng cli"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "tags": [
+        "frontend",
+        "components",
+        "signals",
+        "dependency-injection",
+        "routing",
+        "ssr"
+      ],
+      "covered_version": "21.0.0",
+      "path": "skills/angular-knowledge-patch",
+      "coverage_path": "skills/angular-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "angular.json",
+          "package.json::\"@angular/core\"",
+          "package-lock.json::\"@angular/core\"",
+          "pnpm-lock.yaml::@angular/core",
+          "yarn.lock::@angular/core"
+        ]
+      }
+    },
+    {
+      "id": "arch-knowledge-patch",
+      "aliases": [
+        "arch",
+        "arch knowledge patch",
+        "arch linux",
+        "archlinux"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "rolling-release",
+        "packages",
+        "system-administration",
+        "pacman"
+      ],
+      "covered_version": "null",
+      "path": "skills/arch-knowledge-patch",
+      "coverage_path": "skills/arch-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=arch",
+          "**/Dockerfile::FROM archlinux",
+          "**/Containerfile::FROM archlinux",
+          "**/PKGBUILD"
+        ]
+      }
+    },
+    {
+      "id": "astro-knowledge-patch",
+      "aliases": [
+        "astro",
+        "astro js",
+        "astro knowledge patch",
+        "astrojs"
+      ],
+      "languages": [
+        "typescript",
+        "jsx",
+        "css"
+      ],
+      "tags": [
+        "static-sites",
+        "frontend",
+        "islands",
+        "ssr",
+        "content-collections"
+      ],
+      "covered_version": "7.0.0",
+      "path": "skills/astro-knowledge-patch",
+      "coverage_path": "skills/astro-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "astro.config.*",
+          "package.json::\"astro\"",
+          "package-lock.json::node_modules/astro",
+          "pnpm-lock.yaml::astro@",
+          "yarn.lock::astro@"
+        ]
+      }
+    },
+    {
+      "id": "authjs-knowledge-patch",
+      "aliases": [
+        "auth js",
+        "authjs",
+        "authjs knowledge patch",
+        "next auth",
+        "nextauth"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "authentication",
+        "oauth",
+        "sessions",
+        "adapters",
+        "nextjs"
+      ],
+      "covered_version": "5.0.0",
+      "path": "skills/authjs-knowledge-patch",
+      "coverage_path": "skills/authjs-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/auth.config.*",
+          "package.json::\"@auth/core\"",
+          "package.json::\"next-auth\"",
+          "pnpm-lock.yaml::@auth/core",
+          "yarn.lock::next-auth@"
+        ]
+      }
+    },
+    {
+      "id": "aws-sdk-knowledge-patch",
+      "aliases": [
+        "aws sdk",
+        "aws sdk knowledge patch",
+        "boto3",
+        "botocore"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "go",
+        "java",
+        "kotlin",
+        "ruby",
+        "php",
+        "rust"
+      ],
+      "tags": [
+        "cloud",
+        "sdk",
+        "credentials",
+        "retries",
+        "clients"
+      ],
+      "covered_version": "null",
+      "path": "skills/aws-sdk-knowledge-patch",
+      "coverage_path": "skills/aws-sdk-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"@aws-sdk/",
+          "requirements*.txt::boto3",
+          "pyproject.toml::boto3",
+          "go.mod::github.com/aws/aws-sdk-go-v2",
+          "pom.xml::software.amazon.awssdk"
+        ]
+      }
+    },
+    {
+      "id": "axum-knowledge-patch",
+      "aliases": [
+        "axum",
+        "axum knowledge patch",
+        "axum rs"
+      ],
+      "languages": [
+        "rust",
+        "toml"
+      ],
+      "tags": [
+        "web-framework",
+        "routing",
+        "middleware",
+        "extractors",
+        "async"
+      ],
+      "covered_version": "null",
+      "path": "skills/axum-knowledge-patch",
+      "coverage_path": "skills/axum-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Cargo.toml::axum",
+          "Cargo.lock::name = \"axum\""
+        ]
+      }
+    },
+    {
+      "id": "better-auth-knowledge-patch",
+      "aliases": [
+        "better auth",
+        "better auth knowledge patch",
+        "betterauth"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "authentication",
+        "sessions",
+        "oauth",
+        "plugins",
+        "typescript"
+      ],
+      "covered_version": "1.5",
+      "path": "skills/better-auth-knowledge-patch",
+      "coverage_path": "skills/better-auth-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"better-auth\"",
+          "package-lock.json::node_modules/better-auth",
+          "pnpm-lock.yaml::better-auth@",
+          "yarn.lock::better-auth@"
+        ]
+      }
+    },
+    {
+      "id": "biome-knowledge-patch",
+      "aliases": [
+        "biome",
+        "biome js",
+        "biome knowledge patch",
+        "biomejs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "json",
+        "css"
+      ],
+      "tags": [
+        "linting",
+        "formatting",
+        "tooling",
+        "javascript",
+        "css"
+      ],
+      "covered_version": "2.4.0",
+      "path": "skills/biome-knowledge-patch",
+      "coverage_path": "skills/biome-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "biome.json",
+          "biome.jsonc",
+          "package.json::\"@biomejs/biome\""
+        ]
+      }
+    },
+    {
+      "id": "bun-knowledge-patch",
+      "aliases": [
+        "bun",
+        "bun js",
+        "bun knowledge patch",
+        "bunjs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "json"
+      ],
+      "tags": [
+        "runtime",
+        "package-manager",
+        "bundler",
+        "testing",
+        "javascript"
+      ],
+      "covered_version": "1.3.14",
+      "path": "skills/bun-knowledge-patch",
+      "coverage_path": "skills/bun-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "bun.lock",
+          "bun.lockb",
+          "bunfig.toml",
+          "package.json::\"packageManager\": \"bun@"
+        ]
+      }
+    },
+    {
+      "id": "caddy-knowledge-patch",
+      "aliases": [
+        "caddy",
+        "caddy knowledge patch",
+        "caddy server",
+        "caddyserver"
+      ],
+      "languages": [
+        "caddyfile",
+        "json"
+      ],
+      "tags": [
+        "web-server",
+        "reverse-proxy",
+        "tls",
+        "routing",
+        "configuration"
+      ],
+      "covered_version": "null",
+      "path": "skills/caddy-knowledge-patch",
+      "coverage_path": "skills/caddy-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Caddyfile",
+          "caddy.json",
+          "**/Dockerfile::FROM caddy",
+          "**/Containerfile::FROM caddy"
+        ]
+      }
+    },
+    {
+      "id": "centos-stream-knowledge-patch",
+      "aliases": [
+        "centos",
+        "centos stream",
+        "centos stream knowledge patch"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "enterprise-linux",
+        "packages",
+        "system-administration",
+        "rpm"
+      ],
+      "covered_version": "null",
+      "path": "skills/centos-stream-knowledge-patch",
+      "coverage_path": "skills/centos-stream-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=\"centos\"",
+          "**/Dockerfile::quay.io/centos/centos:stream",
+          "**/Containerfile::quay.io/centos/centos:stream"
+        ]
+      }
+    },
+    {
+      "id": "chrony-knowledge-patch",
+      "aliases": [
+        "chrony",
+        "chrony knowledge patch",
+        "chronyc",
+        "chronyd"
+      ],
+      "languages": [
+        "c",
+        "bash"
+      ],
+      "tags": [
+        "time-sync",
+        "ntp",
+        "system-administration",
+        "networking",
+        "clock"
+      ],
+      "covered_version": "4.8",
+      "path": "skills/chrony-knowledge-patch",
+      "coverage_path": "skills/chrony-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/chrony.conf",
+          "/etc/chrony/chrony.conf",
+          "**/chrony.conf"
+        ]
+      }
+    },
+    {
+      "id": "clerk-knowledge-patch",
+      "aliases": [
+        "clerk",
+        "clerk js",
+        "clerk knowledge patch",
+        "clerkjs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "go",
+        "python",
+        "ruby"
+      ],
+      "tags": [
+        "authentication",
+        "identity",
+        "sessions",
+        "organizations",
+        "oauth"
+      ],
+      "covered_version": "1.0.0",
+      "path": "skills/clerk-knowledge-patch",
+      "coverage_path": "skills/clerk-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"@clerk/",
+          "pnpm-lock.yaml::@clerk/",
+          "yarn.lock::@clerk/",
+          ".env*::CLERK_"
+        ]
+      }
+    },
+    {
+      "id": "codex-knowledge-patch",
+      "aliases": [
+        "codex",
+        "codex cli",
+        "codex knowledge patch",
+        "openai codex"
+      ],
+      "languages": [
+        "bash",
+        "toml",
+        "markdown"
+      ],
+      "tags": [
+        "coding-agent",
+        "cli",
+        "ide",
+        "automation",
+        "configuration"
+      ],
+      "covered_version": "null",
+      "path": "skills/codex-knowledge-patch",
+      "coverage_path": "skills/codex-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "codex exec",
+          "codex resume"
+        ],
+        "files": [
+          ".codex/config.toml",
+          "**/.codex/config.toml",
+          "**/.codex/skills/*/SKILL.md"
+        ]
+      }
+    },
+    {
+      "id": "debian-knowledge-patch",
+      "aliases": [
+        "debian",
+        "debian knowledge patch",
+        "debian linux"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "packages",
+        "apt",
+        "system-administration",
+        "security"
+      ],
+      "covered_version": "13.0",
+      "path": "skills/debian-knowledge-patch",
+      "coverage_path": "skills/debian-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=debian",
+          "**/Dockerfile::FROM debian",
+          "**/Containerfile::FROM debian"
+        ]
+      }
+    },
+    {
+      "id": "deno-knowledge-patch",
+      "aliases": [
+        "deno",
+        "deno knowledge patch",
+        "denoland"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "json"
+      ],
+      "tags": [
+        "runtime",
+        "permissions",
+        "typescript",
+        "javascript",
+        "tooling"
+      ],
+      "covered_version": "2.7",
+      "path": "skills/deno-knowledge-patch",
+      "coverage_path": "skills/deno-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "deno.json",
+          "deno.jsonc",
+          "deno.lock",
+          "package.json::\"packageManager\": \"deno@"
+        ]
+      }
+    },
+    {
+      "id": "dioxus-knowledge-patch",
+      "aliases": [
+        "dioxus",
+        "dioxus knowledge patch",
+        "dx"
+      ],
+      "languages": [
+        "rust"
+      ],
+      "tags": [
+        "ui",
+        "reactivity",
+        "fullstack",
+        "routing",
+        "hot-reload",
+        "desktop",
+        "mobile"
+      ],
+      "covered_version": "0.7.9",
+      "path": "skills/dioxus-knowledge-patch",
+      "coverage_path": "skills/dioxus-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Dioxus.toml",
+          "Cargo.toml::dioxus",
+          "Cargo.lock::name = \"dioxus\""
+        ]
+      }
+    },
+    {
+      "id": "django-knowledge-patch",
+      "aliases": [
+        "django",
+        "django framework",
+        "django knowledge patch"
+      ],
+      "languages": [
+        "python"
+      ],
+      "tags": [
+        "web-framework",
+        "orm",
+        "migrations",
+        "templates",
+        "async"
+      ],
+      "covered_version": "6.0.8",
+      "path": "skills/django-knowledge-patch",
+      "coverage_path": "skills/django-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "manage.py::DJANGO_SETTINGS_MODULE",
+          "**/settings.py::INSTALLED_APPS",
+          "pyproject.toml::Django",
+          "requirements*.txt::Django",
+          "requirements*.txt::django"
+        ]
+      }
+    },
+    {
+      "id": "dnf5-security-updates-knowledge-patch",
+      "aliases": [
+        "dnf 5",
+        "dnf5",
+        "dnf5 security",
+        "dnf5 security updates",
+        "dnf5 security updates knowledge patch"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "packages",
+        "security",
+        "updates",
+        "rpm"
+      ],
+      "covered_version": "2026.04.07",
+      "path": "skills/dnf5-security-updates-knowledge-patch",
+      "coverage_path": "skills/dnf5-security-updates-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "dnf5 updateinfo",
+          "dnf5 upgrade --security"
+        ],
+        "files": [
+          "/usr/bin/dnf5",
+          "**/*.sh::dnf5 updateinfo",
+          "**/Dockerfile::dnf5 upgrade --security",
+          "**/Containerfile::dnf5 upgrade --security"
+        ]
+      }
+    },
+    {
+      "id": "docker-knowledge-patch",
+      "aliases": [
+        "docker",
+        "docker compose",
+        "docker knowledge patch",
+        "moby"
+      ],
+      "languages": [
+        "bash",
+        "yaml"
+      ],
+      "tags": [
+        "containers",
+        "images",
+        "compose",
+        "buildkit",
+        "networking"
+      ],
+      "covered_version": "29.3",
+      "path": "skills/docker-knowledge-patch",
+      "coverage_path": "skills/docker-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/Dockerfile",
+          "**/.dockerignore",
+          "**/compose.yaml",
+          "**/compose.yml",
+          "**/docker-compose.yaml",
+          "**/docker-compose.yml"
+        ]
+      }
+    },
+    {
+      "id": "drizzle-knowledge-patch",
+      "aliases": [
+        "drizzle",
+        "drizzle kit",
+        "drizzle knowledge patch",
+        "drizzle orm"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "tags": [
+        "orm",
+        "sql",
+        "migrations",
+        "schema",
+        "database"
+      ],
+      "covered_version": "1.0.0-beta.19",
+      "path": "skills/drizzle-knowledge-patch",
+      "coverage_path": "skills/drizzle-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "drizzle.config.*",
+          "package.json::\"drizzle-orm\"",
+          "package.json::\"drizzle-kit\"",
+          "pnpm-lock.yaml::drizzle-orm@"
+        ]
+      }
+    },
+    {
+      "id": "elixir-knowledge-patch",
+      "aliases": [
+        "elixir",
+        "elixir knowledge patch",
+        "elixir lang",
+        "mix"
+      ],
+      "languages": [
+        "elixir"
+      ],
+      "tags": [
+        "functional-programming",
+        "beam",
+        "otp",
+        "phoenix",
+        "liveview"
+      ],
+      "covered_version": "1.20.0-rc",
+      "path": "skills/elixir-knowledge-patch",
+      "coverage_path": "skills/elixir-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "mix.exs",
+          "mix.lock",
+          "**/*.ex",
+          "**/*.exs"
+        ]
+      }
+    },
+    {
+      "id": "fastapi-knowledge-patch",
+      "aliases": [
+        "fast api",
+        "fastapi",
+        "fastapi knowledge patch"
+      ],
+      "languages": [
+        "python"
+      ],
+      "tags": [
+        "api",
+        "async",
+        "web-framework",
+        "validation",
+        "openapi"
+      ],
+      "covered_version": "0.135.3",
+      "path": "skills/fastapi-knowledge-patch",
+      "coverage_path": "skills/fastapi-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "pyproject.toml::fastapi",
+          "requirements*.txt::fastapi",
+          "poetry.lock::name = \"fastapi\"",
+          "uv.lock::name = \"fastapi\""
+        ]
+      }
+    },
+    {
+      "id": "fedora-knowledge-patch",
+      "aliases": [
+        "fedora",
+        "fedora knowledge patch",
+        "fedora linux"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "packages",
+        "dnf",
+        "system-administration",
+        "selinux"
+      ],
+      "covered_version": "null",
+      "path": "skills/fedora-knowledge-patch",
+      "coverage_path": "skills/fedora-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=fedora",
+          "**/Dockerfile::FROM fedora",
+          "**/Containerfile::FROM fedora"
+        ]
+      }
+    },
+    {
+      "id": "flutter-knowledge-patch",
+      "aliases": [
+        "flutter",
+        "flutter knowledge patch",
+        "flutter sdk"
+      ],
+      "languages": [
+        "dart"
+      ],
+      "tags": [
+        "mobile",
+        "ui",
+        "widgets",
+        "dart",
+        "cross-platform"
+      ],
+      "covered_version": "3.41",
+      "path": "skills/flutter-knowledge-patch",
+      "coverage_path": "skills/flutter-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "pubspec.yaml::flutter:",
+          ".metadata::channel:",
+          "**/*.dart::package:flutter/"
+        ]
+      }
+    },
+    {
+      "id": "gcp-knowledge-patch",
+      "aliases": [
+        "gcloud",
+        "gcp",
+        "gcp knowledge patch",
+        "google cloud",
+        "google cloud platform"
+      ],
+      "languages": [
+        "yaml",
+        "bash",
+        "python"
+      ],
+      "tags": [
+        "cloud",
+        "iam",
+        "compute",
+        "serverless",
+        "kubernetes",
+        "data"
+      ],
+      "covered_version": "null",
+      "path": "skills/gcp-knowledge-patch",
+      "coverage_path": "skills/gcp-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "app.yaml::runtime:",
+          "cloudbuild.yaml",
+          ".gcloudignore",
+          "**/*.tf::provider \"google\"",
+          ".env*::GOOGLE_CLOUD_PROJECT"
+        ]
+      }
+    },
+    {
+      "id": "geodesy-wgs84-knowledge-patch",
+      "aliases": [
+        "epsg 4326",
+        "geodesy wgs84",
+        "geodesy wgs84 knowledge patch",
+        "wgs 84",
+        "wgs84"
+      ],
+      "languages": [
+        "python",
+        "cpp"
+      ],
+      "tags": [
+        "geodesy",
+        "coordinates",
+        "datum",
+        "projections",
+        "reference-frames"
+      ],
+      "covered_version": "1.0.0",
+      "path": "skills/geodesy-wgs84-knowledge-patch",
+      "coverage_path": "skills/geodesy-wgs84-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "EPSG:4326",
+          "ITRF2020",
+          "WGS 84"
+        ],
+        "files": [
+          "**/*.prj::WGS_1984",
+          "**/*.wkt::WGS 84",
+          "pyproject.toml::pyproj",
+          "requirements*.txt::pyproj"
+        ]
+      }
+    },
+    {
+      "id": "gleam-knowledge-patch",
+      "aliases": [
+        "gleam",
+        "gleam knowledge patch",
+        "gleam lang"
+      ],
+      "languages": [
+        "gleam"
+      ],
+      "tags": [
+        "functional-programming",
+        "beam",
+        "type-system",
+        "concurrency",
+        "ffi"
+      ],
+      "covered_version": "1.15",
+      "path": "skills/gleam-knowledge-patch",
+      "coverage_path": "skills/gleam-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "gleam.toml",
+          "**/*.gleam"
+        ]
+      }
+    },
+    {
+      "id": "gnss-navigation-knowledge-patch",
+      "aliases": [
+        "global navigation satellite system",
+        "gnss",
+        "gnss navigation",
+        "gnss navigation knowledge patch",
+        "satnav"
+      ],
+      "languages": [
+        "cpp",
+        "python"
+      ],
+      "tags": [
+        "satellite-navigation",
+        "gps",
+        "positioning",
+        "rtk",
+        "ppp"
+      ],
+      "covered_version": "latest",
+      "path": "skills/gnss-navigation-knowledge-patch",
+      "coverage_path": "skills/gnss-navigation-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "GNSS",
+          "Galileo",
+          "BeiDou",
+          "RTK fix"
+        ],
+        "files": [
+          "**/*.ubx",
+          "**/*.rinex",
+          "**/*.obs::RINEX VERSION / TYPE",
+          "**/*.nav::RINEX VERSION / TYPE"
+        ]
+      }
+    },
+    {
+      "id": "go-knowledge-patch",
+      "aliases": [
+        "go",
+        "go knowledge patch",
+        "go lang",
+        "golang"
+      ],
+      "languages": [
+        "go"
+      ],
+      "tags": [
+        "language",
+        "toolchain",
+        "modules",
+        "concurrency",
+        "generics"
+      ],
+      "covered_version": "1.26.0",
+      "path": "skills/go-knowledge-patch",
+      "coverage_path": "skills/go-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "go.mod",
+          "go.work",
+          "go.sum"
+        ]
+      }
+    },
+    {
+      "id": "gpsd-knowledge-patch",
+      "aliases": [
+        "gpsctl",
+        "gpsd",
+        "gpsd knowledge patch",
+        "libgps"
+      ],
+      "languages": [
+        "c",
+        "python",
+        "bash"
+      ],
+      "tags": [
+        "gps",
+        "gnss",
+        "daemon",
+        "positioning",
+        "nmea"
+      ],
+      "covered_version": "latest",
+      "path": "skills/gpsd-knowledge-patch",
+      "coverage_path": "skills/gpsd-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/default/gpsd",
+          "/etc/gpsd.conf",
+          "meson.build::libgps",
+          "pyproject.toml::gpsd-py3"
+        ]
+      }
+    },
+    {
+      "id": "hono-knowledge-patch",
+      "aliases": [
+        "hono",
+        "hono js",
+        "hono knowledge patch",
+        "honojs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "web-framework",
+        "routing",
+        "middleware",
+        "edge-runtime",
+        "rpc"
+      ],
+      "covered_version": "4.12",
+      "path": "skills/hono-knowledge-patch",
+      "coverage_path": "skills/hono-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"hono\"",
+          "package-lock.json::node_modules/hono",
+          "pnpm-lock.yaml::hono@",
+          "yarn.lock::hono@"
+        ]
+      }
+    },
+    {
+      "id": "htmx-knowledge-patch",
+      "aliases": [
+        "htmx",
+        "htmx knowledge patch",
+        "htmx org"
+      ],
+      "languages": [
+        "html",
+        "javascript"
+      ],
+      "tags": [
+        "hypermedia",
+        "html",
+        "ajax",
+        "frontend",
+        "sse"
+      ],
+      "covered_version": "4.0.0",
+      "path": "skills/htmx-knowledge-patch",
+      "coverage_path": "skills/htmx-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "hx-trigger",
+          "hx-target",
+          "hx-swap-oob"
+        ],
+        "files": [
+          "**/*.html::hx-get",
+          "**/*.html::hx-post",
+          "**/*.html::hx-swap",
+          "package.json::\"htmx.org\""
+        ]
+      }
+    },
+    {
+      "id": "kotlin-knowledge-patch",
+      "aliases": [
+        "kmp",
+        "kotlin",
+        "kotlin knowledge patch",
+        "kt"
+      ],
+      "languages": [
+        "kotlin"
+      ],
+      "tags": [
+        "language",
+        "jvm",
+        "multiplatform",
+        "coroutines",
+        "compose"
+      ],
+      "covered_version": "2.3.20",
+      "path": "skills/kotlin-knowledge-patch",
+      "coverage_path": "skills/kotlin-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "build.gradle.kts",
+          "settings.gradle.kts",
+          "pom.xml::kotlin-maven-plugin",
+          "gradle/libs.versions.toml::kotlin"
+        ]
+      }
+    },
+    {
+      "id": "kubernetes-knowledge-patch",
+      "aliases": [
+        "k8s",
+        "kube",
+        "kubernetes",
+        "kubernetes knowledge patch"
+      ],
+      "languages": [
+        "yaml",
+        "bash"
+      ],
+      "tags": [
+        "orchestration",
+        "containers",
+        "workloads",
+        "networking",
+        "rbac",
+        "gateway-api"
+      ],
+      "covered_version": "1.35.0",
+      "path": "skills/kubernetes-knowledge-patch",
+      "coverage_path": "skills/kubernetes-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/Chart.yaml",
+          "**/kustomization.yaml",
+          "**/kustomization.yml",
+          "**/*.yaml::apiVersion: apps/",
+          "**/*.yaml::kind: Deployment"
+        ]
+      }
+    },
+    {
+      "id": "langchain-knowledge-patch",
+      "aliases": [
+        "lang chain",
+        "langchain",
+        "langchain knowledge patch",
+        "langgraph"
+      ],
+      "languages": [
+        "python",
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "ai",
+        "agents",
+        "chains",
+        "retrieval",
+        "tools",
+        "langgraph"
+      ],
+      "covered_version": "null",
+      "path": "skills/langchain-knowledge-patch",
+      "coverage_path": "skills/langchain-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "pyproject.toml::langchain",
+          "requirements*.txt::langchain",
+          "package.json::\"langchain\"",
+          "package.json::\"@langchain/"
+        ]
+      }
+    },
+    {
+      "id": "leptos-knowledge-patch",
+      "aliases": [
+        "leptos",
+        "leptos knowledge patch",
+        "leptos rs"
+      ],
+      "languages": [
+        "rust"
+      ],
+      "tags": [
+        "ui",
+        "reactivity",
+        "fullstack",
+        "ssr",
+        "hydration"
+      ],
+      "covered_version": "0.8.17",
+      "path": "skills/leptos-knowledge-patch",
+      "coverage_path": "skills/leptos-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Leptos.toml",
+          "Cargo.toml::leptos",
+          "Cargo.lock::name = \"leptos\""
+        ]
+      }
+    },
+    {
+      "id": "nextjs-knowledge-patch",
+      "aliases": [
+        "next",
+        "next js",
+        "nextjs",
+        "nextjs knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "tsx",
+        "javascript"
+      ],
+      "tags": [
+        "frontend",
+        "react",
+        "server-components",
+        "routing",
+        "ssr",
+        "caching"
+      ],
+      "covered_version": "16.1",
+      "path": "skills/nextjs-knowledge-patch",
+      "coverage_path": "skills/nextjs-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "next.config.*",
+          "package.json::\"next\"",
+          "package-lock.json::node_modules/next",
+          "pnpm-lock.yaml::next@",
+          "yarn.lock::next@"
+        ]
+      }
+    },
+    {
+      "id": "nginx-knowledge-patch",
+      "aliases": [
+        "engine x",
+        "nginx",
+        "nginx knowledge patch"
+      ],
+      "languages": [
+        "nginx",
+        "bash"
+      ],
+      "tags": [
+        "web-server",
+        "reverse-proxy",
+        "routing",
+        "tls",
+        "load-balancing"
+      ],
+      "covered_version": "null",
+      "path": "skills/nginx-knowledge-patch",
+      "coverage_path": "skills/nginx-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "nginx.conf",
+          "**/sites-available/*",
+          "**/Dockerfile::FROM nginx",
+          "**/Containerfile::FROM nginx"
+        ]
+      }
+    },
+    {
+      "id": "nmea0183-knowledge-patch",
+      "aliases": [
+        "nmea",
+        "nmea 0183",
+        "nmea0183",
+        "nmea0183 knowledge patch"
+      ],
+      "languages": [
+        "c",
+        "cpp",
+        "python"
+      ],
+      "tags": [
+        "marine",
+        "navigation",
+        "gps",
+        "sentences",
+        "serial"
+      ],
+      "covered_version": "4.30",
+      "path": "skills/nmea0183-knowledge-patch",
+      "coverage_path": "skills/nmea0183-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "$GPGGA",
+          "$GNRMC",
+          "$GNGGA"
+        ],
+        "files": [
+          "**/*.nmea",
+          "**/*.log::$GPGGA",
+          "**/*.log::$GNRMC",
+          "**/*.txt::$GPGGA"
+        ]
+      }
+    },
+    {
+      "id": "nodejs-knowledge-patch",
+      "aliases": [
+        "node",
+        "node js",
+        "nodejs",
+        "nodejs knowledge patch"
+      ],
+      "languages": [
+        "javascript",
+        "typescript"
+      ],
+      "tags": [
+        "runtime",
+        "javascript",
+        "modules",
+        "npm",
+        "streams"
+      ],
+      "covered_version": "25.9.0",
+      "path": "skills/nodejs-knowledge-patch",
+      "coverage_path": "skills/nodejs-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          ".nvmrc",
+          ".node-version",
+          "package.json::\"node\":"
+        ]
+      }
+    },
+    {
+      "id": "ntrip-rtklib-knowledge-patch",
+      "aliases": [
+        "ntrip",
+        "ntrip rtklib",
+        "ntrip rtklib knowledge patch",
+        "rtklib",
+        "rtkrcv",
+        "str2str"
+      ],
+      "languages": [
+        "c",
+        "cpp",
+        "bash"
+      ],
+      "tags": [
+        "gnss",
+        "rtk",
+        "corrections",
+        "ntrip",
+        "positioning"
+      ],
+      "covered_version": "0.1.0",
+      "path": "skills/ntrip-rtklib-knowledge-patch",
+      "coverage_path": "skills/ntrip-rtklib-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "NTRIP caster",
+          "RTCM3",
+          "str2str"
+        ],
+        "files": [
+          "**/*.conf::inpstr1-type",
+          "**/*.conf::ntrip",
+          "CMakeLists.txt::rtklib"
+        ]
+      }
+    },
+    {
+      "id": "nuxt-knowledge-patch",
+      "aliases": [
+        "nuxt",
+        "nuxt js",
+        "nuxt knowledge patch",
+        "nuxtjs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "frontend",
+        "vue",
+        "ssr",
+        "routing",
+        "nitro"
+      ],
+      "covered_version": "3.12",
+      "path": "skills/nuxt-knowledge-patch",
+      "coverage_path": "skills/nuxt-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "nuxt.config.*",
+          "package.json::\"nuxt\"",
+          "package-lock.json::node_modules/nuxt",
+          "pnpm-lock.yaml::nuxt@"
+        ]
+      }
+    },
+    {
+      "id": "openssl-tls-knowledge-patch",
+      "aliases": [
+        "openssl",
+        "openssl tls",
+        "openssl tls knowledge patch",
+        "ssl",
+        "tls"
+      ],
+      "languages": [
+        "c",
+        "bash"
+      ],
+      "tags": [
+        "cryptography",
+        "tls",
+        "certificates",
+        "pki",
+        "security"
+      ],
+      "covered_version": "4.0.0",
+      "path": "skills/openssl-tls-knowledge-patch",
+      "coverage_path": "skills/openssl-tls-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "openssl.cnf",
+          "**/*.cnf::[ req ]",
+          "CMakeLists.txt::OpenSSL::SSL",
+          "configure.ac::OPENSSL"
+        ]
+      }
+    },
+    {
+      "id": "pgvector-knowledge-patch",
+      "aliases": [
+        "pgvector",
+        "pgvector knowledge patch",
+        "postgres vector",
+        "vector extension"
+      ],
+      "languages": [
+        "sql"
+      ],
+      "tags": [
+        "vectors",
+        "embeddings",
+        "similarity-search",
+        "postgresql",
+        "indexing"
+      ],
+      "covered_version": "null",
+      "path": "skills/pgvector-knowledge-patch",
+      "coverage_path": "skills/pgvector-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/*.sql::CREATE EXTENSION vector",
+          "**/compose*.yaml::pgvector/pgvector",
+          "requirements*.txt::pgvector",
+          "pyproject.toml::pgvector"
+        ]
+      }
+    },
+    {
+      "id": "playwright-knowledge-patch",
+      "aliases": [
+        "playwright",
+        "playwright knowledge patch",
+        "playwright test",
+        "pw"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python"
+      ],
+      "tags": [
+        "testing",
+        "browser",
+        "automation",
+        "e2e",
+        "fixtures"
+      ],
+      "covered_version": "1.59",
+      "path": "skills/playwright-knowledge-patch",
+      "coverage_path": "skills/playwright-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "playwright.config.*",
+          "package.json::\"@playwright/test\"",
+          "pnpm-lock.yaml::@playwright/test",
+          "pyproject.toml::playwright"
+        ]
+      }
+    },
+    {
+      "id": "podman-knowledge-patch",
+      "aliases": [
+        "libpod",
+        "podman",
+        "podman compose",
+        "podman knowledge patch"
+      ],
+      "languages": [
+        "bash",
+        "yaml"
+      ],
+      "tags": [
+        "containers",
+        "images",
+        "pods",
+        "compose",
+        "rootless"
+      ],
+      "covered_version": "6.0.0",
+      "path": "skills/podman-knowledge-patch",
+      "coverage_path": "skills/podman-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/containers.conf",
+          "**/podman-compose.yaml",
+          "**/podman-compose.yml",
+          "**/*.container::[Container]"
+        ]
+      }
+    },
+    {
+      "id": "postgis-knowledge-patch",
+      "aliases": [
+        "postgis",
+        "postgis knowledge patch",
+        "postgres gis"
+      ],
+      "languages": [
+        "sql"
+      ],
+      "tags": [
+        "spatial",
+        "database",
+        "gis",
+        "geometry",
+        "geography"
+      ],
+      "covered_version": "3.6.1",
+      "path": "skills/postgis-knowledge-patch",
+      "coverage_path": "skills/postgis-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/*.sql::CREATE EXTENSION postgis",
+          "**/*.sql::geometry(",
+          "**/docker-compose*.yml::postgis/postgis",
+          "**/compose*.yaml::postgis/postgis"
+        ]
+      }
+    },
+    {
+      "id": "postgresql-knowledge-patch",
+      "aliases": [
+        "pgsql",
+        "postgres",
+        "postgresql",
+        "postgresql knowledge patch",
+        "psql"
+      ],
+      "languages": [
+        "sql"
+      ],
+      "tags": [
+        "database",
+        "sql",
+        "transactions",
+        "replication",
+        "indexing"
+      ],
+      "covered_version": "18.0",
+      "path": "skills/postgresql-knowledge-patch",
+      "coverage_path": "skills/postgresql-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "postgresql.conf",
+          "pg_hba.conf",
+          ".env*::DATABASE_URL=postgres",
+          "**/compose*.yaml::image: postgres",
+          "**/docker-compose*.yml::image: postgres"
+        ]
+      }
+    },
+    {
+      "id": "prisma-knowledge-patch",
+      "aliases": [
+        "prisma",
+        "prisma knowledge patch",
+        "prisma orm"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "tags": [
+        "orm",
+        "schema",
+        "migrations",
+        "database",
+        "client"
+      ],
+      "covered_version": "7.3",
+      "path": "skills/prisma-knowledge-patch",
+      "coverage_path": "skills/prisma-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/schema.prisma",
+          "prisma.config.*",
+          "package.json::\"@prisma/client\"",
+          "package.json::\"prisma\""
+        ]
+      }
+    },
+    {
+      "id": "python-knowledge-patch",
+      "aliases": [
+        "cpython",
+        "py",
+        "python",
+        "python knowledge patch"
+      ],
+      "languages": [
+        "python"
+      ],
+      "tags": [
+        "language",
+        "packaging",
+        "typing",
+        "async",
+        "runtime"
+      ],
+      "covered_version": "3.14",
+      "path": "skills/python-knowledge-patch",
+      "coverage_path": "skills/python-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "pyproject.toml",
+          "requirements*.txt",
+          "setup.py",
+          "Pipfile",
+          ".python-version"
+        ]
+      }
+    },
+    {
+      "id": "pytorch-knowledge-patch",
+      "aliases": [
+        "py torch",
+        "pytorch",
+        "pytorch knowledge patch",
+        "torch"
+      ],
+      "languages": [
+        "python"
+      ],
+      "tags": [
+        "machine-learning",
+        "tensors",
+        "autograd",
+        "training",
+        "gpu"
+      ],
+      "covered_version": "null",
+      "path": "skills/pytorch-knowledge-patch",
+      "coverage_path": "skills/pytorch-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "pyproject.toml::torch",
+          "requirements*.txt::torch",
+          "poetry.lock::name = \"torch\"",
+          "uv.lock::name = \"torch\""
+        ]
+      }
+    },
+    {
+      "id": "rails-knowledge-patch",
+      "aliases": [
+        "rails",
+        "rails knowledge patch",
+        "ror",
+        "ruby on rails"
+      ],
+      "languages": [
+        "ruby"
+      ],
+      "tags": [
+        "web-framework",
+        "orm",
+        "mvc",
+        "jobs",
+        "hotwire"
+      ],
+      "covered_version": "null",
+      "path": "skills/rails-knowledge-patch",
+      "coverage_path": "skills/rails-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Gemfile::gem \"rails\"",
+          "config/application.rb::Rails::Application",
+          "bin/rails"
+        ]
+      }
+    },
+    {
+      "id": "ratatui-knowledge-patch",
+      "aliases": [
+        "ratatui",
+        "ratatui knowledge patch",
+        "tui rs"
+      ],
+      "languages": [
+        "rust"
+      ],
+      "tags": [
+        "tui",
+        "terminal",
+        "widgets",
+        "rendering",
+        "events"
+      ],
+      "covered_version": "0.31.0",
+      "path": "skills/ratatui-knowledge-patch",
+      "coverage_path": "skills/ratatui-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Cargo.toml::ratatui",
+          "Cargo.lock::name = \"ratatui\""
+        ]
+      }
+    },
+    {
+      "id": "react-knowledge-patch",
+      "aliases": [
+        "react",
+        "react js",
+        "react knowledge patch",
+        "reactjs"
+      ],
+      "languages": [
+        "typescript",
+        "tsx",
+        "jsx"
+      ],
+      "tags": [
+        "frontend",
+        "components",
+        "hooks",
+        "rendering",
+        "jsx"
+      ],
+      "covered_version": "19.2.0",
+      "path": "skills/react-knowledge-patch",
+      "coverage_path": "skills/react-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"react\"",
+          "package-lock.json::node_modules/react",
+          "pnpm-lock.yaml::react@",
+          "yarn.lock::react@"
+        ]
+      }
+    },
+    {
+      "id": "react-router-knowledge-patch",
+      "aliases": [
+        "react router",
+        "react router knowledge patch",
+        "remix",
+        "rr7"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "tsx",
+        "jsx"
+      ],
+      "tags": [
+        "routing",
+        "react",
+        "loaders",
+        "actions",
+        "framework"
+      ],
+      "covered_version": "7.14.0",
+      "path": "skills/react-router-knowledge-patch",
+      "coverage_path": "skills/react-router-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"react-router\"",
+          "package.json::\"react-router-dom\"",
+          "package.json::\"@remix-run/",
+          "pnpm-lock.yaml::react-router@"
+        ]
+      }
+    },
+    {
+      "id": "rhel-knowledge-patch",
+      "aliases": [
+        "red hat enterprise linux",
+        "redhat",
+        "rhel",
+        "rhel knowledge patch"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "enterprise-linux",
+        "packages",
+        "system-administration",
+        "selinux"
+      ],
+      "covered_version": "null",
+      "path": "skills/rhel-knowledge-patch",
+      "coverage_path": "skills/rhel-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=\"rhel\"",
+          "**/Dockerfile::registry.access.redhat.com/ubi",
+          "**/Containerfile::registry.access.redhat.com/ubi"
+        ]
+      }
+    },
+    {
+      "id": "rocky-knowledge-patch",
+      "aliases": [
+        "rocky",
+        "rocky knowledge patch",
+        "rocky linux"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "enterprise-linux",
+        "packages",
+        "system-administration",
+        "rpm"
+      ],
+      "covered_version": "null",
+      "path": "skills/rocky-knowledge-patch",
+      "coverage_path": "skills/rocky-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=\"rocky\"",
+          "**/Dockerfile::FROM rockylinux",
+          "**/Containerfile::FROM rockylinux"
+        ]
+      }
+    },
+    {
+      "id": "rtcm3-knowledge-patch",
+      "aliases": [
+        "rtcm",
+        "rtcm 3",
+        "rtcm3",
+        "rtcm3 knowledge patch"
+      ],
+      "languages": [
+        "c",
+        "cpp",
+        "python"
+      ],
+      "tags": [
+        "gnss",
+        "corrections",
+        "rtk",
+        "messages",
+        "msm",
+        "ssr"
+      ],
+      "covered_version": "2026-04-07",
+      "path": "skills/rtcm3-knowledge-patch",
+      "coverage_path": "skills/rtcm3-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "RTCM 3",
+          "MSM7",
+          "message 1077"
+        ],
+        "files": [
+          "**/*.rtcm",
+          "**/*.rtcm3",
+          "**/*.log::RTCM 3"
+        ]
+      }
+    },
+    {
+      "id": "rtkbase-knowledge-patch",
+      "aliases": [
+        "rtk base",
+        "rtkbase",
+        "rtkbase knowledge patch"
+      ],
+      "languages": [
+        "python",
+        "bash"
+      ],
+      "tags": [
+        "gnss",
+        "base-station",
+        "ntrip",
+        "rtk",
+        "corrections"
+      ],
+      "covered_version": "2.7.0",
+      "path": "skills/rtkbase-knowledge-patch",
+      "coverage_path": "skills/rtkbase-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/settings.conf.default",
+          "**/settings.conf::checkpoint_version=",
+          "**/run_cast.sh::settings.conf",
+          "**/unit/rtkbase_web.service"
+        ]
+      }
+    },
+    {
+      "id": "rust-knowledge-patch",
+      "aliases": [
+        "cargo",
+        "rust",
+        "rust knowledge patch",
+        "rust lang",
+        "rustlang"
+      ],
+      "languages": [
+        "rust",
+        "toml"
+      ],
+      "tags": [
+        "language",
+        "cargo",
+        "ownership",
+        "async",
+        "edition-2024"
+      ],
+      "covered_version": "1.94.0",
+      "path": "skills/rust-knowledge-patch",
+      "coverage_path": "skills/rust-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "rust-toolchain.toml",
+          "rust-toolchain"
+        ]
+      }
+    },
+    {
+      "id": "selinux-knowledge-patch",
+      "aliases": [
+        "security enhanced linux",
+        "selinux",
+        "selinux knowledge patch",
+        "semanage"
+      ],
+      "languages": [
+        "bash",
+        "cil"
+      ],
+      "tags": [
+        "linux",
+        "security",
+        "policy",
+        "labels",
+        "access-control"
+      ],
+      "covered_version": "0.1.0",
+      "path": "skills/selinux-knowledge-patch",
+      "coverage_path": "skills/selinux-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/selinux/config",
+          "**/*.te::policy_module(",
+          "**/*.cil::(block ",
+          "**/*.fc::gen_context("
+        ]
+      }
+    },
+    {
+      "id": "serde-knowledge-patch",
+      "aliases": [
+        "serde",
+        "serde knowledge patch",
+        "serde rs"
+      ],
+      "languages": [
+        "rust"
+      ],
+      "tags": [
+        "serialization",
+        "deserialization",
+        "derive",
+        "formats",
+        "rust"
+      ],
+      "covered_version": "null",
+      "path": "skills/serde-knowledge-patch",
+      "coverage_path": "skills/serde-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Cargo.toml::serde",
+          "Cargo.lock::name = \"serde\""
+        ]
+      }
+    },
+    {
+      "id": "solidjs-knowledge-patch",
+      "aliases": [
+        "solid",
+        "solid js",
+        "solidjs",
+        "solidjs knowledge patch",
+        "solidstart"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "tsx",
+        "jsx"
+      ],
+      "tags": [
+        "frontend",
+        "reactivity",
+        "signals",
+        "components",
+        "ssr"
+      ],
+      "covered_version": "null",
+      "path": "skills/solidjs-knowledge-patch",
+      "coverage_path": "skills/solidjs-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"solid-js\"",
+          "package.json::\"@solidjs/start\"",
+          "app.config.*::@solidjs/start",
+          "pnpm-lock.yaml::solid-js@"
+        ]
+      }
+    },
+    {
+      "id": "spring-boot-knowledge-patch",
+      "aliases": [
+        "spring boot",
+        "spring boot knowledge patch",
+        "springboot"
+      ],
+      "languages": [
+        "java",
+        "kotlin"
+      ],
+      "tags": [
+        "web-framework",
+        "dependency-injection",
+        "java",
+        "configuration",
+        "actuator"
+      ],
+      "covered_version": "4.1.0",
+      "path": "skills/spring-boot-knowledge-patch",
+      "coverage_path": "skills/spring-boot-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "pom.xml::spring-boot",
+          "build.gradle::org.springframework.boot",
+          "build.gradle.kts::org.springframework.boot",
+          "application.yaml::spring:",
+          "application.yml::spring:"
+        ]
+      }
+    },
+    {
+      "id": "sqlite-knowledge-patch",
+      "aliases": [
+        "sqlite",
+        "sqlite knowledge patch",
+        "sqlite3"
+      ],
+      "languages": [
+        "sql"
+      ],
+      "tags": [
+        "database",
+        "sql",
+        "embedded",
+        "transactions",
+        "indexing"
+      ],
+      "covered_version": "3.51.0",
+      "path": "skills/sqlite-knowledge-patch",
+      "coverage_path": "skills/sqlite-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/*.sqlite",
+          "**/*.sqlite3",
+          "**/*.db::SQLite format 3",
+          "pyproject.toml::aiosqlite"
+        ]
+      }
+    },
+    {
+      "id": "sqlx-knowledge-patch",
+      "aliases": [
+        "rust sqlx",
+        "sqlx",
+        "sqlx knowledge patch"
+      ],
+      "languages": [
+        "rust",
+        "sql"
+      ],
+      "tags": [
+        "database",
+        "async",
+        "queries",
+        "macros",
+        "migrations"
+      ],
+      "covered_version": "null",
+      "path": "skills/sqlx-knowledge-patch",
+      "coverage_path": "skills/sqlx-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Cargo.toml::sqlx",
+          "Cargo.lock::name = \"sqlx\"",
+          ".sqlx/query-*.json"
+        ]
+      }
+    },
+    {
+      "id": "stripe-knowledge-patch",
+      "aliases": [
+        "stripe",
+        "stripe api",
+        "stripe knowledge patch",
+        "stripe sdk"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "ruby",
+        "go",
+        "java",
+        "php"
+      ],
+      "tags": [
+        "payments",
+        "billing",
+        "checkout",
+        "webhooks",
+        "connect"
+      ],
+      "covered_version": "null",
+      "path": "skills/stripe-knowledge-patch",
+      "coverage_path": "skills/stripe-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"stripe\"",
+          "requirements*.txt::stripe",
+          "Gemfile::gem \"stripe\"",
+          ".env*::STRIPE_SECRET_KEY"
+        ]
+      }
+    },
+    {
+      "id": "supabase-knowledge-patch",
+      "aliases": [
+        "supabase",
+        "supabase js",
+        "supabase knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "python",
+        "dart",
+        "swift",
+        "kotlin",
+        "sql"
+      ],
+      "tags": [
+        "backend",
+        "database",
+        "authentication",
+        "realtime",
+        "storage"
+      ],
+      "covered_version": "2025.04",
+      "path": "skills/supabase-knowledge-patch",
+      "coverage_path": "skills/supabase-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "supabase/config.toml",
+          "package.json::\"@supabase/supabase-js\"",
+          "pnpm-lock.yaml::@supabase/supabase-js",
+          ".env*::SUPABASE_URL"
+        ]
+      }
+    },
+    {
+      "id": "suse-knowledge-patch",
+      "aliases": [
+        "opensuse",
+        "sles",
+        "suse",
+        "suse knowledge patch",
+        "tumbleweed"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "enterprise-linux",
+        "packages",
+        "system-administration",
+        "zypper"
+      ],
+      "covered_version": "null",
+      "path": "skills/suse-knowledge-patch",
+      "coverage_path": "skills/suse-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=\"sles\"",
+          "/etc/os-release::ID=\"opensuse",
+          "**/Dockerfile::FROM opensuse",
+          "**/Containerfile::FROM opensuse"
+        ]
+      }
+    },
+    {
+      "id": "svelte-knowledge-patch",
+      "aliases": [
+        "svelte",
+        "svelte js",
+        "svelte knowledge patch",
+        "sveltejs",
+        "sveltekit"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "css"
+      ],
+      "tags": [
+        "frontend",
+        "reactivity",
+        "components",
+        "sveltekit",
+        "runes"
+      ],
+      "covered_version": "null",
+      "path": "skills/svelte-knowledge-patch",
+      "coverage_path": "skills/svelte-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "svelte.config.*",
+          "package.json::\"svelte\"",
+          "package.json::\"@sveltejs/kit\"",
+          "pnpm-lock.yaml::@sveltejs/kit"
+        ]
+      }
+    },
+    {
+      "id": "swift-knowledge-patch",
+      "aliases": [
+        "swift",
+        "swift knowledge patch",
+        "swift lang",
+        "swiftlang"
+      ],
+      "languages": [
+        "swift"
+      ],
+      "tags": [
+        "language",
+        "concurrency",
+        "ios",
+        "macos",
+        "package-manager"
+      ],
+      "covered_version": "6.3.0",
+      "path": "skills/swift-knowledge-patch",
+      "coverage_path": "skills/swift-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Package.swift",
+          ".swift-version",
+          "**/*.xcodeproj/project.pbxproj::SWIFT_VERSION"
+        ]
+      }
+    },
+    {
+      "id": "systemd-knowledge-patch",
+      "aliases": [
+        "journald",
+        "systemctl",
+        "systemd",
+        "systemd knowledge patch"
+      ],
+      "languages": [
+        "c",
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "services",
+        "units",
+        "journald",
+        "system-administration"
+      ],
+      "covered_version": "1.0.0",
+      "path": "skills/systemd-knowledge-patch",
+      "coverage_path": "skills/systemd-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/*.service::[Service]",
+          "**/*.timer::[Timer]",
+          "**/*.socket::[Socket]",
+          "/etc/systemd/system/*.service"
+        ]
+      }
+    },
+    {
+      "id": "tailwind-knowledge-patch",
+      "aliases": [
+        "tailwind",
+        "tailwind css",
+        "tailwind knowledge patch",
+        "tailwindcss",
+        "twcss"
+      ],
+      "languages": [
+        "html",
+        "css",
+        "javascript"
+      ],
+      "tags": [
+        "css",
+        "utilities",
+        "styling",
+        "frontend",
+        "design-system"
+      ],
+      "covered_version": "4.1",
+      "path": "skills/tailwind-knowledge-patch",
+      "coverage_path": "skills/tailwind-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "tailwind.config.*",
+          "package.json::\"tailwindcss\"",
+          "pnpm-lock.yaml::tailwindcss@",
+          "**/*.css::@import \"tailwindcss\""
+        ]
+      }
+    },
+    {
+      "id": "tauri-knowledge-patch",
+      "aliases": [
+        "tauri",
+        "tauri apps",
+        "tauri knowledge patch",
+        "tauri rs"
+      ],
+      "languages": [
+        "rust",
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "desktop",
+        "ipc",
+        "rust",
+        "webview",
+        "plugins"
+      ],
+      "covered_version": "2.5.0",
+      "path": "skills/tauri-knowledge-patch",
+      "coverage_path": "skills/tauri-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "src-tauri/tauri.conf.json",
+          "src-tauri/tauri.conf.json5",
+          "tauri.conf.json",
+          "Cargo.toml::tauri"
+        ]
+      }
+    },
+    {
+      "id": "terraform-knowledge-patch",
+      "aliases": [
+        "opentofu",
+        "terraform",
+        "terraform knowledge patch",
+        "tf",
+        "tofu"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "infrastructure-as-code",
+        "hcl",
+        "providers",
+        "state",
+        "modules"
+      ],
+      "covered_version": "1.15",
+      "path": "skills/terraform-knowledge-patch",
+      "coverage_path": "skills/terraform-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "**/*.tf",
+          "**/*.tf.json",
+          "**/.terraform.lock.hcl"
+        ]
+      }
+    },
+    {
+      "id": "tokio-knowledge-patch",
+      "aliases": [
+        "tokio",
+        "tokio knowledge patch",
+        "tokio rs"
+      ],
+      "languages": [
+        "rust",
+        "toml"
+      ],
+      "tags": [
+        "async",
+        "runtime",
+        "concurrency",
+        "io",
+        "networking"
+      ],
+      "covered_version": "null",
+      "path": "skills/tokio-knowledge-patch",
+      "coverage_path": "skills/tokio-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "Cargo.toml::tokio",
+          "Cargo.lock::name = \"tokio\""
+        ]
+      }
+    },
+    {
+      "id": "traefik-knowledge-patch",
+      "aliases": [
+        "traefik",
+        "traefik knowledge patch",
+        "traefik proxy"
+      ],
+      "languages": [
+        "yaml",
+        "toml"
+      ],
+      "tags": [
+        "reverse-proxy",
+        "routing",
+        "middleware",
+        "kubernetes",
+        "gateway-api",
+        "tls",
+        "acme",
+        "observability"
+      ],
+      "covered_version": "3.6.9",
+      "path": "skills/traefik-knowledge-patch",
+      "coverage_path": "skills/traefik-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "traefik.yml",
+          "traefik.yaml",
+          "traefik.toml",
+          "**/compose*.yaml::image: traefik",
+          "**/docker-compose*.yml::image: traefik"
+        ]
+      }
+    },
+    {
+      "id": "trpc-knowledge-patch",
+      "aliases": [
+        "t rpc",
+        "trpc",
+        "trpc knowledge patch"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "tags": [
+        "api",
+        "rpc",
+        "type-safety",
+        "procedures",
+        "typescript"
+      ],
+      "covered_version": "11.0",
+      "path": "skills/trpc-knowledge-patch",
+      "coverage_path": "skills/trpc-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"@trpc/server\"",
+          "package.json::\"@trpc/client\"",
+          "pnpm-lock.yaml::@trpc/server",
+          "yarn.lock::@trpc/server"
+        ]
+      }
+    },
+    {
+      "id": "typescript-knowledge-patch",
+      "aliases": [
+        "ts",
+        "tsc",
+        "typescript",
+        "typescript knowledge patch"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "tags": [
+        "language",
+        "types",
+        "compiler",
+        "javascript",
+        "modules"
+      ],
+      "covered_version": "5.9.0",
+      "path": "skills/typescript-knowledge-patch",
+      "coverage_path": "skills/typescript-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "tsconfig.json",
+          "tsconfig.*.json",
+          "package.json::\"typescript\""
+        ]
+      }
+    },
+    {
+      "id": "ubuntu-knowledge-patch",
+      "aliases": [
+        "ubuntu",
+        "ubuntu knowledge patch",
+        "ubuntu linux"
+      ],
+      "languages": [
+        "bash"
+      ],
+      "tags": [
+        "linux",
+        "packages",
+        "apt",
+        "system-administration",
+        "lts"
+      ],
+      "covered_version": "null",
+      "path": "skills/ubuntu-knowledge-patch",
+      "coverage_path": "skills/ubuntu-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "/etc/os-release::ID=ubuntu",
+          "**/Dockerfile::FROM ubuntu",
+          "**/Containerfile::FROM ubuntu"
+        ]
+      }
+    },
+    {
+      "id": "vercel-ai-sdk-knowledge-patch",
+      "aliases": [
+        "ai sdk",
+        "vercel ai",
+        "vercel ai sdk",
+        "vercel ai sdk knowledge patch"
+      ],
+      "languages": [
+        "typescript"
+      ],
+      "tags": [
+        "ai",
+        "streaming",
+        "agents",
+        "tools",
+        "generative-ui"
+      ],
+      "covered_version": "6.0",
+      "path": "skills/vercel-ai-sdk-knowledge-patch",
+      "coverage_path": "skills/vercel-ai-sdk-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [
+          "streamText(",
+          "generateText(",
+          "useChat("
+        ],
+        "files": [
+          "package.json::\"@ai-sdk/",
+          "pnpm-lock.yaml::@ai-sdk/",
+          "**/*.ts::from \"ai\"",
+          "**/*.tsx::from \"ai/react\""
+        ]
+      }
+    },
+    {
+      "id": "vite-knowledge-patch",
+      "aliases": [
+        "vite",
+        "vite js",
+        "vite knowledge patch",
+        "vitejs"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "json"
+      ],
+      "tags": [
+        "build-tool",
+        "dev-server",
+        "bundling",
+        "hmr",
+        "frontend"
+      ],
+      "covered_version": "8.1.0",
+      "path": "skills/vite-knowledge-patch",
+      "coverage_path": "skills/vite-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "vite.config.*",
+          "package.json::\"vite\"",
+          "package-lock.json::node_modules/vite",
+          "pnpm-lock.yaml::vite@"
+        ]
+      }
+    },
+    {
+      "id": "vitest-knowledge-patch",
+      "aliases": [
+        "vi test",
+        "vitest",
+        "vitest knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "testing",
+        "unit-testing",
+        "mocking",
+        "coverage",
+        "vite"
+      ],
+      "covered_version": "4.1",
+      "path": "skills/vitest-knowledge-patch",
+      "coverage_path": "skills/vitest-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "vitest.config.*",
+          "package.json::\"vitest\"",
+          "pnpm-lock.yaml::vitest@",
+          "vite.config.*::test:"
+        ]
+      }
+    },
+    {
+      "id": "vuejs-knowledge-patch",
+      "aliases": [
+        "vue",
+        "vue js",
+        "vuejs",
+        "vuejs knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript"
+      ],
+      "tags": [
+        "frontend",
+        "reactivity",
+        "components",
+        "composition-api",
+        "sfc"
+      ],
+      "covered_version": "3.6.0-beta",
+      "path": "skills/vuejs-knowledge-patch",
+      "coverage_path": "skills/vuejs-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "vue.config.*",
+          "package.json::\"vue\"",
+          "pnpm-lock.yaml::vue@",
+          "**/*.vue"
+        ]
+      }
+    },
+    {
+      "id": "workos-knowledge-patch",
+      "aliases": [
+        "authkit",
+        "work os",
+        "workos",
+        "workos knowledge patch"
+      ],
+      "languages": [
+        "typescript",
+        "javascript",
+        "go",
+        "python",
+        "ruby",
+        "php"
+      ],
+      "tags": [
+        "authentication",
+        "sso",
+        "scim",
+        "directory-sync",
+        "organizations"
+      ],
+      "covered_version": "8.10",
+      "path": "skills/workos-knowledge-patch",
+      "coverage_path": "skills/workos-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "package.json::\"@workos-inc/",
+          "pnpm-lock.yaml::@workos-inc/",
+          "pyproject.toml::workos",
+          ".env*::WORKOS_API_KEY"
+        ]
+      }
+    },
+    {
+      "id": "zig-knowledge-patch",
+      "aliases": [
+        "zig",
+        "zig knowledge patch",
+        "zig lang",
+        "ziglang"
+      ],
+      "languages": [
+        "zig"
+      ],
+      "tags": [
+        "language",
+        "comptime",
+        "build-system",
+        "memory",
+        "cross-compilation"
+      ],
+      "covered_version": "null",
+      "path": "skills/zig-knowledge-patch",
+      "coverage_path": "skills/zig-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          "build.zig",
+          "build.zig.zon",
+          "**/*.zig"
+        ]
+      }
+    },
+    {
+      "id": "zitadel-knowledge-patch",
+      "aliases": [
+        "zitadel",
+        "zitadel iam",
+        "zitadel knowledge patch"
+      ],
+      "languages": [
+        "go",
+        "typescript",
+        "python"
+      ],
+      "tags": [
+        "identity",
+        "oauth",
+        "oidc",
+        "authentication",
+        "authorization"
+      ],
+      "covered_version": "4.15.3",
+      "path": "skills/zitadel-knowledge-patch",
+      "coverage_path": "skills/zitadel-knowledge-patch/coverage.json",
+      "signals": {
+        "terms": [],
+        "files": [
+          ".env*::ZITADEL_",
+          "**/compose*.yaml::ghcr.io/zitadel/zitadel",
+          "go.mod::github.com/zitadel/",
+          "package.json::\"@zitadel/"
+        ]
+      }
+    }
+  ]
+}

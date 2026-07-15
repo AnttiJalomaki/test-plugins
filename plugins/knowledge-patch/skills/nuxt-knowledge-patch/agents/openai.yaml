@@ -1,0 +1,3 @@
+interface:
+  display_name: "Nuxt Knowledge Patch"
+  short_description: "Nuxt 3.12: app-directory migration, shared async-data semantics, typed routing and layouts, delayed hydration, Nitro prerelease changes, and current module..."

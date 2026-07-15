@@ -1,0 +1,3 @@
+interface:
+  display_name: "Playwright Knowledge Patch"
+  short_description: "Playwright changes since 1.49: page screencasts, shared browser sessions, passkeys, direct Web Storage, CLI trace debugging, MCP capabilities, and built-in..."

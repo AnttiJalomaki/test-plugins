@@ -1,0 +1,3 @@
+interface:
+  display_name: "Zig Knowledge Patch"
+  short_description: "Zig changes after 0.12.x through 0.15.1, including allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API..."

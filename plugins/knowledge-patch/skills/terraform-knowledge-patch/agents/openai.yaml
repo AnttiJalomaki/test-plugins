@@ -1,0 +1,3 @@
+interface:
+  display_name: "Terraform Knowledge Patch"
+  short_description: "Terraform 1.7–1.15 and OpenTofu 1.7–1.12 add ephemeral and write-only data, dynamic module sources, query and action operations, state encryption, Stacks..."

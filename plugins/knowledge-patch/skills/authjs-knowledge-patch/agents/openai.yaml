@@ -1,0 +1,3 @@
+interface:
+  display_name: "Authjs Knowledge Patch"
+  short_description: "Auth.js 5.0.0: Better Auth transition guidance, provider security, passkeys, framework sessions, adapter contracts, and critical package fixes. Load before..."

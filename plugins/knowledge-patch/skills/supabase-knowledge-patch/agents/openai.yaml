@@ -1,0 +1,3 @@
+interface:
+  display_name: "Supabase Knowledge Patch"
+  short_description: "Covers post-baseline Supabase changes in patch 2025.04: asymmetric signing and opaque API keys, OAuth 2.1, secure-by-default Data APIs, declarative schemas..."

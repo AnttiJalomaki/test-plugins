@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codex Knowledge Patch"
+  short_description: "Current Codex surfaces add desktop worktrees and automations, remote TUI WebSockets, structured CLI execution, cloud tasks, MCP and plugin administration..."

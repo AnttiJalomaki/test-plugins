@@ -1,0 +1,3 @@
+interface:
+  display_name: "Fedora Knowledge Patch"
+  short_description: "Fedora Linux version null: DNF5, RPM 6, image-mode and OCI workflows, nftables networking, installer and boot changes, package migrations, current..."

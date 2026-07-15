@@ -1,0 +1,3 @@
+interface:
+  display_name: "Selinux Knowledge Patch"
+  short_description: "SELinux 0.1.0: userspace validation and relabel safety, container policy, RHEL 10 MLS, and SUSE policy deployment guidance. Load before working with SELinux."

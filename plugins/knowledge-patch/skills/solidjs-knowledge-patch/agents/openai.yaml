@@ -1,0 +1,3 @@
+interface:
+  display_name: "Solidjs Knowledge Patch"
+  short_description: "SolidJS current (version null) changes query and action names, JSX and event semantics, router preloading, server-function transport, and Vite-based..."

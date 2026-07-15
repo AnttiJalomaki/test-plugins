@@ -1,0 +1,3 @@
+interface:
+  display_name: "Swift Knowledge Patch"
+  short_description: "Swift 6.1–6.3 adds Approachable Concurrency, strict memory safety, InlineArray and Span, Swift Testing controls, SwiftPM traits and SwiftBuild, Embedded..."

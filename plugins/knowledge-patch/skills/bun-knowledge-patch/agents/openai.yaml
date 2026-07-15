@@ -1,0 +1,3 @@
+interface:
+  display_name: "Bun Knowledge Patch"
+  short_description: "Bun 1.3.14 adds route-based servers, unified SQL/Redis/S3 clients, HTML/CSS builds, standalone compilation, richer testing, runtime APIs, and expanded..."

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Vitest Knowledge Patch"
+  short_description: "Vitest 4.1: projects supersede deprecated workspaces, Browser Mode uses provider packages and adds traces and visual regression, while tags, annotations..."

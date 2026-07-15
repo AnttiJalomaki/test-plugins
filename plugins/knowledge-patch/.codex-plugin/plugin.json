@@ -1,0 +1,35 @@
+{
+  "name": "knowledge-patch",
+  "version": "2.20260715.0",
+  "description": "Offline monoplugin that ships current technology knowledge patches as native skills with catalog-based activation.",
+  "author": {
+    "name": "Nevaberry",
+    "url": "https://github.com/Nevaberry"
+  },
+  "homepage": "https://github.com/AnttiJalomaki/test-plugins",
+  "repository": "https://github.com/AnttiJalomaki/test-plugins",
+  "license": "MIT",
+  "keywords": [
+    "knowledge-patch",
+    "codex",
+    "claude",
+    "skills",
+    "offline"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Knowledge Patch",
+    "shortDescription": "Current tech patches as native skills",
+    "longDescription": "A single offline plugin that bundles current technology knowledge patches as native skills, with generated catalogs and lightweight activation state for priority routing.",
+    "developerName": "Nevaberry",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/AnttiJalomaki/test-plugins",
+    "defaultPrompt": [
+      "Use Knowledge Patch to load current guidance for this stack."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

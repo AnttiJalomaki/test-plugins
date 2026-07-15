@@ -1,0 +1,3 @@
+interface:
+  display_name: "Systemd Knowledge Patch"
+  short_description: "systemd 1.0.0: cgroup v2-only operation, native-unit migration, persistent journaling, UKI and TPM policy, managed user namespaces, Varlink APIs, image..."

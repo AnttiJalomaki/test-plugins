@@ -1,0 +1,3 @@
+interface:
+  display_name: "Debian Knowledge Patch"
+  short_description: "Debian 13.0: Trixie upgrade safeguards for OpenSSH, dm-crypt, systemd, stateful-service migrations, architecture and ABI changes, package replacements, and..."

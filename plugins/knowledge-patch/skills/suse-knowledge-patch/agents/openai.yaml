@@ -1,0 +1,3 @@
+interface:
+  display_name: "Suse Knowledge Patch"
+  short_description: "SUSE Linux / openSUSE version null: Agama migration, SELinux, cgroup v2, Wayland, NetworkManager, package removals, security policy, storage, virtualization..."

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Traefik Knowledge Patch"
+  short_description: "Traefik 3.6.9: multi-layer routing, Kubernetes provider changes, service health and failover, ACME/TLS controls, and observability updates. Load before..."

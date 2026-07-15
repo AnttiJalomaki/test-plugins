@@ -1,0 +1,3 @@
+interface:
+  display_name: "React Router Knowledge Patch"
+  short_description: "React Router 7.14.0: package consolidation, framework routing, middleware, generated route types, prerendering, RSC previews, security hardening, and v8..."

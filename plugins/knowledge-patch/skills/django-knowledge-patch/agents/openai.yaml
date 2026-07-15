@@ -1,0 +1,3 @@
+interface:
+  display_name: "Django Knowledge Patch"
+  short_description: "Django 6.0.8: adds composite primary keys, the Tasks API, template partials, built-in CSP, async pagination, and modern email APIs while tightening runtime..."

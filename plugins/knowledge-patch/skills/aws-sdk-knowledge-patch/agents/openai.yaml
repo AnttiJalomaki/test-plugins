@@ -1,0 +1,3 @@
+interface:
+  display_name: "Aws Sdk Knowledge Patch"
+  short_description: "AWS SDK changes after the stated baseline through July 2026, including lifecycle migrations, retry and endpoint defaults, authentication, runtime support..."

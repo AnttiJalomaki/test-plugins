@@ -1,0 +1,3 @@
+interface:
+  display_name: "Docker Knowledge Patch"
+  short_description: "Docker changes since Engine 24.x and Compose 2.x through Engine 29.3, including containerd image storage, firewall and networking shifts, API and Go SDK..."

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Drizzle Knowledge Patch"
+  short_description: "Drizzle ORM 1.0.0-beta.19: secure SQL identifier and alias escaping, runtime-aware Drizzle Kit module loading, and first-class Zod schema generation. Load..."

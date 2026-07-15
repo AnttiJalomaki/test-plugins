@@ -1,0 +1,3 @@
+interface:
+  display_name: "Gpsd Knowledge Patch"
+  short_description: "Changes after gpsd 3.25, including 3.26–3.27 security and API corrections, UBX configuration items, JSON/client semantics, precision timing, and receiver..."
