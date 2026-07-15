@@ -1,3 +1,3 @@
 interface:
-  display_name: "Tailwind Knowledge Patch"
-  short_description: "Tailwind CSS 4.1: CSS-first theming, migration changes, logical utilities, composable variants, source controls, and modern build integrations. Load before..."
+  display_name: "Tailwind CSS"
+  short_description: "Tailwind CSS 4.2.2 compatibility. Use for Tailwind CSS work."

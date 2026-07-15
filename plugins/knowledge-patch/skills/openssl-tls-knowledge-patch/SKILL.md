@@ -1,6 +1,6 @@
 ---
 name: openssl-tls-knowledge-patch
-description: "OpenSSL / TLS 4.0.0: ENGINE and legacy API removals, provider and FIPS changes, post-quantum TLS, server-side QUIC, ECH, kernel TLS, CLI/config updates, and current security patch floors. Load before working with OpenSSL / TLS."
+description: OpenSSL 4.0.0 compatibility. Use for OpenSSL work.
 license: MIT
 version: 4.0.0
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: zitadel-knowledge-patch
-description: "Zitadel 4.15.3: resource-based APIs, Login V2 and the Session API, Actions V2, hardened OIDC, SAML, SCIM, identity-provider, PostgreSQL, SDK, and operations contracts. Load before working with Zitadel."
+description: Zitadel 4.15.3 compatibility. Use for Zitadel work.
 license: MIT
 version: 4.15.3
 metadata:

@@ -1,8 +1,8 @@
 ---
 name: better-auth-knowledge-patch
-description: "Better Auth 1.5: standalone tooling, extracted packages, stateless sessions, OAuth 2.1, Agent Auth, framework integrations, security controls, and plugin migrations. Load before working with Better Auth."
+description: Better Auth 1.6.0 compatibility. Use for Better Auth work.
 license: MIT
-version: "1.5"
+version: 1.6.0
 metadata:
   author: Nevaberry
 ---

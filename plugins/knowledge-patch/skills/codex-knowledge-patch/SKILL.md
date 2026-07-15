@@ -1,6 +1,6 @@
 ---
 name: codex-knowledge-patch
-description: "Codex 0.144.0: desktop worktrees and automations, remote TUI WebSockets, structured CLI execution, cloud tasks, MCP and plugin administration, configurable approvals, and expanded TUI workflows. Load before working with OpenAI Codex."
+description: Codex 0.144.0 compatibility. Use for Codex work.
 license: MIT
 version: "0.144.0"
 metadata:

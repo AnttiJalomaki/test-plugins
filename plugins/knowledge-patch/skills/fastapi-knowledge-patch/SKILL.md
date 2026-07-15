@@ -1,6 +1,6 @@
 ---
 name: fastapi-knowledge-patch
-description: FastAPI changes after 0.115.12 covering scoped yield dependencies, strict JSON content types, Pydantic 2.12, typed streaming and SSE, static frontends, and Starlette 1.0 compatibility. Load before working with FastAPI.
+description: FastAPI 0.135.3 compatibility. Use for FastAPI work.
 license: MIT
 version: 0.135.3
 metadata:

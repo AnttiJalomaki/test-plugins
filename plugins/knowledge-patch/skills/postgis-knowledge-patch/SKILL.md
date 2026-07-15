@@ -1,6 +1,6 @@
 ---
 name: postgis-knowledge-patch
-description: "PostGIS 3.6.1: adds coverage cleaning, SFCGAL CG_ APIs, raster operations, and database-wide CLI commands, and changes upgrade-sensitive SQL, geometry and topology semantics, and Tiger geocoder packaging. Load before working with PostGIS."
+description: PostGIS 3.6.1 compatibility. Use for PostGIS work.
 license: MIT
 version: 3.6.1
 metadata:

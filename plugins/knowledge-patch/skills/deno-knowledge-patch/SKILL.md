@@ -1,8 +1,8 @@
 ---
 name: deno-knowledge-patch
-description: "Deno 2.7: Deno 2 migration, Node compatibility, permissions and dependency security, workspaces, bundling and compilation, testing, OpenTelemetry, Temporal, and desktop applications — Load before working with Deno."
+description: Deno 2.9.0 compatibility. Use for Deno work.
 license: MIT
-version: "2.7"
+version: 2.9.0
 metadata:
   author: Nevaberry
 ---

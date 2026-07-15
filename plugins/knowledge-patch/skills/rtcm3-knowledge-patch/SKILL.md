@@ -1,8 +1,8 @@
 ---
 name: rtcm3-knowledge-patch
-description: Covers RTCM 10403.4 Amendment 1, legacy framing migration, MSM profiles, SSR handling, Ntrip/IGS publication, and receiver interoperability since the mid-2024 RTCM 3.3 baseline. Load before working with RTCM 3.
+description: RTCM 3 10403.4 Amendment 1 compatibility. Use for RTCM 3 work.
 license: MIT
-version: 2026-04-07
+version: 10403.4 Amendment 1
 metadata:
   author: Nevaberry
 ---

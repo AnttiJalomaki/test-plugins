@@ -1,8 +1,8 @@
 ---
 name: geodesy-wgs84-knowledge-patch
-description: Adds WGS 84 G2296 and ITRF2020-u2024 frame guidance, PROJ 9.4-9.8.1 compatibility changes, epoch-aware transformations, robust geodesics, vertical datums, and current pyproj behavior since the WGS 84 (G2139), ITRF2020, and PROJ 9.3 baseline. Load before working with Geodesy / WGS 84.
+description: WGS 84 current compatibility guidance. Use for WGS 84 work.
 license: MIT
-version: 1.0.0
+version: null
 metadata:
   author: Nevaberry
 ---

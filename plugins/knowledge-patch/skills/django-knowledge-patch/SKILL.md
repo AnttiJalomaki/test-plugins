@@ -1,6 +1,6 @@
 ---
 name: django-knowledge-patch
-description: "Django 6.0.8: adds composite primary keys, the Tasks API, template partials, built-in CSP, async pagination, and modern email APIs while tightening runtime, ORM, and extension compatibility. Load before working with Django."
+description: Django 6.0.8 compatibility. Use for Django work.
 license: MIT
 version: 6.0.8
 metadata:

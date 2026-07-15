@@ -1,8 +1,8 @@
 ---
 name: flutter-knowledge-patch
-description: "Flutter 3.41: UIScene and SwiftPM migrations, Android build changes, Dart language and analyzer updates, Widget Preview, web and Impeller rendering, accessibility, and desktop windowing. Load before working with Flutter."
+description: Flutter 3.44.0 compatibility. Use for Flutter work.
 license: MIT
-version: "3.41"
+version: 3.44.0
 metadata:
   author: Nevaberry
 ---

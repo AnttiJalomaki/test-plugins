@@ -1,3 +1,3 @@
 interface:
-  display_name: "Vercel Ai Sdk Knowledge Patch"
-  short_description: "Vercel AI SDK 6.0: agent control loops, typed tool approvals, UI streams, MCP clients, durable execution, provider telemetry, multimodal generation, and..."
+  display_name: "Vercel AI SDK"
+  short_description: "Vercel AI SDK 6.0 compatibility. Use for Vercel AI SDK work."

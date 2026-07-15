@@ -1,6 +1,6 @@
 ---
 name: solidjs-knowledge-patch
-description: "SolidJS as of July 2026: query and action names, JSX and event semantics, router preloading, server-function transport, and Vite-based SolidStart runtime contracts. Load before working with SolidJS."
+description: SolidJS current compatibility guidance. Use for SolidJS work.
 license: MIT
 version: null
 metadata:

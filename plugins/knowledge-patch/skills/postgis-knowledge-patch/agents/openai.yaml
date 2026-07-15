@@ -1,3 +1,3 @@
 interface:
-  display_name: "Postgis Knowledge Patch"
-  short_description: "PostGIS 3.6.1: adds coverage cleaning, SFCGAL CG_ APIs, raster operations, and database-wide CLI commands, and changes upgrade-sensitive SQL, geometry and..."
+  display_name: "PostGIS"
+  short_description: "PostGIS 3.6.1 compatibility. Use for PostGIS work."

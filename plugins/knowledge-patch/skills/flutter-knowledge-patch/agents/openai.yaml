@@ -1,3 +1,3 @@
 interface:
-  display_name: "Flutter Knowledge Patch"
-  short_description: "Flutter 3.41: UIScene and SwiftPM migrations, Android build changes, Dart language and analyzer updates, Widget Preview, web and Impeller rendering..."
+  display_name: "Flutter"
+  short_description: "Flutter 3.44.0 compatibility. Use for Flutter work."

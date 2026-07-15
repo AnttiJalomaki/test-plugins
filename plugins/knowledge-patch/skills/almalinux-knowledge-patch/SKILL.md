@@ -1,6 +1,6 @@
 ---
 name: almalinux-knowledge-patch
-description: "AlmaLinux 10.2: x86-64-v2 and i686 compatibility, Btrfs boot, post-quantum cryptography, RPMv6, ELevate paths, and current security fixes. Load before working with AlmaLinux."
+description: AlmaLinux 10.2 compatibility. Use for AlmaLinux work.
 license: MIT
 version: "10.2"
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: centos-stream-knowledge-patch
-description: "CentOS Stream 10.0: hardware, upgrades, image mode, cryptography, identity, networking, storage, containers, RPM, and service migrations. Load before working with CentOS Stream."
+description: CentOS Stream 10.0 compatibility. Use for CentOS Stream work.
 license: MIT
 version: "10.0"
 metadata:

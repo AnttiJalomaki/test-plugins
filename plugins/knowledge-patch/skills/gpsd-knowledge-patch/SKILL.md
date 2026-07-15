@@ -1,6 +1,6 @@
 ---
 name: gpsd-knowledge-patch
-description: "gpsd 3.27: security and API corrections, UBX configuration items, JSON and client semantics, precision timing, and receiver tooling. Load before working with gpsd."
+description: gpsd 3.27 compatibility. Use for gpsd work.
 license: MIT
 version: "3.27"
 metadata:

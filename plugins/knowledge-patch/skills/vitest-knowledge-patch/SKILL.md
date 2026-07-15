@@ -1,6 +1,6 @@
 ---
 name: vitest-knowledge-patch
-description: "Vitest 4.1: projects supersede deprecated workspaces, Browser Mode uses provider packages and adds traces and visual regression, while tags, annotations, scoped fixtures, native Node execution, coverage controls, reporters, and diagnostics expand. Load before working with Vitest."
+description: Vitest 4.1 compatibility. Use for Vitest work.
 license: MIT
 version: "4.1"
 metadata:

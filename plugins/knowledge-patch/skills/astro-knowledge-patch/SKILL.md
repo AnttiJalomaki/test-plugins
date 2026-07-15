@@ -1,6 +1,6 @@
 ---
 name: astro-knowledge-patch
-description: "Astro 7.0.0: Sätteri Markdown and MDX, stable route caching and structured logging, queued rendering, advanced routing, Fonts, live collections, CSP, and adapter APIs. Load before working with Astro."
+description: Astro 7.0.0 compatibility. Use for Astro work.
 license: MIT
 version: "7.0.0"
 metadata:

@@ -1,8 +1,8 @@
 ---
 name: nodejs-knowledge-patch
-description: Node.js changes since 22.x LTS through 26.5.0, including major removals, ESM and TypeScript loading, the Permission Model, node:sqlite, modern crypto, test-runner changes, HTTP proxies, streams, diagnostics, and native builds. Load before working with Node.js.
+description: Node.js 23.0.0–26.5.0 compatibility. Use for Node.js work.
 license: MIT
-version: "25.9.0"
+version: 26.5.0
 metadata:
   author: Nevaberry
 ---

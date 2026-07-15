@@ -1,8 +1,8 @@
 ---
 name: playwright-knowledge-patch
-description: "Playwright changes since 1.49: page screencasts, shared browser sessions, passkeys, direct Web Storage, CLI trace debugging, MCP capabilities, and built-in test agents. Load before working with Playwright."
+description: Playwright 1.61.0 compatibility. Use for Playwright work.
 license: MIT
-version: "1.59"
+version: 1.61.0
 metadata:
   author: Nevaberry
 ---

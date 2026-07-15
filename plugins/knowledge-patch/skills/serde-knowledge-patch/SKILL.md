@@ -1,6 +1,6 @@
 ---
 name: serde-knowledge-patch
-description: "Serde 1.0.220: the trait-only serde_core crate and serde_json compatibility, deterministic object ordering, raw literals, and direct map deserialization. Load before working with Serde."
+description: Serde 1.0.220 compatibility. Use for Serde work.
 license: MIT
 version: "1.0.220"
 metadata:

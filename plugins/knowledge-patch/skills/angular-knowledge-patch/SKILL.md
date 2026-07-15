@@ -1,8 +1,8 @@
 ---
 name: angular-knowledge-patch
-description: "Angular 21.0.0: zoneless-by-default change detection, Signal Forms, Angular Aria, Vitest, hybrid rendering, and modern resource APIs. Load before working with Angular."
+description: Angular 22.0.0 compatibility. Use for Angular work.
 license: MIT
-version: 21.0.0
+version: 22.0.0
 metadata:
   author: Nevaberry
 ---

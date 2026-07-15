@@ -1,6 +1,6 @@
 ---
 name: caddy-knowledge-patch
-description: "Caddy 2.11.1: TLS and Automatic HTTPS, ECH, reverse proxying, Caddyfile syntax, security hardening, observability, and operations. Load before working with Caddy."
+description: Caddy 2.11.1 compatibility. Use for Caddy work.
 license: MIT
 version: "2.11.1"
 metadata:

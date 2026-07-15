@@ -1,8 +1,8 @@
 ---
 name: traefik-knowledge-patch
-description: "Traefik 3.6.9: multi-layer routing, Kubernetes provider changes, service health and failover, ACME/TLS controls, and observability updates. Load before working with Traefik."
+description: Traefik 3.7.0 compatibility. Use for Traefik work.
 license: MIT
-version: 3.6.9
+version: 3.7.0
 metadata:
   author: Nevaberry
 ---

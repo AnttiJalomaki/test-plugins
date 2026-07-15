@@ -1,6 +1,6 @@
 ---
 name: debian-knowledge-patch
-description: "Debian 13.0: Trixie upgrade safeguards for OpenSSH, dm-crypt, systemd, stateful-service migrations, architecture and ABI changes, package replacements, and platform defaults. Load before working with Debian."
+description: Debian 13.0 compatibility. Use for Debian work.
 license: MIT
 version: "13.0"
 metadata:

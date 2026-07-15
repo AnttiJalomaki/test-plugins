@@ -1,3 +1,3 @@
 interface:
-  display_name: "Podman Knowledge Patch"
-  short_description: "Podman 6.0.0: unified configuration lookup, safe BoltDB-to-SQLite migration, legacy-stack removals, provider-independent machines, richer Quadlet and OCI..."
+  display_name: "Podman"
+  short_description: "Podman 6.0.0 compatibility. Use for Podman work."

@@ -1,8 +1,8 @@
 ---
 name: typescript-knowledge-patch
-description: "TypeScript 5.9.0: deferred imports, pinned Node.js 20 modules, stricter buffer types, modernized configuration, and native compiler migration guidance. Load before working with TypeScript."
+description: TypeScript 7.0.0 compatibility. Use for TypeScript work.
 license: MIT
-version: "5.9.0"
+version: 7.0.0
 metadata:
   author: Nevaberry
 ---

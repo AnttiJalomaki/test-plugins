@@ -1,3 +1,3 @@
 interface:
-  display_name: "Zig Knowledge Patch"
-  short_description: "Zig 0.15.1: allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API migrations, and language breaking changes..."
+  display_name: "Zig"
+  short_description: "Zig 0.15.1 compatibility. Use for Zig work."

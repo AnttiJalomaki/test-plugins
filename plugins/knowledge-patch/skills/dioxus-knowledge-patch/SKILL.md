@@ -1,6 +1,6 @@
 ---
 name: dioxus-knowledge-patch
-description: "Dioxus 0.7.9: scope-free components, signals and stores, linker-discovered assets, Axum-native fullstack APIs, typed streams, routing, hot-patching, WASM splitting, Native rendering, and cross-platform CLI packaging. Load before working with Dioxus."
+description: Dioxus 0.7.9 compatibility. Use for Dioxus work.
 license: MIT
 version: 0.7.9
 metadata:

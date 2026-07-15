@@ -1,3 +1,3 @@
 interface:
-  display_name: "Suse Knowledge Patch"
-  short_description: "SUSE Linux and openSUSE as of July 2026: Agama migration, SELinux, cgroup v2, Wayland, NetworkManager, package removals, security policy, storage..."
+  display_name: "SUSE / openSUSE"
+  short_description: "SUSE / openSUSE current compatibility guidance. Use for SUSE / openSUSE work."

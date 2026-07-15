@@ -1,6 +1,6 @@
 ---
 name: vuejs-knowledge-patch
-description: "Vue.js 3.6.0-beta: Vue Router 5 file-based routing and data loaders, Pinia 3 packaging, typed template refs, Pinia Colada queries, mutations, SSR, and plugins. Load before working with Vue.js."
+description: Vue.js 3.6.0-beta compatibility. Use for Vue.js work.
 license: MIT
 version: 3.6.0-beta
 metadata:

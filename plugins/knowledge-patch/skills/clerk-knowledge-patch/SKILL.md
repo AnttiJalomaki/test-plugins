@@ -1,6 +1,6 @@
 ---
 name: clerk-knowledge-patch
-description: "Clerk 1.0.0: Core 3 custom flows, token-aware authentication, Billing, API keys, Organizations, native Expo, and current JavaScript, Go, and Python SDK contracts. Load before working with Clerk."
+description: Clerk 1.0.0 compatibility. Use for Clerk work.
 license: MIT
 version: 1.0.0
 metadata:

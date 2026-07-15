@@ -1,8 +1,8 @@
 ---
 name: nextjs-knowledge-patch
-description: "Next.js 16.1: Cache Components, proxy.ts, async request APIs, Turbopack, typed routes, partial prefetching, and modern diagnostics. Load before working with Next.js."
+description: Next.js 16.3.0 compatibility. Use for Next.js work.
 license: MIT
-version: "16.1"
+version: 16.3.0
 metadata:
   author: Nevaberry
 ---

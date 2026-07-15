@@ -1,8 +1,8 @@
 ---
 name: selinux-knowledge-patch
-description: "SELinux 0.1.0: userspace validation and relabel safety, container policy, RHEL 10 MLS, and SUSE policy deployment guidance. Load before working with SELinux."
+description: SELinux current compatibility guidance. Use for SELinux work.
 license: MIT
-version: 0.1.0
+version: null
 metadata:
   author: Nevaberry
 ---

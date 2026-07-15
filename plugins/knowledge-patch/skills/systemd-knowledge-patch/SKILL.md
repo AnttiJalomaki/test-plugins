@@ -1,8 +1,8 @@
 ---
 name: systemd-knowledge-patch
-description: "systemd 1.0.0: cgroup v2-only operation, native-unit migration, persistent journaling, UKI and TPM policy, managed user namespaces, Varlink APIs, image tooling, and networkd behavior. Load before working with systemd."
+description: systemd 256–260 compatibility. Use for systemd work.
 license: MIT
-version: 1.0.0
+version: 260
 metadata:
   author: Nevaberry
 ---

@@ -1,8 +1,8 @@
 ---
 name: supabase-knowledge-patch
-description: "Covers post-baseline Supabase changes in patch 2025.04: asymmetric signing and opaque API keys, OAuth 2.1, secure-by-default Data APIs, declarative schemas and branches, Realtime authorization and replay, Analytics and Vector buckets, queues, and CLI and self-hosting workflows. Load before working with Supabase."
+description: Supabase rolling coverage. Use for Supabase work.
 license: MIT
-version: "2025.04"
+version: null
 metadata:
   author: Nevaberry
 ---

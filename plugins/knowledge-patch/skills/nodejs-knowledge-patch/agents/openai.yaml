@@ -1,3 +1,3 @@
 interface:
-  display_name: "Nodejs Knowledge Patch"
-  short_description: "Node.js changes since 22.x LTS through 26.5.0, including major removals, ESM and TypeScript loading, the Permission Model, node:sqlite, modern crypto..."
+  display_name: "Node.js"
+  short_description: "Node.js 23.0.0–26.5.0 compatibility. Use for Node.js work."

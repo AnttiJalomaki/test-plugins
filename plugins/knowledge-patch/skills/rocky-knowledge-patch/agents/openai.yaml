@@ -1,3 +1,3 @@
 interface:
-  display_name: "Rocky Knowledge Patch"
-  short_description: "Rocky Linux 10.2: x86-64-v3, NetworkManager-only networking, DNF modularity removal, Podman, post-quantum cryptography, WSL images, and updated runtimes and..."
+  display_name: "Rocky Linux"
+  short_description: "Rocky Linux 10.2 compatibility. Use for Rocky Linux work."

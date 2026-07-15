@@ -1,3 +1,3 @@
 interface:
-  display_name: "Fastapi Knowledge Patch"
-  short_description: "FastAPI changes after 0.115.12 covering scoped yield dependencies, strict JSON content types, Pydantic 2.12, typed streaming and SSE, static frontends, and..."
+  display_name: "FastAPI"
+  short_description: "FastAPI 0.135.3 compatibility. Use for FastAPI work."

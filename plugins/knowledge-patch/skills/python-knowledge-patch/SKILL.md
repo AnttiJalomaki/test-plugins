@@ -1,6 +1,6 @@
 ---
 name: python-knowledge-patch
-description: Python 3.13–3.15 changes after the 3.12 baseline — free-threading, deferred annotations, t-strings, lazy imports, asyncio, standard-library migrations, and the C API. Load before working with Python.
+description: Python 3.14 compatibility. Use for Python work.
 license: MIT
 version: "3.14"
 metadata:

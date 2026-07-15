@@ -1,6 +1,6 @@
 ---
 name: nmea0183-knowledge-patch
-description: Updates NMEA 0183 beyond the 4.11 baseline through 4.30, including multi-constellation GNSS, electrical interoperability, device extensions, parser behavior, and navigation integration. Load before working with NMEA 0183.
+description: NMEA 0183 4.30 compatibility. Use for NMEA 0183 work.
 license: MIT
 version: "4.30"
 metadata:

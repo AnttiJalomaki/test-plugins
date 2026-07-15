@@ -1,8 +1,8 @@
 ---
 name: rust-knowledge-patch
-description: "Rust changes beyond the 1.84.x and 2021 Edition baseline: Rust 2024 migration, trait-system and unsafe rules, Cargo configuration, stable APIs, and target and linker changes through 1.97.0. Load before working with Rust."
+description: Rust 1.84.0–1.97.0 compatibility. Use for Rust work.
 license: MIT
-version: 1.94.0
+version: 1.97.0
 metadata:
   author: Nevaberry
 ---

@@ -1,6 +1,6 @@
 ---
 name: chrony-knowledge-patch
-description: chrony 4.7–4.8 changes since 4.6.x, including stricter validation and build requirements, maxunreach and copy source controls, reference-clock updates, NTP-over-PTP, NTS deployment, and monitoring diagnostics. Load before working with chrony.
+description: chrony 4.7–4.8 compatibility. Use for chrony work.
 license: MIT
 version: "4.8"
 metadata:

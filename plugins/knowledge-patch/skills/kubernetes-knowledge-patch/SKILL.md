@@ -1,8 +1,8 @@
 ---
 name: kubernetes-knowledge-patch
-description: "Kubernetes 1.35.0: cgroup v2-only kubelets, DRA v1 and device sharing, in-place Pod resize, Pod certificates, workload scheduling, Gateway API, admission, kubectl, and client migrations. Load before working with Kubernetes."
+description: Kubernetes 1.36.0 compatibility. Use for Kubernetes work.
 license: MIT
-version: 1.35.0
+version: 1.36.0
 metadata:
   author: Nevaberry
 ---

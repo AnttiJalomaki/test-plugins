@@ -1,6 +1,6 @@
 ---
 name: htmx-knowledge-patch
-description: "htmx 4.0.0: module-specific distributions, safer request defaults, public swap APIs, history and cache controls, validation hooks, and extension workflows. Load before working with htmx."
+description: htmx 4.0.0 compatibility. Use for htmx work.
 license: MIT
 version: "4.0.0"
 metadata:

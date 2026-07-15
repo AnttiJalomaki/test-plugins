@@ -1,8 +1,8 @@
 ---
 name: gleam-knowledge-patch
-description: Gleam 1.7.0–1.17.0 adds assert and echo expressions, richer constants and guards, safer package workflows, JavaScript source maps, escripts, supported FFI APIs, and expanded language-server tooling. Load before working with Gleam.
+description: Gleam 1.7.0–1.17.0 compatibility. Use for Gleam work.
 license: MIT
-version: "1.15"
+version: 1.17.0
 metadata:
   author: Nevaberry
 ---

@@ -1,6 +1,6 @@
 ---
 name: vercel-ai-sdk-knowledge-patch
-description: "Vercel AI SDK 6.0: agent control loops, typed tool approvals, UI streams, MCP clients, durable execution, provider telemetry, multimodal generation, and migration-critical API changes. Load before working with Vercel AI SDK."
+description: Vercel AI SDK 6.0 compatibility. Use for Vercel AI SDK work.
 license: MIT
 version: "6.0"
 metadata:

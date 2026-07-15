@@ -1,6 +1,6 @@
 ---
 name: gcp-knowledge-patch
-description: "Google Cloud Platform as of July 2026: Cloud Run, GKE, BigQuery, Pub/Sub, Gemini, Vertex AI, IAM, networking, migration, and agent-platform changes. Load before working with Google Cloud Platform."
+description: GCP rolling coverage. Use for GCP work.
 license: MIT
 version: null
 metadata:

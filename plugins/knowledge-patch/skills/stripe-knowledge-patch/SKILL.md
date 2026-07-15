@@ -1,6 +1,6 @@
 ---
 name: stripe-knowledge-patch
-description: "Stripe as of July 2026: plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node and Python SDK migrations. Load before working with Stripe."
+description: Stripe rolling coverage. Use for Stripe work.
 license: MIT
 version: null
 metadata:

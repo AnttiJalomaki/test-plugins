@@ -1,6 +1,6 @@
 ---
 name: workos-knowledge-patch
-description: "WorkOS 8.10: Node SDK v9/v10 migrations, AuthKit Next.js and React session behavior, PKCE and CSRF handling, authorization resources, Feature Flags, Connect and MCP support, Vault, and Radar. Load before working with WorkOS."
+description: WorkOS 8.10 compatibility. Use for WorkOS work.
 license: MIT
 version: "8.10"
 metadata:

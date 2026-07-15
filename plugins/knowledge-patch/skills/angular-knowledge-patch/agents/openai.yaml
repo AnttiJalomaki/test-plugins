@@ -1,3 +1,3 @@
 interface:
-  display_name: "Angular Knowledge Patch"
-  short_description: "Angular 21.0.0: zoneless-by-default change detection, Signal Forms, Angular Aria, Vitest, hybrid rendering, and modern resource APIs. Load before working..."
+  display_name: "Angular"
+  short_description: "Angular 22.0.0 compatibility. Use for Angular work."

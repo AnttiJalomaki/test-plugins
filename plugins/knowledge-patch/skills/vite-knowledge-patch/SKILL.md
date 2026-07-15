@@ -1,6 +1,6 @@
 ---
 name: vite-knowledge-patch
-description: "Vite 8.1.0: Node.js 20.19+/22.12+, baseline browser targets, ESM-only packaging, removed APIs, Environment API coordination, bundled development, chunk import maps, direct WebAssembly imports, and expanded asset and CSS handling. Load before working with Vite."
+description: Vite 8.1.0 compatibility. Use for Vite work.
 license: MIT
 version: 8.1.0
 metadata:

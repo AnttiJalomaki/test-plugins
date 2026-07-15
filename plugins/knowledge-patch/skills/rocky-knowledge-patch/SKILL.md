@@ -1,6 +1,6 @@
 ---
 name: rocky-knowledge-patch
-description: "Rocky Linux 10.2: x86-64-v3, NetworkManager-only networking, DNF modularity removal, Podman, post-quantum cryptography, WSL images, and updated runtimes and toolchains. Load before working with Rocky Linux."
+description: Rocky Linux 10.2 compatibility. Use for Rocky Linux work.
 license: MIT
 version: "10.2"
 metadata:

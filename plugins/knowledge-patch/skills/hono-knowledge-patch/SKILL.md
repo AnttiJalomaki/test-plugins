@@ -1,8 +1,8 @@
 ---
 name: hono-knowledge-patch
-description: "Hono 4.8–4.12 changes since 4.7.x, including explicit JWT algorithms, security baselines, typed RPC URLs and responses, SSG plugins, streaming, middleware, adapters, and the Hono CLI. Load before working with Hono."
+description: Hono 4.8.0–4.12.0 compatibility. Use for Hono work.
 license: MIT
-version: "4.12"
+version: 4.12.0
 metadata:
   author: Nevaberry
 ---

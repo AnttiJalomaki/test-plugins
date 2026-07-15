@@ -1,6 +1,6 @@
 ---
 name: podman-knowledge-patch
-description: "Podman 6.0.0: unified configuration lookup, safe BoltDB-to-SQLite migration, legacy-stack removals, provider-independent machines, richer Quadlet and OCI artifact workflows, and API contract changes. Load before working with Podman."
+description: Podman 6.0.0 compatibility. Use for Podman work.
 license: MIT
 version: 6.0.0
 metadata:

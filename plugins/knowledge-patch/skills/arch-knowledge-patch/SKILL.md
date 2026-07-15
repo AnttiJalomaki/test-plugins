@@ -1,6 +1,6 @@
 ---
 name: arch-knowledge-patch
-description: "Arch Linux as of July 2026: pacman sandboxing and signatures, breaking package transitions, urgent upgrade interventions, and service migrations. Load before working with Arch Linux."
+description: Arch Linux rolling coverage. Use for Arch Linux work.
 license: MIT
 version: null
 metadata:

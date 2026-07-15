@@ -1,6 +1,6 @@
 ---
 name: docker-knowledge-patch
-description: "Docker changes since Engine 24.x and Compose 2.x through Engine 29.3, including containerd image storage, firewall and networking shifts, API and Go SDK breaks, multi-platform images, Buildx source policies, and Compose 5. Load before working with Docker."
+description: Docker 25.0.0–29.3 compatibility. Use for Docker work.
 license: MIT
 version: "29.3"
 metadata:

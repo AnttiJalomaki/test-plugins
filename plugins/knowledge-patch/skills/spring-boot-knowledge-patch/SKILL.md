@@ -1,6 +1,6 @@
 ---
 name: spring-boot-knowledge-patch
-description: "Spring Boot 4.1.0: Jakarta EE 11 and Framework 7 migrations, Jackson 3, HTTP service clients, API versioning, revised security, observability, data, testing, gRPC, and build behavior. Load before working with Spring Boot."
+description: Spring Boot 4.1.0 compatibility. Use for Spring Boot work.
 license: MIT
 version: 4.1.0
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: go-knowledge-patch
-description: "Go 1.26.0: function iterators, os.Root, container-aware scheduling, Green Tea GC, post-quantum TLS, crypto hardening, testing/synctest, JSON v2, and modernized tooling. Load before working with Go."
+description: Go 1.26.0 compatibility. Use for Go work.
 license: MIT
 version: 1.26.0
 metadata:

@@ -1,3 +1,3 @@
 interface:
-  display_name: "Hono Knowledge Patch"
-  short_description: "Hono 4.8–4.12 changes since 4.7.x, including explicit JWT algorithms, security baselines, typed RPC URLs and responses, SSG plugins, streaming, middleware..."
+  display_name: "Hono"
+  short_description: "Hono 4.8.0–4.12.0 compatibility. Use for Hono work."

@@ -1,6 +1,6 @@
 ---
 name: elixir-knowledge-patch
-description: "Elixir 1.20.0-rc: set-theoretic type checking, built-in JSON, OTP runtime changes, Phoenix 1.8, LiveView 1.1, Ecto 3.12, compiler and tooling migrations, and new interoperability options. Load before working with Elixir."
+description: Elixir 1.20.0-rc compatibility. Use for Elixir work.
 license: MIT
 version: 1.20.0-rc
 metadata:

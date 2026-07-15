@@ -1,6 +1,6 @@
 ---
 name: postgresql-knowledge-patch
-description: "PostgreSQL 18.0: virtual generated columns, temporal constraints, asynchronous I/O, OAuth, UUIDv7, SQL/JSON, logical-replication failover, and upgrade changes. Load before working with PostgreSQL."
+description: PostgreSQL 18.0 compatibility. Use for PostgreSQL work.
 license: MIT
 version: "18.0"
 metadata:

@@ -1,8 +1,8 @@
 ---
 name: prisma-knowledge-patch
-description: "Prisma 7.3: explicit driver adapters, Prisma Config-owned datasources, ESM-first client generation, the Rust-free Query Compiler, mapped-enum semantics, SQL commenter plugins, and Prisma Postgres tooling. Load before working with Prisma."
+description: Prisma 7.8.0 compatibility. Use for Prisma work.
 license: MIT
-version: "7.3"
+version: 7.8.0
 metadata:
   author: Nevaberry
 ---

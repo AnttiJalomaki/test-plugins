@@ -1,6 +1,6 @@
 ---
 name: fedora-knowledge-patch
-description: "Fedora Linux 44: DNF5, RPM 6, image-mode and OCI workflows, nftables networking, installer and boot changes, package migrations, current toolchains, and Podman readiness. Load before working with Fedora Linux."
+description: Fedora Linux 44 compatibility. Use for Fedora Linux work.
 license: MIT
 version: "44"
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: swift-knowledge-patch
-description: Swift 6.1–6.3 adds Approachable Concurrency, strict memory safety, InlineArray and Span, Swift Testing controls, SwiftPM traits and SwiftBuild, Embedded Swift expansion, safe C/C++ interop, and the @c ABI. Load before working with Swift.
+description: Swift 6.1–6.3.0 compatibility. Use for Swift work.
 license: MIT
 version: 6.3.0
 metadata:

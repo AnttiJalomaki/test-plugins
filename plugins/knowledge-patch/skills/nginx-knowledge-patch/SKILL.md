@@ -1,6 +1,6 @@
 ---
 name: nginx-knowledge-patch
-description: "NGINX 1.31.0: security fixes, upstream keepalive and HTTP/2 proxying, TLS and ECH, Early Hints, FreeNginx, and NGINX Plus behavior. Load before working with NGINX."
+description: NGINX 1.31.0 compatibility. Use for NGINX work.
 license: MIT
 version: "1.31.0"
 metadata:

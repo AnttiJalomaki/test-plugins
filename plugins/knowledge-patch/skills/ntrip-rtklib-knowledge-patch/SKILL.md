@@ -1,8 +1,8 @@
 ---
 name: ntrip-rtklib-knowledge-patch
-description: "Covers NTRIP Rev2 and VRS behavior, caster authorization, BNC 2.13, RINEX 3.04, RTKLIB 2.4.x patch-level fixes, Demo5 configuration, streaming, and ambiguity-resolution changes beyond NTRIP through 2.0 and RTKLIB through 2.4.2. Load before working with NTRIP / RTKLIB."
+description: NTRIP / RTKLIB current compatibility guidance. Use for NTRIP / RTKLIB work.
 license: MIT
-version: 0.1.0
+version: null
 metadata:
   author: Nevaberry
 ---

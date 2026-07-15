@@ -1,6 +1,6 @@
 ---
 name: gnss-navigation-knowledge-patch
-description: "GNSS Navigation as of July 2026: Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX, SPARTN, precise products, and ZED-F9P behavior. Load before working with GNSS Navigation."
+description: GNSS current compatibility guidance. Use for GNSS work.
 license: MIT
 version: null
 metadata:

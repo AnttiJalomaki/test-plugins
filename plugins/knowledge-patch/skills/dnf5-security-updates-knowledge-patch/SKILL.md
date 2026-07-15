@@ -1,8 +1,8 @@
 ---
 name: dnf5-security-updates-knowledge-patch
-description: "DNF5 changes after 5.1.x and Fedora 40-era behavior cover Fedora 41 and RHEL 10 migration, advisory filters, security automation, offline transactions, repository/configuration semantics, JSON and D-Bus APIs, and Ansible integration. Load before working with DNF5 Security Updates."
+description: DNF5 5.4.1 compatibility. Use for DNF5 work.
 license: MIT
-version: "2026.04.07"
+version: 5.4.1
 metadata:
   author: Nevaberry
 ---

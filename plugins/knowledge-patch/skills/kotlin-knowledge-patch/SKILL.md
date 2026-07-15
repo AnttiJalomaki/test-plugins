@@ -1,6 +1,6 @@
 ---
 name: kotlin-knowledge-patch
-description: "Kotlin 2.3.20: context parameters, explicit backing fields, Build Tools API defaults, AGP 9 migration, modern Kotlin/Wasm and Native interop, Compose Multiplatform 1.11, and updated coroutine and serialization APIs. Load before working with Kotlin."
+description: Kotlin 2.3.20 compatibility. Use for Kotlin work.
 license: MIT
 version: 2.3.20
 metadata:

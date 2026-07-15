@@ -1,3 +1,3 @@
 interface:
-  display_name: "Serde Knowledge Patch"
-  short_description: "Serde 1.0.220: the trait-only serde_core crate and serde_json compatibility, deterministic object ordering, raw literals, and direct map deserialization..."
+  display_name: "Serde"
+  short_description: "Serde 1.0.220 compatibility. Use for Serde work."

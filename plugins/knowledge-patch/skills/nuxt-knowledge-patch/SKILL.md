@@ -1,8 +1,8 @@
 ---
 name: nuxt-knowledge-patch
-description: "Nuxt 3.12: app-directory migration, shared async-data semantics, typed routing and layouts, delayed hydration, Nitro prerelease changes, and current module APIs. Load before working with Nuxt."
+description: Nuxt 4.4.0 compatibility. Use for Nuxt work.
 license: MIT
-version: "3.12"
+version: 4.4.0
 metadata:
   author: Nevaberry
 ---

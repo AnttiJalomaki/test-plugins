@@ -1,6 +1,6 @@
 ---
 name: sqlx-knowledge-patch
-description: "SQLx 0.9.0: Rust toolchain requirements, runtime and TLS feature migration, sqlx.toml, SqlSafeStr queries, SQLite safety, migration APIs, and database-specific behavior. Load before working with SQLx."
+description: SQLx 0.9.0 compatibility. Use for SQLx work.
 license: MIT
 version: "0.9.0"
 metadata:

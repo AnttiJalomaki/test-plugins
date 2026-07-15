@@ -1,6 +1,6 @@
 ---
 name: react-knowledge-patch
-description: "React 19.2.0: Activity, Effect Events, Partial Pre-rendering, cacheSignal, React Compiler 1.0, View Transitions, and RSC security guidance. Load before working with React."
+description: React 19.2.0 compatibility. Use for React work.
 license: MIT
 version: "19.2.0"
 metadata:

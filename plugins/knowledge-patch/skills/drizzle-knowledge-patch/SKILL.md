@@ -1,6 +1,6 @@
 ---
 name: drizzle-knowledge-patch
-description: "Drizzle ORM 1.0.0-beta.19: secure SQL identifier and alias escaping, runtime-aware Drizzle Kit module loading, and first-class Zod schema generation. Load before working with Drizzle ORM."
+description: Drizzle ORM 1.0.0-beta.19 compatibility. Use for Drizzle ORM work.
 license: MIT
 version: 1.0.0-beta.19
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: rtkbase-knowledge-patch
-description: RTKBase changes since 2.6.3 covering Debian and Python requirements, receiver setup, RTKLIB 2.5.0-EX, RTCM/NTRIP streaming, GNSS timing, precise coordinates, and Raspberry Pi operations. Load before working with RTKBase.
+description: RTKBase 2.7.0 compatibility. Use for RTKBase work.
 license: MIT
 version: "2.7.0"
 metadata:

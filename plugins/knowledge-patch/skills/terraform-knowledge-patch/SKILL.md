@@ -1,8 +1,8 @@
 ---
 name: terraform-knowledge-patch
-description: Terraform 1.7–1.15 and OpenTofu 1.7–1.12 add ephemeral and write-only data, dynamic module sources, query and action operations, state encryption, Stacks, and major backend and testing changes. Load before working with Terraform.
+description: Terraform / OpenTofu current compatibility guidance. Use for Terraform / OpenTofu work.
 license: MIT
-version: "1.15"
+version: null
 metadata:
   author: Nevaberry
 ---

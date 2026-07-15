@@ -1,3 +1,3 @@
 interface:
-  display_name: "Solidjs Knowledge Patch"
-  short_description: "SolidJS as of July 2026: query and action names, JSX and event semantics, router preloading, server-function transport, and Vite-based SolidStart runtime..."
+  display_name: "SolidJS"
+  short_description: "SolidJS current compatibility guidance. Use for SolidJS work."

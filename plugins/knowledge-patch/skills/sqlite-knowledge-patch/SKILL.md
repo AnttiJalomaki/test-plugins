@@ -1,8 +1,8 @@
 ---
 name: sqlite-knowledge-patch
-description: SQLite 3.46.0–3.53.0 changes since SQLite 3.45, including ALTER TABLE constraint editing, JSONB traversal, expression-index repair, lock and WAL safety, CLI changes, and scalar/JSON edge semantics. Load before working with SQLite.
+description: SQLite 3.46.0–3.53.0 compatibility. Use for SQLite work.
 license: MIT
-version: 3.51.0
+version: 3.53.0
 metadata:
   author: Nevaberry
 ---

@@ -1,6 +1,6 @@
 ---
 name: tauri-knowledge-patch
-description: "Tauri 2.5.0: introduces capability-based security, raw IPC and channels, separate window/webview APIs, redesigned configuration and bundling, expanded mobile and core plugins, and an experimental Verso runtime. Load before working with Tauri."
+description: Tauri 2.5.0 compatibility. Use for Tauri work.
 license: MIT
 version: 2.5.0
 metadata:

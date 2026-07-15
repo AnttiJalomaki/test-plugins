@@ -1,3 +1,3 @@
 interface:
   display_name: "Using Knowledge Patch"
-  short_description: "Gateway for loading matching technology knowledge-patch skills before writing, reviewing, debugging, or VPS/admin work."
+  short_description: "Route technology work to matching bundled knowledge patches."

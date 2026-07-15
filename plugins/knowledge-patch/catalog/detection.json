@@ -1,9 +1,13 @@
 {
-  "schema_version": 1,
-  "generated_at": "2026-07-15T15:23:50Z",
+  "schema_version": 2,
+  "generated_at": "2026-07-15T23:21:58Z",
   "rules": [
     {
       "id": "almalinux-knowledge-patch",
+      "short_label": "AlmaLinux",
+      "coverage_kind": "versioned",
+      "covered_through": "10.2",
+      "coverage_label": "10.2",
       "aliases": [
         "alma",
         "alma linux",
@@ -20,7 +24,6 @@
         "system-administration",
         "security"
       ],
-      "covered_version": "10.2",
       "path": "skills/almalinux-knowledge-patch",
       "coverage_path": "skills/almalinux-knowledge-patch/coverage.json",
       "signals": {
@@ -34,6 +37,10 @@
     },
     {
       "id": "angular-knowledge-patch",
+      "short_label": "Angular",
+      "coverage_kind": "versioned",
+      "covered_through": "22.0.0",
+      "coverage_label": "22.0.0",
       "aliases": [
         "angular",
         "angular cli",
@@ -52,7 +59,6 @@
         "routing",
         "ssr"
       ],
-      "covered_version": "21.0.0",
       "path": "skills/angular-knowledge-patch",
       "coverage_path": "skills/angular-knowledge-patch/coverage.json",
       "signals": {
@@ -68,6 +74,10 @@
     },
     {
       "id": "arch-knowledge-patch",
+      "short_label": "Arch Linux",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
       "aliases": [
         "arch",
         "arch knowledge patch",
@@ -84,7 +94,6 @@
         "system-administration",
         "pacman"
       ],
-      "covered_version": null,
       "path": "skills/arch-knowledge-patch",
       "coverage_path": "skills/arch-knowledge-patch/coverage.json",
       "signals": {
@@ -99,6 +108,10 @@
     },
     {
       "id": "astro-knowledge-patch",
+      "short_label": "Astro",
+      "coverage_kind": "versioned",
+      "covered_through": "7.0.0",
+      "coverage_label": "7.0.0",
       "aliases": [
         "astro",
         "astro js",
@@ -117,7 +130,6 @@
         "ssr",
         "content-collections"
       ],
-      "covered_version": "7.0.0",
       "path": "skills/astro-knowledge-patch",
       "coverage_path": "skills/astro-knowledge-patch/coverage.json",
       "signals": {
@@ -133,6 +145,10 @@
     },
     {
       "id": "authjs-knowledge-patch",
+      "short_label": "Auth.js",
+      "coverage_kind": "versioned",
+      "covered_through": "5.0.0",
+      "coverage_label": "5.0.0",
       "aliases": [
         "auth js",
         "authjs",
@@ -151,7 +167,6 @@
         "adapters",
         "nextjs"
       ],
-      "covered_version": "5.0.0",
       "path": "skills/authjs-knowledge-patch",
       "coverage_path": "skills/authjs-knowledge-patch/coverage.json",
       "signals": {
@@ -167,6 +182,10 @@
     },
     {
       "id": "aws-sdk-knowledge-patch",
+      "short_label": "AWS SDK",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
       "aliases": [
         "aws sdk",
         "aws sdk knowledge patch",
@@ -191,7 +210,6 @@
         "retries",
         "clients"
       ],
-      "covered_version": null,
       "path": "skills/aws-sdk-knowledge-patch",
       "coverage_path": "skills/aws-sdk-knowledge-patch/coverage.json",
       "signals": {
@@ -207,6 +225,10 @@
     },
     {
       "id": "axum-knowledge-patch",
+      "short_label": "Axum",
+      "coverage_kind": "versioned",
+      "covered_through": "0.8.0",
+      "coverage_label": "0.8.0",
       "aliases": [
         "axum",
         "axum knowledge patch",
@@ -223,7 +245,6 @@
         "extractors",
         "async"
       ],
-      "covered_version": "0.8.0",
       "path": "skills/axum-knowledge-patch",
       "coverage_path": "skills/axum-knowledge-patch/coverage.json",
       "signals": {
@@ -236,6 +257,10 @@
     },
     {
       "id": "better-auth-knowledge-patch",
+      "short_label": "Better Auth",
+      "coverage_kind": "versioned",
+      "covered_through": "1.6.0",
+      "coverage_label": "1.6.0",
       "aliases": [
         "better auth",
         "better auth knowledge patch",
@@ -252,7 +277,6 @@
         "plugins",
         "typescript"
       ],
-      "covered_version": "1.5",
       "path": "skills/better-auth-knowledge-patch",
       "coverage_path": "skills/better-auth-knowledge-patch/coverage.json",
       "signals": {
@@ -267,6 +291,10 @@
     },
     {
       "id": "biome-knowledge-patch",
+      "short_label": "Biome",
+      "coverage_kind": "versioned",
+      "covered_through": "2.5.0",
+      "coverage_label": "2.5.0",
       "aliases": [
         "biome",
         "biome js",
@@ -286,7 +314,6 @@
         "javascript",
         "css"
       ],
-      "covered_version": "2.4.0",
       "path": "skills/biome-knowledge-patch",
       "coverage_path": "skills/biome-knowledge-patch/coverage.json",
       "signals": {
@@ -300,6 +327,10 @@
     },
     {
       "id": "bun-knowledge-patch",
+      "short_label": "Bun",
+      "coverage_kind": "versioned",
+      "covered_through": "1.3.14",
+      "coverage_label": "1.3.14",
       "aliases": [
         "bun",
         "bun js",
@@ -318,7 +349,6 @@
         "testing",
         "javascript"
       ],
-      "covered_version": "1.3.14",
       "path": "skills/bun-knowledge-patch",
       "coverage_path": "skills/bun-knowledge-patch/coverage.json",
       "signals": {
@@ -333,6 +363,10 @@
     },
     {
       "id": "caddy-knowledge-patch",
+      "short_label": "Caddy",
+      "coverage_kind": "versioned",
+      "covered_through": "2.11.1",
+      "coverage_label": "2.11.1",
       "aliases": [
         "caddy",
         "caddy knowledge patch",
@@ -350,7 +384,6 @@
         "routing",
         "configuration"
       ],
-      "covered_version": "2.11.1",
       "path": "skills/caddy-knowledge-patch",
       "coverage_path": "skills/caddy-knowledge-patch/coverage.json",
       "signals": {
@@ -365,6 +398,10 @@
     },
     {
       "id": "centos-stream-knowledge-patch",
+      "short_label": "CentOS Stream",
+      "coverage_kind": "versioned",
+      "covered_through": "10.0",
+      "coverage_label": "10.0",
       "aliases": [
         "centos",
         "centos stream",
@@ -380,7 +417,6 @@
         "system-administration",
         "rpm"
       ],
-      "covered_version": "10.0",
       "path": "skills/centos-stream-knowledge-patch",
       "coverage_path": "skills/centos-stream-knowledge-patch/coverage.json",
       "signals": {
@@ -394,6 +430,10 @@
     },
     {
       "id": "chrony-knowledge-patch",
+      "short_label": "chrony",
+      "coverage_kind": "range",
+      "covered_through": "4.8",
+      "coverage_label": "4.7–4.8",
       "aliases": [
         "chrony",
         "chrony knowledge patch",
@@ -411,7 +451,6 @@
         "networking",
         "clock"
       ],
-      "covered_version": "4.8",
       "path": "skills/chrony-knowledge-patch",
       "coverage_path": "skills/chrony-knowledge-patch/coverage.json",
       "signals": {
@@ -421,10 +460,15 @@
           "/etc/chrony/chrony.conf",
           "**/chrony.conf"
         ]
-      }
+      },
+      "covered_from": "4.7"
     },
     {
       "id": "clerk-knowledge-patch",
+      "short_label": "Clerk",
+      "coverage_kind": "versioned",
+      "covered_through": "1.0.0",
+      "coverage_label": "1.0.0",
       "aliases": [
         "clerk",
         "clerk js",
@@ -445,7 +489,6 @@
         "organizations",
         "oauth"
       ],
-      "covered_version": "1.0.0",
       "path": "skills/clerk-knowledge-patch",
       "coverage_path": "skills/clerk-knowledge-patch/coverage.json",
       "signals": {
@@ -460,6 +503,10 @@
     },
     {
       "id": "codex-knowledge-patch",
+      "short_label": "Codex",
+      "coverage_kind": "versioned",
+      "covered_through": "0.144.0",
+      "coverage_label": "0.144.0",
       "aliases": [
         "codex",
         "codex cli",
@@ -478,7 +525,6 @@
         "automation",
         "configuration"
       ],
-      "covered_version": "0.144.0",
       "path": "skills/codex-knowledge-patch",
       "coverage_path": "skills/codex-knowledge-patch/coverage.json",
       "signals": {
@@ -495,6 +541,10 @@
     },
     {
       "id": "debian-knowledge-patch",
+      "short_label": "Debian",
+      "coverage_kind": "versioned",
+      "covered_through": "13.0",
+      "coverage_label": "13.0",
       "aliases": [
         "debian",
         "debian knowledge patch",
@@ -510,7 +560,6 @@
         "system-administration",
         "security"
       ],
-      "covered_version": "13.0",
       "path": "skills/debian-knowledge-patch",
       "coverage_path": "skills/debian-knowledge-patch/coverage.json",
       "signals": {
@@ -524,6 +573,10 @@
     },
     {
       "id": "deno-knowledge-patch",
+      "short_label": "Deno",
+      "coverage_kind": "versioned",
+      "covered_through": "2.9.0",
+      "coverage_label": "2.9.0",
       "aliases": [
         "deno",
         "deno knowledge patch",
@@ -541,7 +594,6 @@
         "javascript",
         "tooling"
       ],
-      "covered_version": "2.7",
       "path": "skills/deno-knowledge-patch",
       "coverage_path": "skills/deno-knowledge-patch/coverage.json",
       "signals": {
@@ -556,6 +608,10 @@
     },
     {
       "id": "dioxus-knowledge-patch",
+      "short_label": "Dioxus",
+      "coverage_kind": "versioned",
+      "covered_through": "0.7.9",
+      "coverage_label": "0.7.9",
       "aliases": [
         "dioxus",
         "dioxus knowledge patch",
@@ -573,7 +629,6 @@
         "desktop",
         "mobile"
       ],
-      "covered_version": "0.7.9",
       "path": "skills/dioxus-knowledge-patch",
       "coverage_path": "skills/dioxus-knowledge-patch/coverage.json",
       "signals": {
@@ -587,6 +642,10 @@
     },
     {
       "id": "django-knowledge-patch",
+      "short_label": "Django",
+      "coverage_kind": "versioned",
+      "covered_through": "6.0.8",
+      "coverage_label": "6.0.8",
       "aliases": [
         "django",
         "django framework",
@@ -602,7 +661,6 @@
         "templates",
         "async"
       ],
-      "covered_version": "6.0.8",
       "path": "skills/django-knowledge-patch",
       "coverage_path": "skills/django-knowledge-patch/coverage.json",
       "signals": {
@@ -618,6 +676,10 @@
     },
     {
       "id": "dnf5-security-updates-knowledge-patch",
+      "short_label": "DNF5",
+      "coverage_kind": "versioned",
+      "covered_through": "5.4.1",
+      "coverage_label": "5.4.1",
       "aliases": [
         "dnf 5",
         "dnf5",
@@ -635,7 +697,6 @@
         "updates",
         "rpm"
       ],
-      "covered_version": "2026.04.07",
       "path": "skills/dnf5-security-updates-knowledge-patch",
       "coverage_path": "skills/dnf5-security-updates-knowledge-patch/coverage.json",
       "signals": {
@@ -653,6 +714,10 @@
     },
     {
       "id": "docker-knowledge-patch",
+      "short_label": "Docker",
+      "coverage_kind": "range",
+      "covered_through": "29.3",
+      "coverage_label": "25.0.0–29.3",
       "aliases": [
         "docker",
         "docker compose",
@@ -670,7 +735,6 @@
         "buildkit",
         "networking"
       ],
-      "covered_version": "29.3",
       "path": "skills/docker-knowledge-patch",
       "coverage_path": "skills/docker-knowledge-patch/coverage.json",
       "signals": {
@@ -683,10 +747,15 @@
           "**/docker-compose.yaml",
           "**/docker-compose.yml"
         ]
-      }
+      },
+      "covered_from": "25.0.0"
     },
     {
       "id": "drizzle-knowledge-patch",
+      "short_label": "Drizzle ORM",
+      "coverage_kind": "versioned",
+      "covered_through": "1.0.0-beta.19",
+      "coverage_label": "1.0.0-beta.19",
       "aliases": [
         "drizzle",
         "drizzle kit",
@@ -703,7 +772,6 @@
         "schema",
         "database"
       ],
-      "covered_version": "1.0.0-beta.19",
       "path": "skills/drizzle-knowledge-patch",
       "coverage_path": "skills/drizzle-knowledge-patch/coverage.json",
       "signals": {
@@ -718,6 +786,10 @@
     },
     {
       "id": "elixir-knowledge-patch",
+      "short_label": "Elixir",
+      "coverage_kind": "versioned",
+      "covered_through": "1.20.0-rc",
+      "coverage_label": "1.20.0-rc",
       "aliases": [
         "elixir",
         "elixir knowledge patch",
@@ -734,7 +806,6 @@
         "phoenix",
         "liveview"
       ],
-      "covered_version": "1.20.0-rc",
       "path": "skills/elixir-knowledge-patch",
       "coverage_path": "skills/elixir-knowledge-patch/coverage.json",
       "signals": {
@@ -749,6 +820,10 @@
     },
     {
       "id": "fastapi-knowledge-patch",
+      "short_label": "FastAPI",
+      "coverage_kind": "versioned",
+      "covered_through": "0.135.3",
+      "coverage_label": "0.135.3",
       "aliases": [
         "fast api",
         "fastapi",
@@ -764,7 +839,6 @@
         "validation",
         "openapi"
       ],
-      "covered_version": "0.135.3",
       "path": "skills/fastapi-knowledge-patch",
       "coverage_path": "skills/fastapi-knowledge-patch/coverage.json",
       "signals": {
@@ -779,6 +853,10 @@
     },
     {
       "id": "fedora-knowledge-patch",
+      "short_label": "Fedora Linux",
+      "coverage_kind": "versioned",
+      "covered_through": "44",
+      "coverage_label": "44",
       "aliases": [
         "fedora",
         "fedora knowledge patch",
@@ -794,7 +872,6 @@
         "system-administration",
         "selinux"
       ],
-      "covered_version": "44",
       "path": "skills/fedora-knowledge-patch",
       "coverage_path": "skills/fedora-knowledge-patch/coverage.json",
       "signals": {
@@ -808,6 +885,10 @@
     },
     {
       "id": "flutter-knowledge-patch",
+      "short_label": "Flutter",
+      "coverage_kind": "versioned",
+      "covered_through": "3.44.0",
+      "coverage_label": "3.44.0",
       "aliases": [
         "flutter",
         "flutter knowledge patch",
@@ -823,7 +904,6 @@
         "dart",
         "cross-platform"
       ],
-      "covered_version": "3.41",
       "path": "skills/flutter-knowledge-patch",
       "coverage_path": "skills/flutter-knowledge-patch/coverage.json",
       "signals": {
@@ -837,6 +917,10 @@
     },
     {
       "id": "gcp-knowledge-patch",
+      "short_label": "GCP",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
       "aliases": [
         "gcloud",
         "gcp",
@@ -857,7 +941,6 @@
         "kubernetes",
         "data"
       ],
-      "covered_version": null,
       "path": "skills/gcp-knowledge-patch",
       "coverage_path": "skills/gcp-knowledge-patch/coverage.json",
       "signals": {
@@ -873,6 +956,10 @@
     },
     {
       "id": "geodesy-wgs84-knowledge-patch",
+      "short_label": "WGS 84",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "epsg 4326",
         "geodesy wgs84",
@@ -891,7 +978,6 @@
         "projections",
         "reference-frames"
       ],
-      "covered_version": "1.0.0",
       "path": "skills/geodesy-wgs84-knowledge-patch",
       "coverage_path": "skills/geodesy-wgs84-knowledge-patch/coverage.json",
       "signals": {
@@ -910,6 +996,10 @@
     },
     {
       "id": "gleam-knowledge-patch",
+      "short_label": "Gleam",
+      "coverage_kind": "range",
+      "covered_through": "1.17.0",
+      "coverage_label": "1.7.0–1.17.0",
       "aliases": [
         "gleam",
         "gleam knowledge patch",
@@ -925,7 +1015,6 @@
         "concurrency",
         "ffi"
       ],
-      "covered_version": "1.15",
       "path": "skills/gleam-knowledge-patch",
       "coverage_path": "skills/gleam-knowledge-patch/coverage.json",
       "signals": {
@@ -934,10 +1023,15 @@
           "gleam.toml",
           "**/*.gleam"
         ]
-      }
+      },
+      "covered_from": "1.7.0"
     },
     {
       "id": "gnss-navigation-knowledge-patch",
+      "short_label": "GNSS",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "global navigation satellite system",
         "gnss",
@@ -956,7 +1050,6 @@
         "rtk",
         "ppp"
       ],
-      "covered_version": null,
       "path": "skills/gnss-navigation-knowledge-patch",
       "coverage_path": "skills/gnss-navigation-knowledge-patch/coverage.json",
       "signals": {
@@ -976,6 +1069,10 @@
     },
     {
       "id": "go-knowledge-patch",
+      "short_label": "Go",
+      "coverage_kind": "versioned",
+      "covered_through": "1.26.0",
+      "coverage_label": "1.26.0",
       "aliases": [
         "go",
         "go knowledge patch",
@@ -992,7 +1089,6 @@
         "concurrency",
         "generics"
       ],
-      "covered_version": "1.26.0",
       "path": "skills/go-knowledge-patch",
       "coverage_path": "skills/go-knowledge-patch/coverage.json",
       "signals": {
@@ -1006,6 +1102,10 @@
     },
     {
       "id": "gpsd-knowledge-patch",
+      "short_label": "gpsd",
+      "coverage_kind": "versioned",
+      "covered_through": "3.27",
+      "coverage_label": "3.27",
       "aliases": [
         "gpsctl",
         "gpsd",
@@ -1024,7 +1124,6 @@
         "positioning",
         "nmea"
       ],
-      "covered_version": "3.27",
       "path": "skills/gpsd-knowledge-patch",
       "coverage_path": "skills/gpsd-knowledge-patch/coverage.json",
       "signals": {
@@ -1039,6 +1138,10 @@
     },
     {
       "id": "hono-knowledge-patch",
+      "short_label": "Hono",
+      "coverage_kind": "range",
+      "covered_through": "4.12.0",
+      "coverage_label": "4.8.0–4.12.0",
       "aliases": [
         "hono",
         "hono js",
@@ -1056,7 +1159,6 @@
         "edge-runtime",
         "rpc"
       ],
-      "covered_version": "4.12",
       "path": "skills/hono-knowledge-patch",
       "coverage_path": "skills/hono-knowledge-patch/coverage.json",
       "signals": {
@@ -1067,10 +1169,15 @@
           "pnpm-lock.yaml::hono@",
           "yarn.lock::hono@"
         ]
-      }
+      },
+      "covered_from": "4.8.0"
     },
     {
       "id": "htmx-knowledge-patch",
+      "short_label": "htmx",
+      "coverage_kind": "versioned",
+      "covered_through": "4.0.0",
+      "coverage_label": "4.0.0",
       "aliases": [
         "htmx",
         "htmx knowledge patch",
@@ -1087,7 +1194,6 @@
         "frontend",
         "sse"
       ],
-      "covered_version": "4.0.0",
       "path": "skills/htmx-knowledge-patch",
       "coverage_path": "skills/htmx-knowledge-patch/coverage.json",
       "signals": {
@@ -1106,6 +1212,10 @@
     },
     {
       "id": "kotlin-knowledge-patch",
+      "short_label": "Kotlin",
+      "coverage_kind": "versioned",
+      "covered_through": "2.3.20",
+      "coverage_label": "2.3.20",
       "aliases": [
         "kmp",
         "kotlin",
@@ -1122,7 +1232,6 @@
         "coroutines",
         "compose"
       ],
-      "covered_version": "2.3.20",
       "path": "skills/kotlin-knowledge-patch",
       "coverage_path": "skills/kotlin-knowledge-patch/coverage.json",
       "signals": {
@@ -1137,6 +1246,10 @@
     },
     {
       "id": "kubernetes-knowledge-patch",
+      "short_label": "Kubernetes",
+      "coverage_kind": "versioned",
+      "covered_through": "1.36.0",
+      "coverage_label": "1.36.0",
       "aliases": [
         "k8s",
         "kube",
@@ -1155,7 +1268,6 @@
         "rbac",
         "gateway-api"
       ],
-      "covered_version": "1.35.0",
       "path": "skills/kubernetes-knowledge-patch",
       "coverage_path": "skills/kubernetes-knowledge-patch/coverage.json",
       "signals": {
@@ -1171,6 +1283,10 @@
     },
     {
       "id": "langchain-knowledge-patch",
+      "short_label": "LangChain",
+      "coverage_kind": "versioned",
+      "covered_through": "1.1.0",
+      "coverage_label": "1.1.0",
       "aliases": [
         "lang chain",
         "langchain",
@@ -1190,7 +1306,6 @@
         "tools",
         "langgraph"
       ],
-      "covered_version": "1.1.0",
       "path": "skills/langchain-knowledge-patch",
       "coverage_path": "skills/langchain-knowledge-patch/coverage.json",
       "signals": {
@@ -1205,6 +1320,10 @@
     },
     {
       "id": "leptos-knowledge-patch",
+      "short_label": "Leptos",
+      "coverage_kind": "versioned",
+      "covered_through": "0.8.17",
+      "coverage_label": "0.8.17",
       "aliases": [
         "leptos",
         "leptos knowledge patch",
@@ -1220,7 +1339,6 @@
         "ssr",
         "hydration"
       ],
-      "covered_version": "0.8.17",
       "path": "skills/leptos-knowledge-patch",
       "coverage_path": "skills/leptos-knowledge-patch/coverage.json",
       "signals": {
@@ -1234,6 +1352,10 @@
     },
     {
       "id": "nextjs-knowledge-patch",
+      "short_label": "Next.js",
+      "coverage_kind": "versioned",
+      "covered_through": "16.3.0",
+      "coverage_label": "16.3.0",
       "aliases": [
         "next",
         "next js",
@@ -1253,7 +1375,6 @@
         "ssr",
         "caching"
       ],
-      "covered_version": "16.1",
       "path": "skills/nextjs-knowledge-patch",
       "coverage_path": "skills/nextjs-knowledge-patch/coverage.json",
       "signals": {
@@ -1269,6 +1390,10 @@
     },
     {
       "id": "nginx-knowledge-patch",
+      "short_label": "NGINX",
+      "coverage_kind": "versioned",
+      "covered_through": "1.31.0",
+      "coverage_label": "1.31.0",
       "aliases": [
         "engine x",
         "nginx",
@@ -1285,7 +1410,6 @@
         "tls",
         "load-balancing"
       ],
-      "covered_version": "1.31.0",
       "path": "skills/nginx-knowledge-patch",
       "coverage_path": "skills/nginx-knowledge-patch/coverage.json",
       "signals": {
@@ -1300,6 +1424,10 @@
     },
     {
       "id": "nmea0183-knowledge-patch",
+      "short_label": "NMEA 0183",
+      "coverage_kind": "versioned",
+      "covered_through": "4.30",
+      "coverage_label": "4.30",
       "aliases": [
         "nmea",
         "nmea 0183",
@@ -1318,7 +1446,6 @@
         "sentences",
         "serial"
       ],
-      "covered_version": "4.30",
       "path": "skills/nmea0183-knowledge-patch",
       "coverage_path": "skills/nmea0183-knowledge-patch/coverage.json",
       "signals": {
@@ -1337,6 +1464,10 @@
     },
     {
       "id": "nodejs-knowledge-patch",
+      "short_label": "Node.js",
+      "coverage_kind": "range",
+      "covered_through": "26.5.0",
+      "coverage_label": "23.0.0–26.5.0",
       "aliases": [
         "node",
         "node js",
@@ -1354,7 +1485,6 @@
         "npm",
         "streams"
       ],
-      "covered_version": "25.9.0",
       "path": "skills/nodejs-knowledge-patch",
       "coverage_path": "skills/nodejs-knowledge-patch/coverage.json",
       "signals": {
@@ -1364,10 +1494,15 @@
           ".node-version",
           "package.json::\"node\":"
         ]
-      }
+      },
+      "covered_from": "23.0.0"
     },
     {
       "id": "ntrip-rtklib-knowledge-patch",
+      "short_label": "NTRIP / RTKLIB",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "ntrip",
         "ntrip rtklib",
@@ -1388,7 +1523,6 @@
         "ntrip",
         "positioning"
       ],
-      "covered_version": "0.1.0",
       "path": "skills/ntrip-rtklib-knowledge-patch",
       "coverage_path": "skills/ntrip-rtklib-knowledge-patch/coverage.json",
       "signals": {
@@ -1406,6 +1540,10 @@
     },
     {
       "id": "nuxt-knowledge-patch",
+      "short_label": "Nuxt",
+      "coverage_kind": "versioned",
+      "covered_through": "4.4.0",
+      "coverage_label": "4.4.0",
       "aliases": [
         "nuxt",
         "nuxt js",
@@ -1423,7 +1561,6 @@
         "routing",
         "nitro"
       ],
-      "covered_version": "3.12",
       "path": "skills/nuxt-knowledge-patch",
       "coverage_path": "skills/nuxt-knowledge-patch/coverage.json",
       "signals": {
@@ -1438,6 +1575,10 @@
     },
     {
       "id": "openssl-tls-knowledge-patch",
+      "short_label": "OpenSSL",
+      "coverage_kind": "versioned",
+      "covered_through": "4.0.0",
+      "coverage_label": "4.0.0",
       "aliases": [
         "openssl",
         "openssl tls",
@@ -1456,7 +1597,6 @@
         "pki",
         "security"
       ],
-      "covered_version": "4.0.0",
       "path": "skills/openssl-tls-knowledge-patch",
       "coverage_path": "skills/openssl-tls-knowledge-patch/coverage.json",
       "signals": {
@@ -1471,6 +1611,10 @@
     },
     {
       "id": "pgvector-knowledge-patch",
+      "short_label": "pgvector",
+      "coverage_kind": "versioned",
+      "covered_through": "0.8.5",
+      "coverage_label": "0.8.5",
       "aliases": [
         "pgvector",
         "pgvector knowledge patch",
@@ -1487,7 +1631,6 @@
         "postgresql",
         "indexing"
       ],
-      "covered_version": "0.8.5",
       "path": "skills/pgvector-knowledge-patch",
       "coverage_path": "skills/pgvector-knowledge-patch/coverage.json",
       "signals": {
@@ -1502,6 +1645,10 @@
     },
     {
       "id": "playwright-knowledge-patch",
+      "short_label": "Playwright",
+      "coverage_kind": "versioned",
+      "covered_through": "1.61.0",
+      "coverage_label": "1.61.0",
       "aliases": [
         "playwright",
         "playwright knowledge patch",
@@ -1520,7 +1667,6 @@
         "e2e",
         "fixtures"
       ],
-      "covered_version": "1.59",
       "path": "skills/playwright-knowledge-patch",
       "coverage_path": "skills/playwright-knowledge-patch/coverage.json",
       "signals": {
@@ -1535,6 +1681,10 @@
     },
     {
       "id": "podman-knowledge-patch",
+      "short_label": "Podman",
+      "coverage_kind": "versioned",
+      "covered_through": "6.0.0",
+      "coverage_label": "6.0.0",
       "aliases": [
         "libpod",
         "podman",
@@ -1552,7 +1702,6 @@
         "compose",
         "rootless"
       ],
-      "covered_version": "6.0.0",
       "path": "skills/podman-knowledge-patch",
       "coverage_path": "skills/podman-knowledge-patch/coverage.json",
       "signals": {
@@ -1567,6 +1716,10 @@
     },
     {
       "id": "postgis-knowledge-patch",
+      "short_label": "PostGIS",
+      "coverage_kind": "versioned",
+      "covered_through": "3.6.1",
+      "coverage_label": "3.6.1",
       "aliases": [
         "postgis",
         "postgis knowledge patch",
@@ -1582,7 +1735,6 @@
         "geometry",
         "geography"
       ],
-      "covered_version": "3.6.1",
       "path": "skills/postgis-knowledge-patch",
       "coverage_path": "skills/postgis-knowledge-patch/coverage.json",
       "signals": {
@@ -1597,6 +1749,10 @@
     },
     {
       "id": "postgresql-knowledge-patch",
+      "short_label": "PostgreSQL",
+      "coverage_kind": "versioned",
+      "covered_through": "18.0",
+      "coverage_label": "18.0",
       "aliases": [
         "pgsql",
         "postgres",
@@ -1614,7 +1770,6 @@
         "replication",
         "indexing"
       ],
-      "covered_version": "18.0",
       "path": "skills/postgresql-knowledge-patch",
       "coverage_path": "skills/postgresql-knowledge-patch/coverage.json",
       "signals": {
@@ -1630,6 +1785,10 @@
     },
     {
       "id": "prisma-knowledge-patch",
+      "short_label": "Prisma",
+      "coverage_kind": "versioned",
+      "covered_through": "7.8.0",
+      "coverage_label": "7.8.0",
       "aliases": [
         "prisma",
         "prisma knowledge patch",
@@ -1645,7 +1804,6 @@
         "database",
         "client"
       ],
-      "covered_version": "7.3",
       "path": "skills/prisma-knowledge-patch",
       "coverage_path": "skills/prisma-knowledge-patch/coverage.json",
       "signals": {
@@ -1660,6 +1818,10 @@
     },
     {
       "id": "python-knowledge-patch",
+      "short_label": "Python",
+      "coverage_kind": "versioned",
+      "covered_through": "3.14",
+      "coverage_label": "3.14",
       "aliases": [
         "cpython",
         "py",
@@ -1676,7 +1838,6 @@
         "async",
         "runtime"
       ],
-      "covered_version": "3.14",
       "path": "skills/python-knowledge-patch",
       "coverage_path": "skills/python-knowledge-patch/coverage.json",
       "signals": {
@@ -1692,6 +1853,10 @@
     },
     {
       "id": "pytorch-knowledge-patch",
+      "short_label": "PyTorch",
+      "coverage_kind": "versioned",
+      "covered_through": "2.11.0",
+      "coverage_label": "2.11.0",
       "aliases": [
         "py torch",
         "pytorch",
@@ -1708,7 +1873,6 @@
         "training",
         "gpu"
       ],
-      "covered_version": "2.11.0",
       "path": "skills/pytorch-knowledge-patch",
       "coverage_path": "skills/pytorch-knowledge-patch/coverage.json",
       "signals": {
@@ -1723,6 +1887,10 @@
     },
     {
       "id": "rails-knowledge-patch",
+      "short_label": "Ruby on Rails",
+      "coverage_kind": "versioned",
+      "covered_through": "8.1",
+      "coverage_label": "8.1",
       "aliases": [
         "rails",
         "rails knowledge patch",
@@ -1739,7 +1907,6 @@
         "jobs",
         "hotwire"
       ],
-      "covered_version": "8.1",
       "path": "skills/rails-knowledge-patch",
       "coverage_path": "skills/rails-knowledge-patch/coverage.json",
       "signals": {
@@ -1753,6 +1920,10 @@
     },
     {
       "id": "ratatui-knowledge-patch",
+      "short_label": "Ratatui",
+      "coverage_kind": "range",
+      "covered_through": "0.31.0",
+      "coverage_label": "0.29.0–0.31.0",
       "aliases": [
         "ratatui",
         "ratatui knowledge patch",
@@ -1768,7 +1939,6 @@
         "rendering",
         "events"
       ],
-      "covered_version": "0.31.0",
       "path": "skills/ratatui-knowledge-patch",
       "coverage_path": "skills/ratatui-knowledge-patch/coverage.json",
       "signals": {
@@ -1777,10 +1947,15 @@
           "Cargo.toml::ratatui",
           "Cargo.lock::name = \"ratatui\""
         ]
-      }
+      },
+      "covered_from": "0.29.0"
     },
     {
       "id": "react-knowledge-patch",
+      "short_label": "React",
+      "coverage_kind": "versioned",
+      "covered_through": "19.2.0",
+      "coverage_label": "19.2.0",
       "aliases": [
         "react",
         "react js",
@@ -1799,7 +1974,6 @@
         "rendering",
         "jsx"
       ],
-      "covered_version": "19.2.0",
       "path": "skills/react-knowledge-patch",
       "coverage_path": "skills/react-knowledge-patch/coverage.json",
       "signals": {
@@ -1814,6 +1988,10 @@
     },
     {
       "id": "react-router-knowledge-patch",
+      "short_label": "React Router",
+      "coverage_kind": "versioned",
+      "covered_through": "8.2.0",
+      "coverage_label": "8.2.0",
       "aliases": [
         "react router",
         "react router knowledge patch",
@@ -1833,7 +2011,6 @@
         "actions",
         "framework"
       ],
-      "covered_version": "7.14.0",
       "path": "skills/react-router-knowledge-patch",
       "coverage_path": "skills/react-router-knowledge-patch/coverage.json",
       "signals": {
@@ -1848,6 +2025,10 @@
     },
     {
       "id": "rhel-knowledge-patch",
+      "short_label": "RHEL",
+      "coverage_kind": "versioned",
+      "covered_through": "10.2",
+      "coverage_label": "10.2",
       "aliases": [
         "red hat enterprise linux",
         "redhat",
@@ -1864,7 +2045,6 @@
         "system-administration",
         "selinux"
       ],
-      "covered_version": "10.2",
       "path": "skills/rhel-knowledge-patch",
       "coverage_path": "skills/rhel-knowledge-patch/coverage.json",
       "signals": {
@@ -1878,6 +2058,10 @@
     },
     {
       "id": "rocky-knowledge-patch",
+      "short_label": "Rocky Linux",
+      "coverage_kind": "versioned",
+      "covered_through": "10.2",
+      "coverage_label": "10.2",
       "aliases": [
         "rocky",
         "rocky knowledge patch",
@@ -1893,7 +2077,6 @@
         "system-administration",
         "rpm"
       ],
-      "covered_version": "10.2",
       "path": "skills/rocky-knowledge-patch",
       "coverage_path": "skills/rocky-knowledge-patch/coverage.json",
       "signals": {
@@ -1907,6 +2090,10 @@
     },
     {
       "id": "rtcm3-knowledge-patch",
+      "short_label": "RTCM 3",
+      "coverage_kind": "versioned",
+      "covered_through": "10403.4 Amendment 1",
+      "coverage_label": "10403.4 Amendment 1",
       "aliases": [
         "rtcm",
         "rtcm 3",
@@ -1926,7 +2113,6 @@
         "msm",
         "ssr"
       ],
-      "covered_version": "2026-04-07",
       "path": "skills/rtcm3-knowledge-patch",
       "coverage_path": "skills/rtcm3-knowledge-patch/coverage.json",
       "signals": {
@@ -1944,6 +2130,10 @@
     },
     {
       "id": "rtkbase-knowledge-patch",
+      "short_label": "RTKBase",
+      "coverage_kind": "versioned",
+      "covered_through": "2.7.0",
+      "coverage_label": "2.7.0",
       "aliases": [
         "rtk base",
         "rtkbase",
@@ -1960,7 +2150,6 @@
         "rtk",
         "corrections"
       ],
-      "covered_version": "2.7.0",
       "path": "skills/rtkbase-knowledge-patch",
       "coverage_path": "skills/rtkbase-knowledge-patch/coverage.json",
       "signals": {
@@ -1975,6 +2164,10 @@
     },
     {
       "id": "rust-knowledge-patch",
+      "short_label": "Rust",
+      "coverage_kind": "range",
+      "covered_through": "1.97.0",
+      "coverage_label": "1.84.0–1.97.0",
       "aliases": [
         "cargo",
         "rust",
@@ -1993,7 +2186,6 @@
         "async",
         "edition-2024"
       ],
-      "covered_version": "1.94.0",
       "path": "skills/rust-knowledge-patch",
       "coverage_path": "skills/rust-knowledge-patch/coverage.json",
       "signals": {
@@ -2004,10 +2196,15 @@
           "rust-toolchain.toml",
           "rust-toolchain"
         ]
-      }
+      },
+      "covered_from": "1.84.0"
     },
     {
       "id": "selinux-knowledge-patch",
+      "short_label": "SELinux",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "security enhanced linux",
         "selinux",
@@ -2025,7 +2222,6 @@
         "labels",
         "access-control"
       ],
-      "covered_version": "0.1.0",
       "path": "skills/selinux-knowledge-patch",
       "coverage_path": "skills/selinux-knowledge-patch/coverage.json",
       "signals": {
@@ -2040,6 +2236,10 @@
     },
     {
       "id": "serde-knowledge-patch",
+      "short_label": "Serde",
+      "coverage_kind": "versioned",
+      "covered_through": "1.0.220",
+      "coverage_label": "1.0.220",
       "aliases": [
         "serde",
         "serde knowledge patch",
@@ -2055,7 +2255,6 @@
         "formats",
         "rust"
       ],
-      "covered_version": "1.0.220",
       "path": "skills/serde-knowledge-patch",
       "coverage_path": "skills/serde-knowledge-patch/coverage.json",
       "signals": {
@@ -2068,6 +2267,10 @@
     },
     {
       "id": "solidjs-knowledge-patch",
+      "short_label": "SolidJS",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "solid",
         "solid js",
@@ -2088,7 +2291,6 @@
         "components",
         "ssr"
       ],
-      "covered_version": null,
       "path": "skills/solidjs-knowledge-patch",
       "coverage_path": "skills/solidjs-knowledge-patch/coverage.json",
       "signals": {
@@ -2103,6 +2305,10 @@
     },
     {
       "id": "spring-boot-knowledge-patch",
+      "short_label": "Spring Boot",
+      "coverage_kind": "versioned",
+      "covered_through": "4.1.0",
+      "coverage_label": "4.1.0",
       "aliases": [
         "spring boot",
         "spring boot knowledge patch",
@@ -2119,7 +2325,6 @@
         "configuration",
         "actuator"
       ],
-      "covered_version": "4.1.0",
       "path": "skills/spring-boot-knowledge-patch",
       "coverage_path": "skills/spring-boot-knowledge-patch/coverage.json",
       "signals": {
@@ -2135,6 +2340,10 @@
     },
     {
       "id": "sqlite-knowledge-patch",
+      "short_label": "SQLite",
+      "coverage_kind": "range",
+      "covered_through": "3.53.0",
+      "coverage_label": "3.46.0–3.53.0",
       "aliases": [
         "sqlite",
         "sqlite knowledge patch",
@@ -2150,7 +2359,6 @@
         "transactions",
         "indexing"
       ],
-      "covered_version": "3.51.0",
       "path": "skills/sqlite-knowledge-patch",
       "coverage_path": "skills/sqlite-knowledge-patch/coverage.json",
       "signals": {
@@ -2161,10 +2369,15 @@
           "**/*.db::SQLite format 3",
           "pyproject.toml::aiosqlite"
         ]
-      }
+      },
+      "covered_from": "3.46.0"
     },
     {
       "id": "sqlx-knowledge-patch",
+      "short_label": "SQLx",
+      "coverage_kind": "versioned",
+      "covered_through": "0.9.0",
+      "coverage_label": "0.9.0",
       "aliases": [
         "rust sqlx",
         "sqlx",
@@ -2181,7 +2394,6 @@
         "macros",
         "migrations"
       ],
-      "covered_version": "0.9.0",
       "path": "skills/sqlx-knowledge-patch",
       "coverage_path": "skills/sqlx-knowledge-patch/coverage.json",
       "signals": {
@@ -2195,6 +2407,10 @@
     },
     {
       "id": "stripe-knowledge-patch",
+      "short_label": "Stripe",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
       "aliases": [
         "stripe",
         "stripe api",
@@ -2217,7 +2433,6 @@
         "webhooks",
         "connect"
       ],
-      "covered_version": null,
       "path": "skills/stripe-knowledge-patch",
       "coverage_path": "skills/stripe-knowledge-patch/coverage.json",
       "signals": {
@@ -2232,6 +2447,10 @@
     },
     {
       "id": "supabase-knowledge-patch",
+      "short_label": "Supabase",
+      "coverage_kind": "rolling",
+      "covered_through": null,
+      "coverage_label": "rolling coverage",
       "aliases": [
         "supabase",
         "supabase js",
@@ -2253,7 +2472,6 @@
         "realtime",
         "storage"
       ],
-      "covered_version": "2025.04",
       "path": "skills/supabase-knowledge-patch",
       "coverage_path": "skills/supabase-knowledge-patch/coverage.json",
       "signals": {
@@ -2268,6 +2486,10 @@
     },
     {
       "id": "suse-knowledge-patch",
+      "short_label": "SUSE / openSUSE",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "opensuse",
         "sles",
@@ -2285,7 +2507,6 @@
         "system-administration",
         "zypper"
       ],
-      "covered_version": null,
       "path": "skills/suse-knowledge-patch",
       "coverage_path": "skills/suse-knowledge-patch/coverage.json",
       "signals": {
@@ -2300,6 +2521,10 @@
     },
     {
       "id": "svelte-knowledge-patch",
+      "short_label": "Svelte",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "svelte",
         "svelte js",
@@ -2319,7 +2544,6 @@
         "sveltekit",
         "runes"
       ],
-      "covered_version": null,
       "path": "skills/svelte-knowledge-patch",
       "coverage_path": "skills/svelte-knowledge-patch/coverage.json",
       "signals": {
@@ -2334,6 +2558,10 @@
     },
     {
       "id": "swift-knowledge-patch",
+      "short_label": "Swift",
+      "coverage_kind": "range",
+      "covered_through": "6.3.0",
+      "coverage_label": "6.1–6.3.0",
       "aliases": [
         "swift",
         "swift knowledge patch",
@@ -2350,7 +2578,6 @@
         "macos",
         "package-manager"
       ],
-      "covered_version": "6.3.0",
       "path": "skills/swift-knowledge-patch",
       "coverage_path": "skills/swift-knowledge-patch/coverage.json",
       "signals": {
@@ -2360,10 +2587,15 @@
           ".swift-version",
           "**/*.xcodeproj/project.pbxproj::SWIFT_VERSION"
         ]
-      }
+      },
+      "covered_from": "6.1"
     },
     {
       "id": "systemd-knowledge-patch",
+      "short_label": "systemd",
+      "coverage_kind": "range",
+      "covered_through": "260",
+      "coverage_label": "256–260",
       "aliases": [
         "journald",
         "systemctl",
@@ -2381,7 +2613,6 @@
         "journald",
         "system-administration"
       ],
-      "covered_version": "1.0.0",
       "path": "skills/systemd-knowledge-patch",
       "coverage_path": "skills/systemd-knowledge-patch/coverage.json",
       "signals": {
@@ -2392,10 +2623,15 @@
           "**/*.socket::[Socket]",
           "/etc/systemd/system/*.service"
         ]
-      }
+      },
+      "covered_from": "256"
     },
     {
       "id": "tailwind-knowledge-patch",
+      "short_label": "Tailwind CSS",
+      "coverage_kind": "versioned",
+      "covered_through": "4.2.2",
+      "coverage_label": "4.2.2",
       "aliases": [
         "tailwind",
         "tailwind css",
@@ -2415,7 +2651,6 @@
         "frontend",
         "design-system"
       ],
-      "covered_version": "4.1",
       "path": "skills/tailwind-knowledge-patch",
       "coverage_path": "skills/tailwind-knowledge-patch/coverage.json",
       "signals": {
@@ -2430,6 +2665,10 @@
     },
     {
       "id": "tauri-knowledge-patch",
+      "short_label": "Tauri",
+      "coverage_kind": "versioned",
+      "covered_through": "2.5.0",
+      "coverage_label": "2.5.0",
       "aliases": [
         "tauri",
         "tauri apps",
@@ -2448,7 +2687,6 @@
         "webview",
         "plugins"
       ],
-      "covered_version": "2.5.0",
       "path": "skills/tauri-knowledge-patch",
       "coverage_path": "skills/tauri-knowledge-patch/coverage.json",
       "signals": {
@@ -2463,6 +2701,10 @@
     },
     {
       "id": "terraform-knowledge-patch",
+      "short_label": "Terraform / OpenTofu",
+      "coverage_kind": "multi-product",
+      "covered_through": null,
+      "coverage_label": "current compatibility guidance",
       "aliases": [
         "opentofu",
         "terraform",
@@ -2480,7 +2722,6 @@
         "state",
         "modules"
       ],
-      "covered_version": "1.15",
       "path": "skills/terraform-knowledge-patch",
       "coverage_path": "skills/terraform-knowledge-patch/coverage.json",
       "signals": {
@@ -2494,6 +2735,10 @@
     },
     {
       "id": "tokio-knowledge-patch",
+      "short_label": "Tokio",
+      "coverage_kind": "versioned",
+      "covered_through": "1.52.0",
+      "coverage_label": "1.52.0",
       "aliases": [
         "tokio",
         "tokio knowledge patch",
@@ -2510,7 +2755,6 @@
         "io",
         "networking"
       ],
-      "covered_version": "1.52.0",
       "path": "skills/tokio-knowledge-patch",
       "coverage_path": "skills/tokio-knowledge-patch/coverage.json",
       "signals": {
@@ -2523,6 +2767,10 @@
     },
     {
       "id": "traefik-knowledge-patch",
+      "short_label": "Traefik",
+      "coverage_kind": "versioned",
+      "covered_through": "3.7.0",
+      "coverage_label": "3.7.0",
       "aliases": [
         "traefik",
         "traefik knowledge patch",
@@ -2542,7 +2790,6 @@
         "acme",
         "observability"
       ],
-      "covered_version": "3.6.9",
       "path": "skills/traefik-knowledge-patch",
       "coverage_path": "skills/traefik-knowledge-patch/coverage.json",
       "signals": {
@@ -2558,6 +2805,10 @@
     },
     {
       "id": "trpc-knowledge-patch",
+      "short_label": "tRPC",
+      "coverage_kind": "versioned",
+      "covered_through": "11.18.0",
+      "coverage_label": "11.18.0",
       "aliases": [
         "t rpc",
         "trpc",
@@ -2573,7 +2824,6 @@
         "procedures",
         "typescript"
       ],
-      "covered_version": "11.0",
       "path": "skills/trpc-knowledge-patch",
       "coverage_path": "skills/trpc-knowledge-patch/coverage.json",
       "signals": {
@@ -2588,6 +2838,10 @@
     },
     {
       "id": "typescript-knowledge-patch",
+      "short_label": "TypeScript",
+      "coverage_kind": "versioned",
+      "covered_through": "7.0.0",
+      "coverage_label": "7.0.0",
       "aliases": [
         "ts",
         "tsc",
@@ -2604,7 +2858,6 @@
         "javascript",
         "modules"
       ],
-      "covered_version": "5.9.0",
       "path": "skills/typescript-knowledge-patch",
       "coverage_path": "skills/typescript-knowledge-patch/coverage.json",
       "signals": {
@@ -2618,6 +2871,10 @@
     },
     {
       "id": "ubuntu-knowledge-patch",
+      "short_label": "Ubuntu",
+      "coverage_kind": "versioned",
+      "covered_through": "26.04",
+      "coverage_label": "26.04",
       "aliases": [
         "ubuntu",
         "ubuntu knowledge patch",
@@ -2633,7 +2890,6 @@
         "system-administration",
         "lts"
       ],
-      "covered_version": "26.04",
       "path": "skills/ubuntu-knowledge-patch",
       "coverage_path": "skills/ubuntu-knowledge-patch/coverage.json",
       "signals": {
@@ -2647,6 +2903,10 @@
     },
     {
       "id": "vercel-ai-sdk-knowledge-patch",
+      "short_label": "Vercel AI SDK",
+      "coverage_kind": "versioned",
+      "covered_through": "6.0",
+      "coverage_label": "6.0",
       "aliases": [
         "ai sdk",
         "vercel ai",
@@ -2663,7 +2923,6 @@
         "tools",
         "generative-ui"
       ],
-      "covered_version": "6.0",
       "path": "skills/vercel-ai-sdk-knowledge-patch",
       "coverage_path": "skills/vercel-ai-sdk-knowledge-patch/coverage.json",
       "signals": {
@@ -2682,6 +2941,10 @@
     },
     {
       "id": "vite-knowledge-patch",
+      "short_label": "Vite",
+      "coverage_kind": "versioned",
+      "covered_through": "8.1.0",
+      "coverage_label": "8.1.0",
       "aliases": [
         "vite",
         "vite js",
@@ -2700,7 +2963,6 @@
         "hmr",
         "frontend"
       ],
-      "covered_version": "8.1.0",
       "path": "skills/vite-knowledge-patch",
       "coverage_path": "skills/vite-knowledge-patch/coverage.json",
       "signals": {
@@ -2715,6 +2977,10 @@
     },
     {
       "id": "vitest-knowledge-patch",
+      "short_label": "Vitest",
+      "coverage_kind": "versioned",
+      "covered_through": "4.1",
+      "coverage_label": "4.1",
       "aliases": [
         "vi test",
         "vitest",
@@ -2731,7 +2997,6 @@
         "coverage",
         "vite"
       ],
-      "covered_version": "4.1",
       "path": "skills/vitest-knowledge-patch",
       "coverage_path": "skills/vitest-knowledge-patch/coverage.json",
       "signals": {
@@ -2746,6 +3011,10 @@
     },
     {
       "id": "vuejs-knowledge-patch",
+      "short_label": "Vue.js",
+      "coverage_kind": "versioned",
+      "covered_through": "3.6.0-beta",
+      "coverage_label": "3.6.0-beta",
       "aliases": [
         "vue",
         "vue js",
@@ -2763,7 +3032,6 @@
         "composition-api",
         "sfc"
       ],
-      "covered_version": "3.6.0-beta",
       "path": "skills/vuejs-knowledge-patch",
       "coverage_path": "skills/vuejs-knowledge-patch/coverage.json",
       "signals": {
@@ -2778,6 +3046,10 @@
     },
     {
       "id": "workos-knowledge-patch",
+      "short_label": "WorkOS",
+      "coverage_kind": "versioned",
+      "covered_through": "8.10",
+      "coverage_label": "8.10",
       "aliases": [
         "authkit",
         "work os",
@@ -2799,7 +3071,6 @@
         "directory-sync",
         "organizations"
       ],
-      "covered_version": "8.10",
       "path": "skills/workos-knowledge-patch",
       "coverage_path": "skills/workos-knowledge-patch/coverage.json",
       "signals": {
@@ -2814,6 +3085,10 @@
     },
     {
       "id": "zig-knowledge-patch",
+      "short_label": "Zig",
+      "coverage_kind": "versioned",
+      "covered_through": "0.15.1",
+      "coverage_label": "0.15.1",
       "aliases": [
         "zig",
         "zig knowledge patch",
@@ -2830,7 +3105,6 @@
         "memory",
         "cross-compilation"
       ],
-      "covered_version": "0.15.1",
       "path": "skills/zig-knowledge-patch",
       "coverage_path": "skills/zig-knowledge-patch/coverage.json",
       "signals": {
@@ -2844,6 +3118,10 @@
     },
     {
       "id": "zitadel-knowledge-patch",
+      "short_label": "Zitadel",
+      "coverage_kind": "versioned",
+      "covered_through": "4.15.3",
+      "coverage_label": "4.15.3",
       "aliases": [
         "zitadel",
         "zitadel iam",
@@ -2861,7 +3139,6 @@
         "authentication",
         "authorization"
       ],
-      "covered_version": "4.15.3",
       "path": "skills/zitadel-knowledge-patch",
       "coverage_path": "skills/zitadel-knowledge-patch/coverage.json",
       "signals": {

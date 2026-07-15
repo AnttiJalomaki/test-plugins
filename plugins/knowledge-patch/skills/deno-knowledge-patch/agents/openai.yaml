@@ -1,3 +1,3 @@
 interface:
-  display_name: "Deno Knowledge Patch"
-  short_description: "Deno 2.7: Deno 2 migration, Node compatibility, permissions and dependency security, workspaces, bundling and compilation, testing, OpenTelemetry, Temporal..."
+  display_name: "Deno"
+  short_description: "Deno 2.9.0 compatibility. Use for Deno work."

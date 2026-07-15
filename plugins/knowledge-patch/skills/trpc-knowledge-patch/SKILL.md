@@ -1,8 +1,8 @@
 ---
 name: trpc-knowledge-patch
-description: "tRPC 11.0: adds native non-JSON inputs, async-iterable streaming, SSE subscriptions, TanStack Query integration, App Router actions, local links, and static OpenAPI generation. Load before working with tRPC."
+description: tRPC 11.18.0 compatibility. Use for tRPC work.
 license: MIT
-version: "11.0"
+version: 11.18.0
 metadata:
   author: Nevaberry
 ---

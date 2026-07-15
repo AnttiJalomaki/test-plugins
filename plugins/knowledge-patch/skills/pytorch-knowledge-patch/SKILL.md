@@ -1,6 +1,6 @@
 ---
 name: pytorch-knowledge-patch
-description: "PyTorch 2.11.0: safe loading, TorchScript and FSDP1 migrations, torch.compile, FlexAttention, FSDP2, export, AOTInductor, distributed APIs, and platform packaging. Load before working with PyTorch."
+description: PyTorch 2.11.0 compatibility. Use for PyTorch work.
 license: MIT
 version: "2.11.0"
 metadata:

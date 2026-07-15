@@ -1,6 +1,6 @@
 ---
 name: suse-knowledge-patch
-description: "SUSE Linux and openSUSE as of July 2026: Agama migration, SELinux, cgroup v2, Wayland, NetworkManager, package removals, security policy, storage, virtualization, and platform behavior. Load before working with SUSE Linux / openSUSE."
+description: SUSE / openSUSE current compatibility guidance. Use for SUSE / openSUSE work.
 license: MIT
 version: null
 metadata:

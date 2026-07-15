@@ -1,8 +1,8 @@
 ---
 name: react-router-knowledge-patch
-description: "React Router 7.14.0: package consolidation, framework routing, middleware, generated route types, prerendering, RSC previews, security hardening, and v8 migration behavior. Load before working with React Router."
+description: React Router 8.2.0 compatibility. Use for React Router work.
 license: MIT
-version: 7.14.0
+version: 8.2.0
 metadata:
   author: Nevaberry
 ---

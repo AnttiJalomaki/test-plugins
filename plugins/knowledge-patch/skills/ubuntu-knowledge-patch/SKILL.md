@@ -1,6 +1,6 @@
 ---
 name: ubuntu-knowledge-patch
-description: "Ubuntu 26.04: APT 3, sudo-rs, Rust coreutils, cloud-init datasource enforcement, systemd and Dracut boot changes, OpenSSH, installer constraints, and service migrations. Load before working with Ubuntu."
+description: Ubuntu 26.04 compatibility. Use for Ubuntu work.
 license: MIT
 version: "26.04"
 metadata:

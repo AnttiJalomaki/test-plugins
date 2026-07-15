@@ -1,8 +1,8 @@
 ---
 name: biome-knowledge-patch
-description: "Biome 2.4.0: configuration roots and ordered includes, linter domains and type-aware analysis, assists, GritQL plugins, HTML/CSS/GraphQL/SVG tooling, reporters, and migrations. Load before working with Biome."
+description: Biome 2.5.0 compatibility. Use for Biome work.
 license: MIT
-version: 2.4.0
+version: 2.5.0
 metadata:
   author: Nevaberry
 ---

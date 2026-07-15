@@ -1,6 +1,6 @@
 ---
 name: leptos-knowledge-patch
-description: "Leptos 0.8.17: statically typed views, typed routing, awaitable resources, reactive stores, server-function streams, lazy routes, application-owned SSR shells, and prebuilt cargo-leptos binaries. Load before working with Leptos."
+description: Leptos 0.8.17 compatibility. Use for Leptos work.
 license: MIT
 version: 0.8.17
 metadata:

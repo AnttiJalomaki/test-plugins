@@ -1,6 +1,6 @@
 ---
 name: zig-knowledge-patch
-description: "Zig 0.15.1: allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API migrations, and language breaking changes. Load before working with Zig."
+description: Zig 0.15.1 compatibility. Use for Zig work.
 license: MIT
 version: "0.15.1"
 metadata:

@@ -1,3 +1,3 @@
 interface:
-  display_name: "Nextjs Knowledge Patch"
-  short_description: "Next.js 16.1: Cache Components, proxy.ts, async request APIs, Turbopack, typed routes, partial prefetching, and modern diagnostics. Load before working with..."
+  display_name: "Next.js"
+  short_description: "Next.js 16.3.0 compatibility. Use for Next.js work."

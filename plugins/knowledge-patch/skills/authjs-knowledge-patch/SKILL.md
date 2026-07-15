@@ -1,6 +1,6 @@
 ---
 name: authjs-knowledge-patch
-description: "Auth.js 5.0.0: Better Auth transition guidance, provider security, passkeys, framework sessions, adapter contracts, and critical package fixes. Load before working with Auth.js."
+description: Auth.js 5.0.0 compatibility. Use for Auth.js work.
 license: MIT
 version: 5.0.0
 metadata:

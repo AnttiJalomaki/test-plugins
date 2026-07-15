@@ -1,8 +1,8 @@
 ---
 name: tailwind-knowledge-patch
-description: "Tailwind CSS 4.1: CSS-first theming, migration changes, logical utilities, composable variants, source controls, and modern build integrations. Load before working with Tailwind CSS."
+description: Tailwind CSS 4.2.2 compatibility. Use for Tailwind CSS work.
 license: MIT
-version: "4.1"
+version: 4.2.2
 metadata:
   author: Nevaberry
 ---

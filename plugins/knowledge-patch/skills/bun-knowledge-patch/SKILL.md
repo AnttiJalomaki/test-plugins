@@ -1,6 +1,6 @@
 ---
 name: bun-knowledge-patch
-description: "Bun 1.3.14 adds route-based servers, unified SQL/Redis/S3 clients, HTML/CSS builds, standalone compilation, richer testing, runtime APIs, and expanded Node.js compatibility. Load before working with Bun."
+description: Bun 1.3.14 compatibility. Use for Bun work.
 license: MIT
 version: "1.3.14"
 metadata:

@@ -1,3 +1,3 @@
 interface:
-  display_name: "Svelte Knowledge Patch"
-  short_description: "Svelte as of July 2026: runes, attachments, asynchronous templates and SSR, SvelteKit remote functions and forms, typed routing, prerendering, CSP, and..."
+  display_name: "Svelte"
+  short_description: "Svelte current compatibility guidance. Use for Svelte work."
