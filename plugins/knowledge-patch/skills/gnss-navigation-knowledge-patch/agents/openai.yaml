@@ -1,3 +1,3 @@
 interface:
   display_name: "Gnss Navigation Knowledge Patch"
-  short_description: "Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX 4, SPARTN, precise products, and ZED-F9P behavior changed beyond the mid-2024..."
+  short_description: "GNSS Navigation as of July 2026: Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX, SPARTN, precise products, and ZED-F9P..."

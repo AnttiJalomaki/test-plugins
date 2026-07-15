@@ -36,11 +36,13 @@ Reload plugins:
 /reload-plugins
 ```
 
-Then run:
+Then invoke the native setup skill:
 
 ```text
-/knowledge-patch:setup
+/knowledge-patch:knowledge-patch-setup
 ```
+
+You can also ask Claude Code to set up Knowledge Patch in natural language. The shorter `/knowledge-patch:setup` command remains a compatibility alias.
 
 ## Install with Codex
 

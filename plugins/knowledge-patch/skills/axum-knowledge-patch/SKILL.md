@@ -1,8 +1,8 @@
 ---
 name: axum-knowledge-patch
-description: Axum 0.8 and its companion crates add native async extractors, stricter optional and path extraction, Sync routing, generic serving, byte-backed WebSockets, and explicit axum-extra feature gates since Axum 0.7.x. Load before working with Axum.
+description: "Axum 0.8.0: native async extractors, stricter optional and path extraction, Sync routing, generic serving, byte-backed WebSockets, and explicit axum-extra feature gates. Load before working with Axum."
 license: MIT
-version: null
+version: "0.8.0"
 metadata:
   author: Nevaberry
 ---

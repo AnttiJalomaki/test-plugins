@@ -1,8 +1,8 @@
 ---
 name: fedora-knowledge-patch
-description: "Fedora Linux version null: DNF5, RPM 6, image-mode and OCI workflows, nftables networking, installer and boot changes, package migrations, current toolchains, and Podman 6 readiness. Load before working with Fedora Linux."
+description: "Fedora Linux 44: DNF5, RPM 6, image-mode and OCI workflows, nftables networking, installer and boot changes, package migrations, current toolchains, and Podman readiness. Load before working with Fedora Linux."
 license: MIT
-version: null
+version: "44"
 metadata:
   author: Nevaberry
 ---

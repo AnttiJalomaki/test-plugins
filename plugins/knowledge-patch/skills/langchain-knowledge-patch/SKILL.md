@@ -1,8 +1,8 @@
 ---
 name: langchain-knowledge-patch
-description: "LangChain version metadata null: v1 package splits, create_agent middleware, typed content and graph streams, provider-native tools, MCP workflows, and Deep Agents reshape agent development. Load before working with LangChain."
+description: "LangChain 1.1.0: package splits, create_agent middleware, typed content and graph streams, provider-native tools, MCP workflows, and Deep Agents. Load before working with LangChain."
 license: MIT
-version: null
+version: "1.1.0"
 metadata:
   author: Nevaberry
 ---

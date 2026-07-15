@@ -1,6 +1,6 @@
 {
   "name": "knowledge-patch",
-  "version": "2.20260715.0",
+  "version": "2.20260715.1",
   "description": "Offline monoplugin that ships current technology knowledge patches as native skills with catalog-based activation.",
   "author": {
     "name": "Nevaberry",
@@ -17,6 +17,7 @@
     "offline"
   ],
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Knowledge Patch",
     "shortDescription": "Current tech patches as native skills",

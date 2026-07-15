@@ -1,3 +1,3 @@
 interface:
   display_name: "Axum Knowledge Patch"
-  short_description: "Axum 0.8 and its companion crates add native async extractors, stricter optional and path extraction, Sync routing, generic serving, byte-backed WebSockets..."
+  short_description: "Axum 0.8.0: native async extractors, stricter optional and path extraction, Sync routing, generic serving, byte-backed WebSockets, and explicit axum-extra..."

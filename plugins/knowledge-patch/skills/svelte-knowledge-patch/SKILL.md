@@ -1,6 +1,6 @@
 ---
 name: svelte-knowledge-patch
-description: "Svelte version null: Svelte 5 runes, attachments, asynchronous templates and SSR, SvelteKit remote functions and forms, typed routing, prerendering, CSP, and current build and deployment behavior. Load before working with Svelte."
+description: "Svelte as of July 2026: runes, attachments, asynchronous templates and SSR, SvelteKit remote functions and forms, typed routing, prerendering, CSP, and current build and deployment behavior. Load before working with Svelte."
 license: MIT
 version: null
 metadata:

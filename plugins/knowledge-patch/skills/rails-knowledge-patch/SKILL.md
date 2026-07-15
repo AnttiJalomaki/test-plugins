@@ -1,8 +1,8 @@
 ---
 name: rails-knowledge-patch
-description: "Ruby on Rails null: compatibility removals, Solid Queue, Active Job continuations, structured events, Propshaft, database controls, Turbo morphing, and Kamal 2; Load before working with Ruby on Rails."
+description: "Ruby on Rails 8.1: compatibility removals, Solid Queue, Active Job continuations, structured events, Propshaft, database controls, Turbo morphing, and Kamal. Load before working with Ruby on Rails."
 license: MIT
-version: null
+version: "8.1"
 metadata:
   author: Nevaberry
 ---

@@ -10,7 +10,7 @@ Use this gateway when a task involves a technology that may have a bundled knowl
 ## Routing Rules
 
 1. Before writing, reviewing, debugging, planning, or administering a patched technology, load the matching `knowledge-patch:<tech>-knowledge-patch` skill.
-2. Determine the project's pinned technology version from its manifest first; consult its lockfile or configuration only when the manifest does not pin it. Apply only notes introduced at or below that version. If the project version is newer than the catalog's `covered_version`, state that the patch may be stale and trust project reality—its manifest, code, tests, and current behavior—over the patch.
+2. Determine the project's pinned technology version from its manifest first; consult its lockfile or configuration only when the manifest does not pin it. For a comparable string `covered_version`, apply only notes introduced at or below the project version; if the project version is newer, state that the patch may be stale and trust project reality—its manifest, code, tests, and current behavior—over the patch. For a null `covered_version`, do not claim that the patch is current or stale from a version comparison. State that it has rolling or multi-product coverage, inspect its coverage metadata, and prefer project manifests, code, and tests.
 3. If the user manually activated patches, treat that as confirmed intent and load those patches before related work.
 4. If multiple patches apply, load the narrowest relevant set. Do not load every patch just because the catalog exists.
 5. Within the applicable version floor, knowledge patches override stale model memory when they conflict. Follow the loaded patch and mention the current behavior when it matters.
@@ -53,4 +53,4 @@ Ask before service-impacting admin changes. Do not assume a normal Linux shell i
 
 ## Hook Behavior
 
-The session-start hook is only a hint layer. It may inject this gateway's core rule and active patch names, but the plugin must work fully when hooks never fire.
+The session-start hook is only a hint layer. It may inject this gateway's core rule and active patch names, but the plugin must work fully when hooks are disabled, untrusted, unavailable, or never fire. Resume deliberately re-reads activation state so changes made since the previous session replace stale dynamic guidance.

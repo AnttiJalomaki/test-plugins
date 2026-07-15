@@ -1,8 +1,8 @@
 ---
 name: nginx-knowledge-patch
-description: NGINX changes after stable 1.26.x and mainline 1.27.1 covering security fixes, upstream keepalive and HTTP/2 proxying, TLS and ECH, Early Hints, FreeNginx, and NGINX Plus R36. Load before working with NGINX.
+description: "NGINX 1.31.0: security fixes, upstream keepalive and HTTP/2 proxying, TLS and ECH, Early Hints, FreeNginx, and NGINX Plus behavior. Load before working with NGINX."
 license: MIT
-version: null
+version: "1.31.0"
 metadata:
   author: Nevaberry
 ---

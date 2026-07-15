@@ -1,8 +1,8 @@
 ---
 name: pgvector-knowledge-patch
-description: pgvector 0.8 adds iterative HNSW and IVFFlat scans, filtered-search costing, sparse casts, current index limits, quantized re-ranking, and PostgreSQL 13+ deployment guidance. Load before working with pgvector.
+description: "pgvector 0.8.5: iterative HNSW and IVFFlat scans, filtered-search costing, sparse casts, current index limits, quantized re-ranking, and PostgreSQL deployment guidance. Load before working with pgvector."
 license: MIT
-version: null
+version: "0.8.5"
 metadata:
   author: Nevaberry
 ---

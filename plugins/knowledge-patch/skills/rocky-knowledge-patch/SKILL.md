@@ -1,8 +1,8 @@
 ---
 name: rocky-knowledge-patch
-description: "Rocky Linux changes since 9.3 covering 9.4–9.8 and 10.0–10.2: x86-64-v3, NetworkManager-only networking, DNF modularity removal, Podman 5, post-quantum cryptography, WSL images, and updated runtimes and toolchains. Load before working with Rocky Linux."
+description: "Rocky Linux 10.2: x86-64-v3, NetworkManager-only networking, DNF modularity removal, Podman, post-quantum cryptography, WSL images, and updated runtimes and toolchains. Load before working with Rocky Linux."
 license: MIT
-version: null
+version: "10.2"
 metadata:
   author: Nevaberry
 ---

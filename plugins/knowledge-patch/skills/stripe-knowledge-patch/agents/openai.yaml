@@ -1,3 +1,3 @@
 interface:
   display_name: "Stripe Knowledge Patch"
-  short_description: "Stripe null: introduces plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node v18-v21 and Python..."
+  short_description: "Stripe as of July 2026: plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node and Python SDK..."

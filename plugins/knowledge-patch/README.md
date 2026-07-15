@@ -6,13 +6,13 @@ Knowledge patches are derived from the respective projects' official release not
 
 ## Install
 
-Use the Claude Code or Codex instructions in the repository `README.md`, then run `/knowledge-patch:setup` in Claude Code or invoke `$knowledge-patch-setup` in Codex.
+Use the Claude Code or Codex instructions in the repository `README.md`. Then invoke the native setup skill as `/knowledge-patch:knowledge-patch-setup` in Claude Code or `$knowledge-patch-setup` in Codex; a natural-language setup request works in either CLI.
 
-## Commands
+## Canonical skills and compatibility commands
 
-- `/knowledge-patch:setup` detects relevant bundled patches and writes activation state after confirmation.
-- `/knowledge-patch:activate` activates patches by name or alias, removes patches when asked to deactivate them, and clears activation when passed `none`.
-- `/knowledge-patch:status` shows the bundled patch catalog, activation state, generated-at age, content hashes, and missing artifacts.
+- Codex uses `$knowledge-patch-setup`, `$knowledge-patch-status`, or a natural-language request.
+- Claude Code uses `/knowledge-patch:knowledge-patch-setup`, `/knowledge-patch:knowledge-patch-status`, or a natural-language request.
+- `/knowledge-patch:setup`, `/knowledge-patch:activate`, and `/knowledge-patch:status` remain Claude Code compatibility aliases. They delegate to native skills and are not the canonical implementation.
 
 ## Skills
 
@@ -29,9 +29,9 @@ All bundled technology patches already live under `skills/`. Activation tells ag
 
 ## SessionStart Hook
 
-`hooks/session-start` is optional. When Claude Code runs the SessionStart hook from `hooks/hooks.json`, it can add gateway guidance and active patch names to the session context. Manual use through `using-knowledge-patch`, `/knowledge-patch:setup`, and `/knowledge-patch:activate` remains the reliable path.
+`hooks/session-start` is optional. When either CLI runs the SessionStart hook from `hooks/hooks.json`, it can add gateway guidance and active patch names to the session context. Manual or natural-language use through the native skills remains the reliable path.
 
-The `startup|clear|compact` matcher is deliberate. `resume` is excluded because resumed context already carries the earlier injection. The hook prefers `$CLAUDE_PROJECT_DIR` for project state and exits silently if state is malformed or an unexpected error occurs.
+The `startup|resume|clear|compact` matcher is deliberate. Resume re-reads activation state so changes made since the previous session replace stale dynamic guidance. The hook prefers `$CLAUDE_PROJECT_DIR` for project state and exits silently if state is malformed or an unexpected error occurs. Hooks are hints only; native skills continue to work when hooks are disabled, untrusted, or unavailable.
 
 ## Detection Signals
 
@@ -41,9 +41,9 @@ In `catalog/detection.json`, a plain file glob means that the path's existence i
 
 - `.claude-plugin/marketplace.json` exposes the Claude Code marketplace entry.
 - `.agents/plugins/marketplace.json` exposes the Codex marketplace entry.
-- `plugins/knowledge-patch/.claude-plugin/plugin.json` is the Claude Code plugin manifest.
-- `plugins/knowledge-patch/.codex-plugin/plugin.json` is the Codex plugin manifest and declares `"skills": "./skills/"`.
+- `plugins/knowledge-patch/.claude-plugin/plugin.json` is the Claude Code plugin manifest and explicitly declares native skills and hooks.
+- `plugins/knowledge-patch/.codex-plugin/plugin.json` is the Codex plugin manifest and explicitly declares native skills and hooks, but no commands component.
 - `plugins/knowledge-patch/skills/` contains the gateway skill, helper skills, and technology patch skills.
 - `plugins/knowledge-patch/catalog/` contains patch, alias, detection, and build catalogs.
-- `plugins/knowledge-patch/commands/` contains `setup.md`, `activate.md`, and `status.md`.
+- `plugins/knowledge-patch/commands/` contains the three Claude Code legacy compatibility aliases.
 - `plugins/knowledge-patch/hooks/` contains the optional SessionStart hook.

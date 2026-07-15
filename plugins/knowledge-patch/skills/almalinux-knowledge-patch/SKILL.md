@@ -1,8 +1,8 @@
 ---
 name: almalinux-knowledge-patch
-description: AlmaLinux changes after 9.3 through 10.2, including x86-64-v2 and i686 compatibility, Btrfs boot, post-quantum cryptography, RPMv6, ELevate paths, and 2026 security fixes. Load before working with AlmaLinux.
+description: "AlmaLinux 10.2: x86-64-v2 and i686 compatibility, Btrfs boot, post-quantum cryptography, RPMv6, ELevate paths, and current security fixes. Load before working with AlmaLinux."
 license: MIT
-version: null
+version: "10.2"
 metadata:
   author: Nevaberry
 ---

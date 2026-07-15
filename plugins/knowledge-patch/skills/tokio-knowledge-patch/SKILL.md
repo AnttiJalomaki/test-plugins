@@ -1,8 +1,8 @@
 ---
 name: tokio-knowledge-patch
-description: "Tokio changes since 1.39.x through 1.52.0, including MSRV and patch-floor upgrades, LocalRuntime, cooperative scheduling, runtime metrics, channel APIs, io_uring, sockets, tokio-util, and tokio-stream. Load before working with Tokio."
+description: "Tokio 1.52.0: MSRV and patch-floor upgrades, LocalRuntime, cooperative scheduling, runtime metrics, channel APIs, io_uring, sockets, tokio-util, and tokio-stream. Load before working with Tokio."
 license: MIT
-version: null
+version: "1.52.0"
 metadata:
   author: Nevaberry
 ---

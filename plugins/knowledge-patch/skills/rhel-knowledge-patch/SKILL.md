@@ -1,8 +1,8 @@
 ---
 name: rhel-knowledge-patch
-description: "RHEL version null: RHEL 10 platform upgrades, image mode and bootc, post-quantum crypto, DNF and RPM, Podman and Quadlet, IdM and SSSD, NetworkManager and nftables, kernel and storage, virtualization, and lifecycle behavior changed. Load before working with RHEL."
+description: "RHEL 10.2: image mode and bootc, post-quantum cryptography, DNF and RPM, Podman and Quadlet, IdM and SSSD, NetworkManager and nftables, kernel, storage, virtualization, and lifecycle changes. Load before working with RHEL."
 license: MIT
-version: null
+version: "10.2"
 metadata:
   author: Nevaberry
 ---

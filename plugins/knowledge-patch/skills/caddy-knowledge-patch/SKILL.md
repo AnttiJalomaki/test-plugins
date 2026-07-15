@@ -1,8 +1,8 @@
 ---
 name: caddy-knowledge-patch
-description: "Covers Caddy changes after 2.8.x through 2.11.x, including TLS and Automatic HTTPS, ECH, reverse proxying, Caddyfile syntax, security hardening, observability, and operations. Load before working with Caddy."
+description: "Caddy 2.11.1: TLS and Automatic HTTPS, ECH, reverse proxying, Caddyfile syntax, security hardening, observability, and operations. Load before working with Caddy."
 license: MIT
-version: null
+version: "2.11.1"
 metadata:
   author: Nevaberry
 ---

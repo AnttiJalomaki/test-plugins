@@ -1,6 +1,6 @@
 ---
 name: stripe-knowledge-patch
-description: "Stripe null: introduces plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node v18-v21 and Python v12-v15 migrations. Load before working with Stripe."
+description: "Stripe as of July 2026: plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node and Python SDK migrations. Load before working with Stripe."
 license: MIT
 version: null
 metadata:

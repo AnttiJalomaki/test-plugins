@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-15T05:45:29Z",
+  "generated_at": "2026-07-15T15:23:50Z",
   "rules": [
     {
       "id": "almalinux-knowledge-patch",
@@ -20,7 +20,7 @@
         "system-administration",
         "security"
       ],
-      "covered_version": "null",
+      "covered_version": "10.2",
       "path": "skills/almalinux-knowledge-patch",
       "coverage_path": "skills/almalinux-knowledge-patch/coverage.json",
       "signals": {
@@ -84,7 +84,7 @@
         "system-administration",
         "pacman"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/arch-knowledge-patch",
       "coverage_path": "skills/arch-knowledge-patch/coverage.json",
       "signals": {
@@ -191,7 +191,7 @@
         "retries",
         "clients"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/aws-sdk-knowledge-patch",
       "coverage_path": "skills/aws-sdk-knowledge-patch/coverage.json",
       "signals": {
@@ -223,7 +223,7 @@
         "extractors",
         "async"
       ],
-      "covered_version": "null",
+      "covered_version": "0.8.0",
       "path": "skills/axum-knowledge-patch",
       "coverage_path": "skills/axum-knowledge-patch/coverage.json",
       "signals": {
@@ -350,7 +350,7 @@
         "routing",
         "configuration"
       ],
-      "covered_version": "null",
+      "covered_version": "2.11.1",
       "path": "skills/caddy-knowledge-patch",
       "coverage_path": "skills/caddy-knowledge-patch/coverage.json",
       "signals": {
@@ -380,7 +380,7 @@
         "system-administration",
         "rpm"
       ],
-      "covered_version": "null",
+      "covered_version": "10.0",
       "path": "skills/centos-stream-knowledge-patch",
       "coverage_path": "skills/centos-stream-knowledge-patch/coverage.json",
       "signals": {
@@ -478,7 +478,7 @@
         "automation",
         "configuration"
       ],
-      "covered_version": "null",
+      "covered_version": "0.144.0",
       "path": "skills/codex-knowledge-patch",
       "coverage_path": "skills/codex-knowledge-patch/coverage.json",
       "signals": {
@@ -794,7 +794,7 @@
         "system-administration",
         "selinux"
       ],
-      "covered_version": "null",
+      "covered_version": "44",
       "path": "skills/fedora-knowledge-patch",
       "coverage_path": "skills/fedora-knowledge-patch/coverage.json",
       "signals": {
@@ -857,7 +857,7 @@
         "kubernetes",
         "data"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/gcp-knowledge-patch",
       "coverage_path": "skills/gcp-knowledge-patch/coverage.json",
       "signals": {
@@ -956,7 +956,7 @@
         "rtk",
         "ppp"
       ],
-      "covered_version": "latest",
+      "covered_version": null,
       "path": "skills/gnss-navigation-knowledge-patch",
       "coverage_path": "skills/gnss-navigation-knowledge-patch/coverage.json",
       "signals": {
@@ -1024,7 +1024,7 @@
         "positioning",
         "nmea"
       ],
-      "covered_version": "latest",
+      "covered_version": "3.27",
       "path": "skills/gpsd-knowledge-patch",
       "coverage_path": "skills/gpsd-knowledge-patch/coverage.json",
       "signals": {
@@ -1190,7 +1190,7 @@
         "tools",
         "langgraph"
       ],
-      "covered_version": "null",
+      "covered_version": "1.1.0",
       "path": "skills/langchain-knowledge-patch",
       "coverage_path": "skills/langchain-knowledge-patch/coverage.json",
       "signals": {
@@ -1285,7 +1285,7 @@
         "tls",
         "load-balancing"
       ],
-      "covered_version": "null",
+      "covered_version": "1.31.0",
       "path": "skills/nginx-knowledge-patch",
       "coverage_path": "skills/nginx-knowledge-patch/coverage.json",
       "signals": {
@@ -1487,7 +1487,7 @@
         "postgresql",
         "indexing"
       ],
-      "covered_version": "null",
+      "covered_version": "0.8.5",
       "path": "skills/pgvector-knowledge-patch",
       "coverage_path": "skills/pgvector-knowledge-patch/coverage.json",
       "signals": {
@@ -1708,7 +1708,7 @@
         "training",
         "gpu"
       ],
-      "covered_version": "null",
+      "covered_version": "2.11.0",
       "path": "skills/pytorch-knowledge-patch",
       "coverage_path": "skills/pytorch-knowledge-patch/coverage.json",
       "signals": {
@@ -1739,7 +1739,7 @@
         "jobs",
         "hotwire"
       ],
-      "covered_version": "null",
+      "covered_version": "8.1",
       "path": "skills/rails-knowledge-patch",
       "coverage_path": "skills/rails-knowledge-patch/coverage.json",
       "signals": {
@@ -1864,7 +1864,7 @@
         "system-administration",
         "selinux"
       ],
-      "covered_version": "null",
+      "covered_version": "10.2",
       "path": "skills/rhel-knowledge-patch",
       "coverage_path": "skills/rhel-knowledge-patch/coverage.json",
       "signals": {
@@ -1893,7 +1893,7 @@
         "system-administration",
         "rpm"
       ],
-      "covered_version": "null",
+      "covered_version": "10.2",
       "path": "skills/rocky-knowledge-patch",
       "coverage_path": "skills/rocky-knowledge-patch/coverage.json",
       "signals": {
@@ -2055,7 +2055,7 @@
         "formats",
         "rust"
       ],
-      "covered_version": "null",
+      "covered_version": "1.0.220",
       "path": "skills/serde-knowledge-patch",
       "coverage_path": "skills/serde-knowledge-patch/coverage.json",
       "signals": {
@@ -2088,7 +2088,7 @@
         "components",
         "ssr"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/solidjs-knowledge-patch",
       "coverage_path": "skills/solidjs-knowledge-patch/coverage.json",
       "signals": {
@@ -2181,7 +2181,7 @@
         "macros",
         "migrations"
       ],
-      "covered_version": "null",
+      "covered_version": "0.9.0",
       "path": "skills/sqlx-knowledge-patch",
       "coverage_path": "skills/sqlx-knowledge-patch/coverage.json",
       "signals": {
@@ -2217,7 +2217,7 @@
         "webhooks",
         "connect"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/stripe-knowledge-patch",
       "coverage_path": "skills/stripe-knowledge-patch/coverage.json",
       "signals": {
@@ -2285,7 +2285,7 @@
         "system-administration",
         "zypper"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/suse-knowledge-patch",
       "coverage_path": "skills/suse-knowledge-patch/coverage.json",
       "signals": {
@@ -2319,7 +2319,7 @@
         "sveltekit",
         "runes"
       ],
-      "covered_version": "null",
+      "covered_version": null,
       "path": "skills/svelte-knowledge-patch",
       "coverage_path": "skills/svelte-knowledge-patch/coverage.json",
       "signals": {
@@ -2510,7 +2510,7 @@
         "io",
         "networking"
       ],
-      "covered_version": "null",
+      "covered_version": "1.52.0",
       "path": "skills/tokio-knowledge-patch",
       "coverage_path": "skills/tokio-knowledge-patch/coverage.json",
       "signals": {
@@ -2633,7 +2633,7 @@
         "system-administration",
         "lts"
       ],
-      "covered_version": "null",
+      "covered_version": "26.04",
       "path": "skills/ubuntu-knowledge-patch",
       "coverage_path": "skills/ubuntu-knowledge-patch/coverage.json",
       "signals": {
@@ -2830,7 +2830,7 @@
         "memory",
         "cross-compilation"
       ],
-      "covered_version": "null",
+      "covered_version": "0.15.1",
       "path": "skills/zig-knowledge-patch",
       "coverage_path": "skills/zig-knowledge-patch/coverage.json",
       "signals": {

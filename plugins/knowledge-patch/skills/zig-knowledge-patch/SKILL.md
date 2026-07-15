@@ -1,8 +1,8 @@
 ---
 name: zig-knowledge-patch
-description: Zig changes after 0.12.x through 0.15.1, including allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API migrations, and language breaking changes. Load before working with Zig.
+description: "Zig 0.15.1: allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API migrations, and language breaking changes. Load before working with Zig."
 license: MIT
-version: null
+version: "0.15.1"
 metadata:
   author: Nevaberry
 ---

@@ -1,8 +1,8 @@
 ---
 name: ubuntu-knowledge-patch
-description: "Ubuntu version null: APT 3, sudo-rs, Rust coreutils, cloud-init datasource enforcement, systemd and Dracut boot changes, OpenSSH 10, installer constraints, and service migrations. Load before working with Ubuntu."
+description: "Ubuntu 26.04: APT 3, sudo-rs, Rust coreutils, cloud-init datasource enforcement, systemd and Dracut boot changes, OpenSSH, installer constraints, and service migrations. Load before working with Ubuntu."
 license: MIT
-version: null
+version: "26.04"
 metadata:
   author: Nevaberry
 ---

@@ -1,8 +1,8 @@
 ---
 name: pytorch-knowledge-patch
-description: PyTorch changes after 2.3 through 2.11.0 and July 2026 topic updates—safe loading, TorchScript and FSDP1 migrations, torch.compile, FlexAttention, FSDP2, export, AOTInductor, distributed APIs, and platform packaging. Load before working with PyTorch.
+description: "PyTorch 2.11.0: safe loading, TorchScript and FSDP1 migrations, torch.compile, FlexAttention, FSDP2, export, AOTInductor, distributed APIs, and platform packaging. Load before working with PyTorch."
 license: MIT
-version: null
+version: "2.11.0"
 metadata:
   author: Nevaberry
 ---

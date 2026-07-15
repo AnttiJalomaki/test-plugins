@@ -1,6 +1,6 @@
 ---
 name: arch-knowledge-patch
-description: Arch Linux changes after mid-2024 and pacman 6.x, including pacman 7.1.0 sandboxing and signatures, breaking package transitions, urgent upgrade interventions, and service migrations. Load before working with Arch Linux.
+description: "Arch Linux as of July 2026: pacman sandboxing and signatures, breaking package transitions, urgent upgrade interventions, and service migrations. Load before working with Arch Linux."
 license: MIT
 version: null
 metadata:

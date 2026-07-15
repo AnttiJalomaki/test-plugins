@@ -1,8 +1,8 @@
 ---
 name: gnss-navigation-knowledge-patch
-description: "Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX 4, SPARTN, precise products, and ZED-F9P behavior changed beyond the mid-2024 baseline. Load before working with GNSS Navigation."
+description: "GNSS Navigation as of July 2026: Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX, SPARTN, precise products, and ZED-F9P behavior. Load before working with GNSS Navigation."
 license: MIT
-version: latest
+version: null
 metadata:
   author: Nevaberry
 ---

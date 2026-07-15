@@ -1,13 +1,12 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-15T05:45:29Z",
+  "generated_at": "2026-07-15T15:23:50Z",
   "patches": [
     {
       "id": "almalinux-knowledge-patch",
       "display_name": "Almalinux Knowledge Patch",
-      "description": "AlmaLinux changes after 9.3 through 10.2, including x86-64-v2 and i686 compatibility, Btrfs boot, post-quantum cryptography, RPMv6, ELevate paths, and 2026 security fixes. Load before working with AlmaLinux.",
-      "covered_version": "null",
-      "baseline": "AlmaLinux 9.3",
+      "description": "AlmaLinux 10.2: x86-64-v2 and i686 compatibility, Btrfs boot, post-quantum cryptography, RPMv6, ELevate paths, and current security fixes. Load before working with AlmaLinux.",
+      "covered_version": "10.2",
       "path": "skills/almalinux-knowledge-patch",
       "languages": [
         "bash"
@@ -19,8 +18,8 @@
         "system-administration",
         "security"
       ],
-      "content_hash": "sha256:a02d1a5db020d30743e0c0817663c2994809cc58c2dae8ec1823dbda4c2d0e9d",
-      "generated_at": "2026-07-12T22:54:50Z",
+      "content_hash": "sha256:324829d02c5e8b807434e3961fd6fe36f549ac4ede1f2d12b5fff5dcb28ca427",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/almalinux-knowledge-patch/coverage.json"
     },
     {
@@ -28,7 +27,6 @@
       "display_name": "Angular Knowledge Patch",
       "description": "Angular 21.0.0: zoneless-by-default change detection, Signal Forms, Angular Aria, Vitest, hybrid rendering, and modern resource APIs. Load before working with Angular.",
       "covered_version": "21.0.0",
-      "baseline": "",
       "path": "skills/angular-knowledge-patch",
       "languages": [
         "typescript"
@@ -48,9 +46,8 @@
     {
       "id": "arch-knowledge-patch",
       "display_name": "Arch Knowledge Patch",
-      "description": "Arch Linux changes after mid-2024 and pacman 6.x, including pacman 7.1.0 sandboxing and signatures, breaking package transitions, urgent upgrade interventions, and service migrations. Load before working with Arch Linux.",
-      "covered_version": "null",
-      "baseline": "Arch Linux through mid-2024 and pacman 6.x; covers changes through 2026-07-12, including pacman 7.1.0",
+      "description": "Arch Linux as of July 2026: pacman sandboxing and signatures, breaking package transitions, urgent upgrade interventions, and service migrations. Load before working with Arch Linux.",
+      "covered_version": null,
       "path": "skills/arch-knowledge-patch",
       "languages": [
         "bash"
@@ -62,8 +59,8 @@
         "system-administration",
         "pacman"
       ],
-      "content_hash": "sha256:47bc9fd032cf63f8bed585c21a06906f947c8702f1386157d69b32bc99fcbf9a",
-      "generated_at": "2026-07-12T22:54:50Z",
+      "content_hash": "sha256:71751bc1056c1063624e8680cc1bd86ac87c67dd5c24294176b2ddb773cd22ed",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/arch-knowledge-patch/coverage.json"
     },
     {
@@ -71,7 +68,6 @@
       "display_name": "Astro Knowledge Patch",
       "description": "Astro 7.0.0: Sätteri Markdown and MDX, stable route caching and structured logging, queued rendering, advanced routing, Fonts, live collections, CSP, and adapter APIs. Load before working with Astro.",
       "covered_version": "7.0.0",
-      "baseline": "",
       "path": "skills/astro-knowledge-patch",
       "languages": [
         "typescript",
@@ -94,7 +90,6 @@
       "display_name": "Authjs Knowledge Patch",
       "description": "Auth.js 5.0.0: Better Auth transition guidance, provider security, passkeys, framework sessions, adapter contracts, and critical package fixes. Load before working with Auth.js.",
       "covered_version": "5.0.0",
-      "baseline": "",
       "path": "skills/authjs-knowledge-patch",
       "languages": [
         "typescript",
@@ -114,9 +109,8 @@
     {
       "id": "aws-sdk-knowledge-patch",
       "display_name": "Aws Sdk Knowledge Patch",
-      "description": "AWS SDK changes after the stated baseline through July 2026, including lifecycle migrations, retry and endpoint defaults, authentication, runtime support, removed clients, Lambda Durable Functions, AgentCore, S3 Vectors, and current service APIs. Load before working with AWS SDKs.",
-      "covered_version": "null",
-      "baseline": "AWS SDK for JavaScript v3, boto3/botocore, AWS SDK for Java 2.x, Go v2, .NET v3, and pre-2025/2026 shared SDK defaults and lifecycle state",
+      "description": "AWS SDKs as of July 2026: lifecycle migrations, retry and endpoint defaults, authentication, runtime support, removed clients, Lambda Durable Functions, AgentCore, S3 Vectors, and current service APIs. Load before working with AWS SDKs.",
+      "covered_version": null,
       "path": "skills/aws-sdk-knowledge-patch",
       "languages": [
         "typescript",
@@ -136,16 +130,15 @@
         "retries",
         "clients"
       ],
-      "content_hash": "sha256:27ac0e0c033f036b6c6d09291a7e6876e45bf141f530f849d673d2552182dc5a",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:9db38131abe8035b35dbe7d569b48ea7597c8fbde7e19f1e1d9285f0dff77043",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/aws-sdk-knowledge-patch/coverage.json"
     },
     {
       "id": "axum-knowledge-patch",
       "display_name": "Axum Knowledge Patch",
-      "description": "Axum 0.8 and its companion crates add native async extractors, stricter optional and path extraction, Sync routing, generic serving, byte-backed WebSockets, and explicit axum-extra feature gates since Axum 0.7.x. Load before working with Axum.",
-      "covered_version": "null",
-      "baseline": "Axum through 0.7.x",
+      "description": "Axum 0.8.0: native async extractors, stricter optional and path extraction, Sync routing, generic serving, byte-backed WebSockets, and explicit axum-extra feature gates. Load before working with Axum.",
+      "covered_version": "0.8.0",
       "path": "skills/axum-knowledge-patch",
       "languages": [
         "rust",
@@ -158,8 +151,8 @@
         "extractors",
         "async"
       ],
-      "content_hash": "sha256:ea36b5d06e040b9b9fe77fa3d54a4853ef5949ef17330adf0e7b41e10771d9bd",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:c6507abd027d838b287d90f74bc67960a66b11c6a082e64f213d245b28604171",
+      "generated_at": "2026-07-15T15:23:50Z",
       "coverage_path": "skills/axum-knowledge-patch/coverage.json"
     },
     {
@@ -167,7 +160,6 @@
       "display_name": "Better Auth Knowledge Patch",
       "description": "Better Auth 1.5: standalone tooling, extracted packages, stateless sessions, OAuth 2.1, Agent Auth, framework integrations, security controls, and plugin migrations. Load before working with Better Auth.",
       "covered_version": "1.5",
-      "baseline": "",
       "path": "skills/better-auth-knowledge-patch",
       "languages": [
         "typescript",
@@ -189,7 +181,6 @@
       "display_name": "Biome Knowledge Patch",
       "description": "Biome 2.4.0: configuration roots and ordered includes, linter domains and type-aware analysis, assists, GritQL plugins, HTML/CSS/GraphQL/SVG tooling, reporters, and migrations. Load before working with Biome.",
       "covered_version": "2.4.0",
-      "baseline": "",
       "path": "skills/biome-knowledge-patch",
       "languages": [
         "typescript",
@@ -213,7 +204,6 @@
       "display_name": "Bun Knowledge Patch",
       "description": "Bun 1.3.14 adds route-based servers, unified SQL/Redis/S3 clients, HTML/CSS builds, standalone compilation, richer testing, runtime APIs, and expanded Node.js compatibility. Load before working with Bun.",
       "covered_version": "1.3.14",
-      "baseline": "",
       "path": "skills/bun-knowledge-patch",
       "languages": [
         "typescript",
@@ -234,9 +224,8 @@
     {
       "id": "caddy-knowledge-patch",
       "display_name": "Caddy Knowledge Patch",
-      "description": "Covers Caddy changes after 2.8.x through 2.11.x, including TLS and Automatic HTTPS, ECH, reverse proxying, Caddyfile syntax, security hardening, observability, and operations. Load before working with Caddy.",
-      "covered_version": "null",
-      "baseline": "Caddy through 2.8.x",
+      "description": "Caddy 2.11.1: TLS and Automatic HTTPS, ECH, reverse proxying, Caddyfile syntax, security hardening, observability, and operations. Load before working with Caddy.",
+      "covered_version": "2.11.1",
       "path": "skills/caddy-knowledge-patch",
       "languages": [
         "caddyfile",
@@ -249,16 +238,15 @@
         "routing",
         "configuration"
       ],
-      "content_hash": "sha256:2cf023c4e02156dfdca5e18800d41a78fae9f6e35c2a1cb2710f9b3d2ed129e5",
-      "generated_at": "2026-07-13T07:28:20Z",
+      "content_hash": "sha256:9829f7f40a3b723e054595b69a33eb12658860da12e6cb0869d42eae41d72024",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/caddy-knowledge-patch/coverage.json"
     },
     {
       "id": "centos-stream-knowledge-patch",
       "display_name": "Centos Stream Knowledge Patch",
-      "description": "CentOS Stream changes after CentOS Stream 9, covering Stream 10 hardware, upgrades, image mode, cryptography, identity, networking, storage, containers, RPM, and service migrations. Load before working with CentOS Stream.",
-      "covered_version": "null",
-      "baseline": "CentOS Stream 9",
+      "description": "CentOS Stream 10.0: hardware, upgrades, image mode, cryptography, identity, networking, storage, containers, RPM, and service migrations. Load before working with CentOS Stream.",
+      "covered_version": "10.0",
       "path": "skills/centos-stream-knowledge-patch",
       "languages": [
         "bash"
@@ -270,8 +258,8 @@
         "system-administration",
         "rpm"
       ],
-      "content_hash": "sha256:1db5741053412b2cd7efe60425d4f7ae63d9a2726e5c4aa06ca7dced76228a5e",
-      "generated_at": "2026-07-12T22:54:50Z",
+      "content_hash": "sha256:a8f15e940e516545ade96eecad1735e2c5d3535f43b0e9db7a42308095eacbf5",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/centos-stream-knowledge-patch/coverage.json"
     },
     {
@@ -279,7 +267,6 @@
       "display_name": "Chrony Knowledge Patch",
       "description": "chrony 4.7–4.8 changes since 4.6.x, including stricter validation and build requirements, maxunreach and copy source controls, reference-clock updates, NTP-over-PTP, NTS deployment, and monitoring diagnostics. Load before working with chrony.",
       "covered_version": "4.8",
-      "baseline": "chrony through 4.6.x",
       "path": "skills/chrony-knowledge-patch",
       "languages": [
         "c",
@@ -301,7 +288,6 @@
       "display_name": "Clerk Knowledge Patch",
       "description": "Clerk 1.0.0: Core 3 custom flows, token-aware authentication, Billing, API keys, Organizations, native Expo, and current JavaScript, Go, and Python SDK contracts. Load before working with Clerk.",
       "covered_version": "1.0.0",
-      "baseline": "",
       "path": "skills/clerk-knowledge-patch",
       "languages": [
         "typescript",
@@ -324,9 +310,8 @@
     {
       "id": "codex-knowledge-patch",
       "display_name": "Codex Knowledge Patch",
-      "description": "Current Codex surfaces add desktop worktrees and automations, remote TUI WebSockets, structured CLI execution, cloud tasks, MCP and plugin administration, configurable approvals, and expanded TUI workflows. Load before working with OpenAI Codex.",
-      "covered_version": "null",
-      "baseline": "before the public Codex CLI launch, with no stable CLI, web, IDE extension, desktop app, or unified product changelog; coverage extends through `codex-app` (2026-02-02), `0.144.0` (2026-07-09), `cli-overview-and-features` (2026-07-11), and `cli-reference-and-commands` (2026-07-11)",
+      "description": "Codex 0.144.0: desktop worktrees and automations, remote TUI WebSockets, structured CLI execution, cloud tasks, MCP and plugin administration, configurable approvals, and expanded TUI workflows. Load before working with OpenAI Codex.",
+      "covered_version": "0.144.0",
       "path": "skills/codex-knowledge-patch",
       "languages": [
         "bash",
@@ -340,8 +325,8 @@
         "automation",
         "configuration"
       ],
-      "content_hash": "sha256:cf9767d8908de6c8d2e0ae04f8d8f819a26ad6a7c29f9e1462168f0f4aa04722",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:745a3400926ca17c239464ac4ccc6c98839d93cc9e1ceb553c8fdd04d29d9a1d",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/codex-knowledge-patch/coverage.json"
     },
     {
@@ -349,7 +334,6 @@
       "display_name": "Debian Knowledge Patch",
       "description": "Debian 13.0: Trixie upgrade safeguards for OpenSSH, dm-crypt, systemd, stateful-service migrations, architecture and ABI changes, package replacements, and platform defaults. Load before working with Debian.",
       "covered_version": "13.0",
-      "baseline": "",
       "path": "skills/debian-knowledge-patch",
       "languages": [
         "bash"
@@ -370,7 +354,6 @@
       "display_name": "Deno Knowledge Patch",
       "description": "Deno 2.7: Deno 2 migration, Node compatibility, permissions and dependency security, workspaces, bundling and compilation, testing, OpenTelemetry, Temporal, and desktop applications — Load before working with Deno.",
       "covered_version": "2.7",
-      "baseline": "",
       "path": "skills/deno-knowledge-patch",
       "languages": [
         "typescript",
@@ -393,7 +376,6 @@
       "display_name": "Dioxus Knowledge Patch",
       "description": "Dioxus 0.7.9: scope-free components, signals and stores, linker-discovered assets, Axum-native fullstack APIs, typed streams, routing, hot-patching, WASM splitting, Native rendering, and cross-platform CLI packaging. Load before working with Dioxus.",
       "covered_version": "0.7.9",
-      "baseline": "Dioxus through 0.4.x",
       "path": "skills/dioxus-knowledge-patch",
       "languages": [
         "rust"
@@ -416,7 +398,6 @@
       "display_name": "Django Knowledge Patch",
       "description": "Django 6.0.8: adds composite primary keys, the Tasks API, template partials, built-in CSP, async pagination, and modern email APIs while tightening runtime, ORM, and extension compatibility. Load before working with Django.",
       "covered_version": "6.0.8",
-      "baseline": "",
       "path": "skills/django-knowledge-patch",
       "languages": [
         "python"
@@ -437,7 +418,6 @@
       "display_name": "Dnf5 Security Updates Knowledge Patch",
       "description": "DNF5 changes after 5.1.x and Fedora 40-era behavior cover Fedora 41 and RHEL 10 migration, advisory filters, security automation, offline transactions, repository/configuration semantics, JSON and D-Bus APIs, and Ansible integration. Load before working with DNF5 Security Updates.",
       "covered_version": "2026.04.07",
-      "baseline": "DNF5 through 5.1.x and Fedora 40-era behavior",
       "path": "skills/dnf5-security-updates-knowledge-patch",
       "languages": [
         "bash"
@@ -458,7 +438,6 @@
       "display_name": "Docker Knowledge Patch",
       "description": "Docker changes since Engine 24.x and Compose 2.x through Engine 29.3, including containerd image storage, firewall and networking shifts, API and Go SDK breaks, multi-platform images, Buildx source policies, and Compose 5. Load before working with Docker.",
       "covered_version": "29.3",
-      "baseline": "Docker Engine 24.x and Compose 2.x",
       "path": "skills/docker-knowledge-patch",
       "languages": [
         "bash",
@@ -480,7 +459,6 @@
       "display_name": "Drizzle Knowledge Patch",
       "description": "Drizzle ORM 1.0.0-beta.19: secure SQL identifier and alias escaping, runtime-aware Drizzle Kit module loading, and first-class Zod schema generation. Load before working with Drizzle ORM.",
       "covered_version": "1.0.0-beta.19",
-      "baseline": "",
       "path": "skills/drizzle-knowledge-patch",
       "languages": [
         "typescript"
@@ -501,7 +479,6 @@
       "display_name": "Elixir Knowledge Patch",
       "description": "Elixir 1.20.0-rc: set-theoretic type checking, built-in JSON, OTP runtime changes, Phoenix 1.8, LiveView 1.1, Ecto 3.12, compiler and tooling migrations, and new interoperability options. Load before working with Elixir.",
       "covered_version": "1.20.0-rc",
-      "baseline": "",
       "path": "skills/elixir-knowledge-patch",
       "languages": [
         "elixir"
@@ -522,7 +499,6 @@
       "display_name": "Fastapi Knowledge Patch",
       "description": "FastAPI changes after 0.115.12 covering scoped yield dependencies, strict JSON content types, Pydantic 2.12, typed streaming and SSE, static frontends, and Starlette 1.0 compatibility. Load before working with FastAPI.",
       "covered_version": "0.135.3",
-      "baseline": "FastAPI through 0.115.12 with established Pydantic v2 integration, dependency injection, endpoints, OpenAPI, middleware, security, CORS, background tasks, WebSockets, and lifespan events; covered range: included changes through the `2026-07` batch",
       "path": "skills/fastapi-knowledge-patch",
       "languages": [
         "python"
@@ -541,9 +517,8 @@
     {
       "id": "fedora-knowledge-patch",
       "display_name": "Fedora Knowledge Patch",
-      "description": "Fedora Linux version null: DNF5, RPM 6, image-mode and OCI workflows, nftables networking, installer and boot changes, package migrations, current toolchains, and Podman 6 readiness. Load before working with Fedora Linux.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "Fedora Linux 44: DNF5, RPM 6, image-mode and OCI workflows, nftables networking, installer and boot changes, package migrations, current toolchains, and Podman readiness. Load before working with Fedora Linux.",
+      "covered_version": "44",
       "path": "skills/fedora-knowledge-patch",
       "languages": [
         "bash"
@@ -555,8 +530,8 @@
         "system-administration",
         "selinux"
       ],
-      "content_hash": "sha256:5156e0da3ee3fcdc37dd1c46c6b23e06b27d7544552d663c3c6ff7b5f52f9123",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:2d4e170e91fede493863112f568730b43a7889c5de7ee9e1d1062088a89c8f9b",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/fedora-knowledge-patch/coverage.json"
     },
     {
@@ -564,7 +539,6 @@
       "display_name": "Flutter Knowledge Patch",
       "description": "Flutter 3.41: UIScene and SwiftPM migrations, Android build changes, Dart language and analyzer updates, Widget Preview, web and Impeller rendering, accessibility, and desktop windowing. Load before working with Flutter.",
       "covered_version": "3.41",
-      "baseline": "",
       "path": "skills/flutter-knowledge-patch",
       "languages": [
         "dart"
@@ -583,9 +557,8 @@
     {
       "id": "gcp-knowledge-patch",
       "display_name": "Gcp Knowledge Patch",
-      "description": "Google Cloud Platform null: July 2026 Cloud Run, GKE, BigQuery, Pub/Sub, Gemini, Vertex AI, IAM, networking, migration, and agent-platform changes. Load before working with Google Cloud Platform.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "Google Cloud Platform as of July 2026: Cloud Run, GKE, BigQuery, Pub/Sub, Gemini, Vertex AI, IAM, networking, migration, and agent-platform changes. Load before working with Google Cloud Platform.",
+      "covered_version": null,
       "path": "skills/gcp-knowledge-patch",
       "languages": [
         "yaml",
@@ -600,8 +573,8 @@
         "kubernetes",
         "data"
       ],
-      "content_hash": "sha256:652c059321d194a787bbbe324a27622b4641f5f4dee224d362b8489ace06d8e9",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:771831cd66212dd57886a87c675c42ce62f2953100f9ff89531c1351098ebbb9",
+      "generated_at": "2026-07-15T15:18:54Z",
       "coverage_path": "skills/gcp-knowledge-patch/coverage.json"
     },
     {
@@ -609,7 +582,6 @@
       "display_name": "Geodesy Wgs84 Knowledge Patch",
       "description": "Adds WGS 84 G2296 and ITRF2020-u2024 frame guidance, PROJ 9.4-9.8.1 compatibility changes, epoch-aware transformations, robust geodesics, vertical datums, and current pyproj behavior since the WGS 84 (G2139), ITRF2020, and PROJ 9.3 baseline. Load before working with Geodesy / WGS 84.",
       "covered_version": "1.0.0",
-      "baseline": "WGS 84 (G2139), ITRF2020, and PROJ through 9.3; covers WGS 84 (G2296), ITRF2020-u2024, PROJ 9.4 through 9.8.1, and related implementation details",
       "path": "skills/geodesy-wgs84-knowledge-patch",
       "languages": [
         "python",
@@ -631,7 +603,6 @@
       "display_name": "Gleam Knowledge Patch",
       "description": "Gleam 1.7.0–1.17.0 adds assert and echo expressions, richer constants and guards, safer package workflows, JavaScript source maps, escripts, supported FFI APIs, and expanded language-server tooling. Load before working with Gleam.",
       "covered_version": "1.15",
-      "baseline": "Gleam through v1.6.x (core language, types, pattern matching, pipes, `use`, `Result`/`Option`, labelled arguments, generics, opaque types, externals/FFI, BEAM and JavaScript targets, and basic build tooling); coverage: Gleam 1.7.0 through 1.17.0 plus current language, FFI, conventions, configuration, and standard-library guidance",
       "path": "skills/gleam-knowledge-patch",
       "languages": [
         "gleam"
@@ -650,9 +621,8 @@
     {
       "id": "gnss-navigation-knowledge-patch",
       "display_name": "Gnss Navigation Knowledge Patch",
-      "description": "Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX 4, SPARTN, precise products, and ZED-F9P behavior changed beyond the mid-2024 baseline. Load before working with GNSS Navigation.",
-      "covered_version": "latest",
-      "baseline": "",
+      "description": "GNSS Navigation as of July 2026: Galileo OSNMA Initial Service, HAS, modern multi-constellation signals, RINEX, SPARTN, precise products, and ZED-F9P behavior. Load before working with GNSS Navigation.",
+      "covered_version": null,
       "path": "skills/gnss-navigation-knowledge-patch",
       "languages": [
         "cpp",
@@ -665,8 +635,8 @@
         "rtk",
         "ppp"
       ],
-      "content_hash": "sha256:f2a3d908e3fd3dda80c99c329279027bbebe3fd4bcadb4f223250dc4cfa8af26",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:2e9f1da7021df90564ec84707982dc07ad25f7a0cb05f0e0827c84f3471c4cdf",
+      "generated_at": "2026-07-15T15:18:56Z",
       "coverage_path": "skills/gnss-navigation-knowledge-patch/coverage.json"
     },
     {
@@ -674,7 +644,6 @@
       "display_name": "Go Knowledge Patch",
       "description": "Go 1.26.0: function iterators, os.Root, container-aware scheduling, Green Tea GC, post-quantum TLS, crypto hardening, testing/synctest, JSON v2, and modernized tooling. Load before working with Go.",
       "covered_version": "1.26.0",
-      "baseline": "",
       "path": "skills/go-knowledge-patch",
       "languages": [
         "go"
@@ -693,9 +662,8 @@
     {
       "id": "gpsd-knowledge-patch",
       "display_name": "Gpsd Knowledge Patch",
-      "description": "Changes after gpsd 3.25, including 3.26–3.27 security and API corrections, UBX configuration items, JSON/client semantics, precision timing, and receiver tooling. Load before working with gpsd.",
-      "covered_version": "latest",
-      "baseline": "gpsd through 3.25; covers later releases through the latest documented state, including the 3.27.6 development stream",
+      "description": "gpsd 3.27: security and API corrections, UBX configuration items, JSON and client semantics, precision timing, and receiver tooling. Load before working with gpsd.",
+      "covered_version": "3.27",
       "path": "skills/gpsd-knowledge-patch",
       "languages": [
         "c",
@@ -709,8 +677,8 @@
         "positioning",
         "nmea"
       ],
-      "content_hash": "sha256:9fabd4c83e9699e4f85b3aa3f1b40443fb357fbb29bea98639ec404435e991ef",
-      "generated_at": "2026-07-12T23:33:52Z",
+      "content_hash": "sha256:5a6ff1dcb3d99feda03ff1ef1dc08af0b656efd8fa3527c5f8b6619091c438f0",
+      "generated_at": "2026-07-15T15:18:56Z",
       "coverage_path": "skills/gpsd-knowledge-patch/coverage.json"
     },
     {
@@ -718,7 +686,6 @@
       "display_name": "Hono Knowledge Patch",
       "description": "Hono 4.8–4.12 changes since 4.7.x, including explicit JWT algorithms, security baselines, typed RPC URLs and responses, SSG plugins, streaming, middleware, adapters, and the Hono CLI. Load before working with Hono.",
       "covered_version": "4.12",
-      "baseline": "Hono through v4.7.x (core routing, middleware, `hc`, JSX/SSR, WebSocket helpers, and Cloudflare Workers/Pages, Deno, Bun, and Node.js adapters); covered range: v4.8.0 through v4.12.x plus the included topical guidance current to 2026-07-12",
       "path": "skills/hono-knowledge-patch",
       "languages": [
         "typescript",
@@ -740,7 +707,6 @@
       "display_name": "Htmx Knowledge Patch",
       "description": "htmx 4.0.0: module-specific distributions, safer request defaults, public swap APIs, history and cache controls, validation hooks, and extension workflows. Load before working with htmx.",
       "covered_version": "4.0.0",
-      "baseline": "",
       "path": "skills/htmx-knowledge-patch",
       "languages": [
         "html",
@@ -762,7 +728,6 @@
       "display_name": "Kotlin Knowledge Patch",
       "description": "Kotlin 2.3.20: context parameters, explicit backing fields, Build Tools API defaults, AGP 9 migration, modern Kotlin/Wasm and Native interop, Compose Multiplatform 1.11, and updated coroutine and serialization APIs. Load before working with Kotlin.",
       "covered_version": "2.3.20",
-      "baseline": "",
       "path": "skills/kotlin-knowledge-patch",
       "languages": [
         "kotlin"
@@ -783,7 +748,6 @@
       "display_name": "Kubernetes Knowledge Patch",
       "description": "Kubernetes 1.35.0: cgroup v2-only kubelets, DRA v1 and device sharing, in-place Pod resize, Pod certificates, workload scheduling, Gateway API, admission, kubectl, and client migrations. Load before working with Kubernetes.",
       "covered_version": "1.35.0",
-      "baseline": "",
       "path": "skills/kubernetes-knowledge-patch",
       "languages": [
         "yaml",
@@ -804,9 +768,8 @@
     {
       "id": "langchain-knowledge-patch",
       "display_name": "Langchain Knowledge Patch",
-      "description": "LangChain version metadata null: v1 package splits, create_agent middleware, typed content and graph streams, provider-native tools, MCP workflows, and Deep Agents reshape agent development. Load before working with LangChain.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "LangChain 1.1.0: package splits, create_agent middleware, typed content and graph streams, provider-native tools, MCP workflows, and Deep Agents. Load before working with LangChain.",
+      "covered_version": "1.1.0",
       "path": "skills/langchain-knowledge-patch",
       "languages": [
         "python",
@@ -821,8 +784,8 @@
         "tools",
         "langgraph"
       ],
-      "content_hash": "sha256:5ff751aa9871d987c06419199677cc23360cc3696c1586863bb4333b34484524",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:e29e8b986024cfa3dfa964771df5f4447d9f632a4f7f5143799eccd4b726ff3a",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/langchain-knowledge-patch/coverage.json"
     },
     {
@@ -830,7 +793,6 @@
       "display_name": "Leptos Knowledge Patch",
       "description": "Leptos 0.8.17: statically typed views, typed routing, awaitable resources, reactive stores, server-function streams, lazy routes, application-owned SSR shells, and prebuilt cargo-leptos binaries. Load before working with Leptos.",
       "covered_version": "0.8.17",
-      "baseline": "",
       "path": "skills/leptos-knowledge-patch",
       "languages": [
         "rust"
@@ -851,7 +813,6 @@
       "display_name": "Nextjs Knowledge Patch",
       "description": "Next.js 16.1: Cache Components, proxy.ts, async request APIs, Turbopack, typed routes, partial prefetching, and modern diagnostics. Load before working with Next.js.",
       "covered_version": "16.1",
-      "baseline": "",
       "path": "skills/nextjs-knowledge-patch",
       "languages": [
         "typescript",
@@ -873,9 +834,8 @@
     {
       "id": "nginx-knowledge-patch",
       "display_name": "Nginx Knowledge Patch",
-      "description": "NGINX changes after stable 1.26.x and mainline 1.27.1 covering security fixes, upstream keepalive and HTTP/2 proxying, TLS and ECH, Early Hints, FreeNginx, and NGINX Plus R36. Load before working with NGINX.",
-      "covered_version": "null",
-      "baseline": "NGINX Open Source through stable 1.26.x and mainline 1.27.1; covers batches `1.27.2`, `1.28.0`, `1.29.0`, `1.30.0`, and `1.31.0`, plus relevant FreeNginx 1.27/1.29 and NGINX Plus through R36",
+      "description": "NGINX 1.31.0: security fixes, upstream keepalive and HTTP/2 proxying, TLS and ECH, Early Hints, FreeNginx, and NGINX Plus behavior. Load before working with NGINX.",
+      "covered_version": "1.31.0",
       "path": "skills/nginx-knowledge-patch",
       "languages": [
         "nginx",
@@ -888,8 +848,8 @@
         "tls",
         "load-balancing"
       ],
-      "content_hash": "sha256:f00561f98795f25749d94f0d5ad7207741df27ecbae4de5be48b78a17cac7b42",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:efa54465d884dbaedbb4ac328c924012ab9d97e1a9de1dccc016752afa6f1ad9",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/nginx-knowledge-patch/coverage.json"
     },
     {
@@ -897,7 +857,6 @@
       "display_name": "Nmea0183 Knowledge Patch",
       "description": "Updates NMEA 0183 beyond the 4.11 baseline through 4.30, including multi-constellation GNSS, electrical interoperability, device extensions, parser behavior, and navigation integration. Load before working with NMEA 0183.",
       "covered_version": "4.30",
-      "baseline": "",
       "path": "skills/nmea0183-knowledge-patch",
       "languages": [
         "c",
@@ -920,7 +879,6 @@
       "display_name": "Nodejs Knowledge Patch",
       "description": "Node.js changes since 22.x LTS through 26.5.0, including major removals, ESM and TypeScript loading, the Permission Model, node:sqlite, modern crypto, test-runner changes, HTTP proxies, streams, diagnostics, and native builds. Load before working with Node.js.",
       "covered_version": "25.9.0",
-      "baseline": "Node.js through 22.x LTS",
       "path": "skills/nodejs-knowledge-patch",
       "languages": [
         "javascript",
@@ -942,7 +900,6 @@
       "display_name": "Ntrip Rtklib Knowledge Patch",
       "description": "Covers NTRIP Rev2 and VRS behavior, caster authorization, BNC 2.13, RINEX 3.04, RTKLIB 2.4.x patch-level fixes, Demo5 configuration, streaming, and ambiguity-resolution changes beyond NTRIP through 2.0 and RTKLIB through 2.4.2. Load before working with NTRIP / RTKLIB.",
       "covered_version": "0.1.0",
-      "baseline": "NTRIP through 2.0 and RTKLIB through 2.4.2. Coverage extends through BNC 2.13, RINEX 3.04, RTKLIB 2.4.2 patch releases and 2.4.3 b34, and current Demo5 behavior documented by this patch",
       "path": "skills/ntrip-rtklib-knowledge-patch",
       "languages": [
         "c",
@@ -965,7 +922,6 @@
       "display_name": "Nuxt Knowledge Patch",
       "description": "Nuxt 3.12: app-directory migration, shared async-data semantics, typed routing and layouts, delayed hydration, Nitro prerelease changes, and current module APIs. Load before working with Nuxt.",
       "covered_version": "3.12",
-      "baseline": "",
       "path": "skills/nuxt-knowledge-patch",
       "languages": [
         "typescript",
@@ -987,7 +943,6 @@
       "display_name": "Openssl Tls Knowledge Patch",
       "description": "OpenSSL / TLS 4.0.0: ENGINE and legacy API removals, provider and FIPS changes, post-quantum TLS, server-side QUIC, ECH, kernel TLS, CLI/config updates, and current security patch floors. Load before working with OpenSSL / TLS.",
       "covered_version": "4.0.0",
-      "baseline": "",
       "path": "skills/openssl-tls-knowledge-patch",
       "languages": [
         "c",
@@ -1007,9 +962,8 @@
     {
       "id": "pgvector-knowledge-patch",
       "display_name": "Pgvector Knowledge Patch",
-      "description": "pgvector 0.8 adds iterative HNSW and IVFFlat scans, filtered-search costing, sparse casts, current index limits, quantized re-ranking, and PostgreSQL 13+ deployment guidance. Load before working with pgvector.",
-      "covered_version": "null",
-      "baseline": "pgvector through 0.7.4, covering `vector`, `halfvec`, `sparsevec`, and `bit`; IVFFlat and HNSW; standard distance operators; and basic index tuning. This patch covers the 0.8-guide and 0.8.0 additions plus the current reference and hosted-deployment guidance through pgvector 0.8.5",
+      "description": "pgvector 0.8.5: iterative HNSW and IVFFlat scans, filtered-search costing, sparse casts, current index limits, quantized re-ranking, and PostgreSQL deployment guidance. Load before working with pgvector.",
+      "covered_version": "0.8.5",
       "path": "skills/pgvector-knowledge-patch",
       "languages": [
         "sql"
@@ -1021,8 +975,8 @@
         "postgresql",
         "indexing"
       ],
-      "content_hash": "sha256:63b0f472df33c170cacf574b18e383fab7c4a732987c2e8f7ca85c6cd0ab8b29",
-      "generated_at": "2026-07-12T22:54:50Z",
+      "content_hash": "sha256:67ae6a2292ed66ac83bd148ec20e7e540d0447ad6720cb82688b9149353e600d",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/pgvector-knowledge-patch/coverage.json"
     },
     {
@@ -1030,7 +984,6 @@
       "display_name": "Playwright Knowledge Patch",
       "description": "Playwright changes since 1.49: page screencasts, shared browser sessions, passkeys, direct Web Storage, CLI trace debugging, MCP capabilities, and built-in test agents. Load before working with Playwright.",
       "covered_version": "1.59",
-      "baseline": "Playwright through 1.49",
       "path": "skills/playwright-knowledge-patch",
       "languages": [
         "typescript",
@@ -1053,7 +1006,6 @@
       "display_name": "Podman Knowledge Patch",
       "description": "Podman 6.0.0: unified configuration lookup, safe BoltDB-to-SQLite migration, legacy-stack removals, provider-independent machines, richer Quadlet and OCI artifact workflows, and API contract changes. Load before working with Podman.",
       "covered_version": "6.0.0",
-      "baseline": "",
       "path": "skills/podman-knowledge-patch",
       "languages": [
         "bash",
@@ -1075,7 +1027,6 @@
       "display_name": "Postgis Knowledge Patch",
       "description": "PostGIS 3.6.1: adds coverage cleaning, SFCGAL CG_ APIs, raster operations, and database-wide CLI commands, and changes upgrade-sensitive SQL, geometry and topology semantics, and Tiger geocoder packaging. Load before working with PostGIS.",
       "covered_version": "3.6.1",
-      "baseline": "",
       "path": "skills/postgis-knowledge-patch",
       "languages": [
         "sql"
@@ -1096,7 +1047,6 @@
       "display_name": "Postgresql Knowledge Patch",
       "description": "PostgreSQL 18.0: virtual generated columns, temporal constraints, asynchronous I/O, OAuth, UUIDv7, SQL/JSON, logical-replication failover, and upgrade changes. Load before working with PostgreSQL.",
       "covered_version": "18.0",
-      "baseline": "",
       "path": "skills/postgresql-knowledge-patch",
       "languages": [
         "sql"
@@ -1117,7 +1067,6 @@
       "display_name": "Prisma Knowledge Patch",
       "description": "Prisma 7.3: explicit driver adapters, Prisma Config-owned datasources, ESM-first client generation, the Rust-free Query Compiler, mapped-enum semantics, SQL commenter plugins, and Prisma Postgres tooling. Load before working with Prisma.",
       "covered_version": "7.3",
-      "baseline": "",
       "path": "skills/prisma-knowledge-patch",
       "languages": [
         "typescript"
@@ -1138,7 +1087,6 @@
       "display_name": "Python Knowledge Patch",
       "description": "Python 3.13–3.15 changes after the 3.12 baseline — free-threading, deferred annotations, t-strings, lazy imports, asyncio, standard-library migrations, and the C API. Load before working with Python.",
       "covered_version": "3.14",
-      "baseline": "Python through 3.12",
       "path": "skills/python-knowledge-patch",
       "languages": [
         "python"
@@ -1157,9 +1105,8 @@
     {
       "id": "pytorch-knowledge-patch",
       "display_name": "Pytorch Knowledge Patch",
-      "description": "PyTorch changes after 2.3 through 2.11.0 and July 2026 topic updates—safe loading, TorchScript and FSDP1 migrations, torch.compile, FlexAttention, FSDP2, export, AOTInductor, distributed APIs, and platform packaging. Load before working with PyTorch.",
-      "covered_version": "null",
-      "baseline": "PyTorch through 2.3; covers 2.4.0–2.11.0 plus the compile-and-flexattention, fsdp2-and-float8, export-and-custom-ops, and serialization-security topic updates captured July 12, 2026",
+      "description": "PyTorch 2.11.0: safe loading, TorchScript and FSDP1 migrations, torch.compile, FlexAttention, FSDP2, export, AOTInductor, distributed APIs, and platform packaging. Load before working with PyTorch.",
+      "covered_version": "2.11.0",
       "path": "skills/pytorch-knowledge-patch",
       "languages": [
         "python"
@@ -1171,16 +1118,15 @@
         "training",
         "gpu"
       ],
-      "content_hash": "sha256:1f50ffa9a77acf4ffd3c3bc57ebb34f669d98331cd5e2480744f902a1e4cbd60",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:406b866984ddde9520a211a977ff2e618ec0442f336d6d1a6dc2a8f0b9e5fb1a",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/pytorch-knowledge-patch/coverage.json"
     },
     {
       "id": "rails-knowledge-patch",
       "display_name": "Rails Knowledge Patch",
-      "description": "Ruby on Rails null: compatibility removals, Solid Queue, Active Job continuations, structured events, Propshaft, database controls, Turbo morphing, and Kamal 2; Load before working with Ruby on Rails.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "Ruby on Rails 8.1: compatibility removals, Solid Queue, Active Job continuations, structured events, Propshaft, database controls, Turbo morphing, and Kamal. Load before working with Ruby on Rails.",
+      "covered_version": "8.1",
       "path": "skills/rails-knowledge-patch",
       "languages": [
         "ruby"
@@ -1192,8 +1138,8 @@
         "jobs",
         "hotwire"
       ],
-      "content_hash": "sha256:c13a7dea695b0378398cf6012cae88d42565477444eb2135b844652540709038",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:1cf376e170f0c607283ec9d09d3f30571897a0cce91288233e0d5cf47f745206",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/rails-knowledge-patch/coverage.json"
     },
     {
@@ -1201,7 +1147,6 @@
       "display_name": "Ratatui Knowledge Patch",
       "description": "Ratatui 0.29.0–0.31.0 adds modular crates and no_std support, typed layouts, richer table state, managed terminal lifecycles, higher-resolution canvas markers, and breaking widget, style, and backend APIs. Load before working with Ratatui.",
       "covered_version": "0.31.0",
-      "baseline": "Ratatui through 0.28.x",
       "path": "skills/ratatui-knowledge-patch",
       "languages": [
         "rust"
@@ -1222,7 +1167,6 @@
       "display_name": "React Knowledge Patch",
       "description": "React 19.2.0: Activity, Effect Events, Partial Pre-rendering, cacheSignal, React Compiler 1.0, View Transitions, and RSC security guidance. Load before working with React.",
       "covered_version": "19.2.0",
-      "baseline": "",
       "path": "skills/react-knowledge-patch",
       "languages": [
         "typescript",
@@ -1245,7 +1189,6 @@
       "display_name": "React Router Knowledge Patch",
       "description": "React Router 7.14.0: package consolidation, framework routing, middleware, generated route types, prerendering, RSC previews, security hardening, and v8 migration behavior. Load before working with React Router.",
       "covered_version": "7.14.0",
-      "baseline": "",
       "path": "skills/react-router-knowledge-patch",
       "languages": [
         "typescript",
@@ -1267,9 +1210,8 @@
     {
       "id": "rhel-knowledge-patch",
       "display_name": "Rhel Knowledge Patch",
-      "description": "RHEL version null: RHEL 10 platform upgrades, image mode and bootc, post-quantum crypto, DNF and RPM, Podman and Quadlet, IdM and SSSD, NetworkManager and nftables, kernel and storage, virtualization, and lifecycle behavior changed. Load before working with RHEL.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "RHEL 10.2: image mode and bootc, post-quantum cryptography, DNF and RPM, Podman and Quadlet, IdM and SSSD, NetworkManager and nftables, kernel, storage, virtualization, and lifecycle changes. Load before working with RHEL.",
+      "covered_version": "10.2",
       "path": "skills/rhel-knowledge-patch",
       "languages": [
         "bash"
@@ -1281,16 +1223,15 @@
         "system-administration",
         "selinux"
       ],
-      "content_hash": "sha256:9289ffe0469ab51652c7d1d2c07b69cbc7e7e7b486cafe807d05a7e32b5b71ee",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:645f6f9eee5db8dc78ad8d4080a892f9414825fdb61da366d52ebe47596bbd21",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/rhel-knowledge-patch/coverage.json"
     },
     {
       "id": "rocky-knowledge-patch",
       "display_name": "Rocky Knowledge Patch",
-      "description": "Rocky Linux changes since 9.3 covering 9.4–9.8 and 10.0–10.2: x86-64-v3, NetworkManager-only networking, DNF modularity removal, Podman 5, post-quantum cryptography, WSL images, and updated runtimes and toolchains. Load before working with Rocky Linux.",
-      "covered_version": "null",
-      "baseline": "Rocky Linux 9.3. Covers Rocky Linux 9.4, 9.5, 9.6, 9.7, 9.8, 10.0, 10.1, and 10.2",
+      "description": "Rocky Linux 10.2: x86-64-v3, NetworkManager-only networking, DNF modularity removal, Podman, post-quantum cryptography, WSL images, and updated runtimes and toolchains. Load before working with Rocky Linux.",
+      "covered_version": "10.2",
       "path": "skills/rocky-knowledge-patch",
       "languages": [
         "bash"
@@ -1302,8 +1243,8 @@
         "system-administration",
         "rpm"
       ],
-      "content_hash": "sha256:7815500764d08edb494a0bc3bf54c788c3269ac79422ff72b7efbcc44ac5b162",
-      "generated_at": "2026-07-12T22:54:50Z",
+      "content_hash": "sha256:c100a0049abde32e6b9ec2f6cbde0cf1c795051707a9ecb4f3a797627d3d433f",
+      "generated_at": "2026-07-15T15:23:50Z",
       "coverage_path": "skills/rocky-knowledge-patch/coverage.json"
     },
     {
@@ -1311,7 +1252,6 @@
       "display_name": "Rtcm3 Knowledge Patch",
       "description": "Covers RTCM 10403.4 Amendment 1, legacy framing migration, MSM profiles, SSR handling, Ntrip/IGS publication, and receiver interoperability since the mid-2024 RTCM 3.3 baseline. Load before working with RTCM 3.",
       "covered_version": "2026-04-07",
-      "baseline": "RTCM 3.3 MSM and SSR message conventions available by mid-2024",
       "path": "skills/rtcm3-knowledge-patch",
       "languages": [
         "c",
@@ -1335,7 +1275,6 @@
       "display_name": "Rtkbase Knowledge Patch",
       "description": "RTKBase changes since 2.6.3 covering Debian and Python requirements, receiver setup, RTKLIB 2.5.0-EX, RTCM/NTRIP streaming, GNSS timing, precise coordinates, and Raspberry Pi operations. Load before working with RTKBase.",
       "covered_version": "2.7.0",
-      "baseline": "RTKBase through 2.6.3; covers RTKBase 2.7.0 and current installation, hardware, surveying, streaming, and RTKLIB operational guidance",
       "path": "skills/rtkbase-knowledge-patch",
       "languages": [
         "python",
@@ -1357,7 +1296,6 @@
       "display_name": "Rust Knowledge Patch",
       "description": "Rust changes beyond the 1.84.x and 2021 Edition baseline: Rust 2024 migration, trait-system and unsafe rules, Cargo configuration, stable APIs, and target and linker changes through 1.97.0. Load before working with Rust.",
       "covered_version": "1.94.0",
-      "baseline": "Rust through 1.84.x (2021 Edition); covers 1.84.0–1.97.0, Rust 2024 Edition, Cargo additions, and relevant point-release compatibility notes",
       "path": "skills/rust-knowledge-patch",
       "languages": [
         "rust",
@@ -1379,7 +1317,6 @@
       "display_name": "Selinux Knowledge Patch",
       "description": "SELinux 0.1.0: userspace validation and relabel safety, container policy, RHEL 10 MLS, and SUSE policy deployment guidance. Load before working with SELinux.",
       "covered_version": "0.1.0",
-      "baseline": "",
       "path": "skills/selinux-knowledge-patch",
       "languages": [
         "bash",
@@ -1399,9 +1336,8 @@
     {
       "id": "serde-knowledge-patch",
       "display_name": "Serde Knowledge Patch",
-      "description": "Serde changes after 1.0.209, including the trait-only serde_core crate and serde_json compatibility, deterministic object ordering, raw literals, and direct map deserialization. Load before working with Serde.",
-      "covered_version": "null",
-      "baseline": "Serde through 1.0.209. Covers later Serde and serde_json changes represented by `1.0.220-serde-core`, including serde_json releases through 1.0.150",
+      "description": "Serde 1.0.220: the trait-only serde_core crate and serde_json compatibility, deterministic object ordering, raw literals, and direct map deserialization. Load before working with Serde.",
+      "covered_version": "1.0.220",
       "path": "skills/serde-knowledge-patch",
       "languages": [
         "rust"
@@ -1413,16 +1349,15 @@
         "formats",
         "rust"
       ],
-      "content_hash": "sha256:d4dec3050fff65a0ec35477b95814cf4bc8ec3721cd4a4e3f7906546f958956f",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:be04f26156e1dfc9543b7fc3056ea8ccf84b72796fda6e16c233bac1bcf99258",
+      "generated_at": "2026-07-15T15:23:50Z",
       "coverage_path": "skills/serde-knowledge-patch/coverage.json"
     },
     {
       "id": "solidjs-knowledge-patch",
       "display_name": "Solidjs Knowledge Patch",
-      "description": "SolidJS current (version null) changes query and action names, JSX and event semantics, router preloading, server-function transport, and Vite-based SolidStart runtime contracts. Load before working with SolidJS.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "SolidJS as of July 2026: query and action names, JSX and event semantics, router preloading, server-function transport, and Vite-based SolidStart runtime contracts. Load before working with SolidJS.",
+      "covered_version": null,
       "path": "skills/solidjs-knowledge-patch",
       "languages": [
         "typescript",
@@ -1437,8 +1372,8 @@
         "components",
         "ssr"
       ],
-      "content_hash": "sha256:7cf159c137310be09bf523f4dd0ef4273a25863631ffbd299c0a9cb7e5c88234",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:5198080f5839f4127807b8fe8139c07e3dfb7096c7416f80885d7b47d2690bdd",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/solidjs-knowledge-patch/coverage.json"
     },
     {
@@ -1446,7 +1381,6 @@
       "display_name": "Spring Boot Knowledge Patch",
       "description": "Spring Boot 4.1.0: Jakarta EE 11 and Framework 7 migrations, Jackson 3, HTTP service clients, API versioning, revised security, observability, data, testing, gRPC, and build behavior. Load before working with Spring Boot.",
       "covered_version": "4.1.0",
-      "baseline": "",
       "path": "skills/spring-boot-knowledge-patch",
       "languages": [
         "java",
@@ -1468,7 +1402,6 @@
       "display_name": "Sqlite Knowledge Patch",
       "description": "SQLite 3.46.0–3.53.0 changes since SQLite 3.45, including ALTER TABLE constraint editing, JSONB traversal, expression-index repair, lock and WAL safety, CLI changes, and scalar/JSON edge semantics. Load before working with SQLite.",
       "covered_version": "3.51.0",
-      "baseline": "SQLite through 3.45",
       "path": "skills/sqlite-knowledge-patch",
       "languages": [
         "sql"
@@ -1487,9 +1420,8 @@
     {
       "id": "sqlx-knowledge-patch",
       "display_name": "Sqlx Knowledge Patch",
-      "description": "Covers SQLx changes after 0.7.x, including Rust 1.94, runtime and TLS feature migration, sqlx.toml, SqlSafeStr queries, SQLite safety, migration APIs, and database-specific behavior. Load before working with SQLx.",
-      "covered_version": "null",
-      "baseline": "SQLx through 0.7.x",
+      "description": "SQLx 0.9.0: Rust toolchain requirements, runtime and TLS feature migration, sqlx.toml, SqlSafeStr queries, SQLite safety, migration APIs, and database-specific behavior. Load before working with SQLx.",
+      "covered_version": "0.9.0",
       "path": "skills/sqlx-knowledge-patch",
       "languages": [
         "rust",
@@ -1502,16 +1434,15 @@
         "macros",
         "migrations"
       ],
-      "content_hash": "sha256:9c16716af7738d6784f4da7065562756d929bad2116fa8e11a1e59256dd6b75e",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:830532227b686dac69821e777a9483e73be6573be4eb0b6cba57d8fad51c38c9",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/sqlx-knowledge-patch/coverage.json"
     },
     {
       "id": "stripe-knowledge-patch",
       "display_name": "Stripe Knowledge Patch",
-      "description": "Stripe null: introduces plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node v18-v21 and Python v12-v15 migrations. Load before working with Stripe.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "Stripe as of July 2026: plant-named API release breaks, Accounts v2, Billing credits, PaymentIntent line items, thin events, and Node and Python SDK migrations. Load before working with Stripe.",
+      "covered_version": null,
       "path": "skills/stripe-knowledge-patch",
       "languages": [
         "typescript",
@@ -1529,8 +1460,8 @@
         "webhooks",
         "connect"
       ],
-      "content_hash": "sha256:f439c9f0968c723f868f137dc74684fc1a35acbf237e28757dc4cc20440e8d52",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:04520ebde6f0f6a571c6dd2423475c89cdba85b2f5be3cbc7a114ac8164e76fd",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/stripe-knowledge-patch/coverage.json"
     },
     {
@@ -1538,7 +1469,6 @@
       "display_name": "Supabase Knowledge Patch",
       "description": "Covers post-baseline Supabase changes in patch 2025.04: asymmetric signing and opaque API keys, OAuth 2.1, secure-by-default Data APIs, declarative schemas and branches, Realtime authorization and replay, Analytics and Vector buckets, queues, and CLI and self-hosting workflows. Load before working with Supabase.",
       "covered_version": "2025.04",
-      "baseline": "Supabase through early 2025 (supabase-js v2, CLI v1, PostgREST v12, legacy JWT API keys, Deno Edge Functions, Realtime, S3-compatible Storage, and pgvector); covered changes span April 4, 2025 through July 12, 2026, including full batch IDs `launch-week-14` and `supabase-js-2.101.0` (patch version 2025.04)",
       "path": "skills/supabase-knowledge-patch",
       "languages": [
         "typescript",
@@ -1563,9 +1493,8 @@
     {
       "id": "suse-knowledge-patch",
       "display_name": "Suse Knowledge Patch",
-      "description": "SUSE Linux / openSUSE version null: Agama migration, SELinux, cgroup v2, Wayland, NetworkManager, package removals, security policy, storage, virtualization, and platform behavior changed. Load before working with SUSE Linux / openSUSE.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "SUSE Linux and openSUSE as of July 2026: Agama migration, SELinux, cgroup v2, Wayland, NetworkManager, package removals, security policy, storage, virtualization, and platform behavior. Load before working with SUSE Linux / openSUSE.",
+      "covered_version": null,
       "path": "skills/suse-knowledge-patch",
       "languages": [
         "bash"
@@ -1577,16 +1506,15 @@
         "system-administration",
         "zypper"
       ],
-      "content_hash": "sha256:7923f99b5f49c6ecc9d89a5fc60805d2fcc2bb475785dbf5b705e330fff8ddcc",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:af1b04233170640a38447f479cb7bbc0a7ad1b98a1f700978282debb01d7355e",
+      "generated_at": "2026-07-15T15:18:55Z",
       "coverage_path": "skills/suse-knowledge-patch/coverage.json"
     },
     {
       "id": "svelte-knowledge-patch",
       "display_name": "Svelte Knowledge Patch",
-      "description": "Svelte version null: Svelte 5 runes, attachments, asynchronous templates and SSR, SvelteKit remote functions and forms, typed routing, prerendering, CSP, and current build and deployment behavior. Load before working with Svelte.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "Svelte as of July 2026: runes, attachments, asynchronous templates and SSR, SvelteKit remote functions and forms, typed routing, prerendering, CSP, and current build and deployment behavior. Load before working with Svelte.",
+      "covered_version": null,
       "path": "skills/svelte-knowledge-patch",
       "languages": [
         "typescript",
@@ -1600,8 +1528,8 @@
         "sveltekit",
         "runes"
       ],
-      "content_hash": "sha256:b9b8dbb6557c2ab2b43ad41eb19510f0300970abc54fa2fcb4448bdf2e0adb1e",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:0500af36ccb9e773a38a8071df726c606e4777056c2570b5657f9645319e7dfd",
+      "generated_at": "2026-07-15T15:18:56Z",
       "coverage_path": "skills/svelte-knowledge-patch/coverage.json"
     },
     {
@@ -1609,7 +1537,6 @@
       "display_name": "Swift Knowledge Patch",
       "description": "Swift 6.1–6.3 adds Approachable Concurrency, strict memory safety, InlineArray and Span, Swift Testing controls, SwiftPM traits and SwiftBuild, Embedded Swift expansion, safe C/C++ interop, and the @c ABI. Load before working with Swift.",
       "covered_version": "6.3.0",
-      "baseline": "Swift through 6.0 (typed throws, `~Copyable` generics, data-race safety, Swift Testing, Embedded Swift preview, and 128-bit integers)",
       "path": "skills/swift-knowledge-patch",
       "languages": [
         "swift"
@@ -1630,7 +1557,6 @@
       "display_name": "Systemd Knowledge Patch",
       "description": "systemd 1.0.0: cgroup v2-only operation, native-unit migration, persistent journaling, UKI and TPM policy, managed user namespaces, Varlink APIs, image tooling, and networkd behavior. Load before working with systemd.",
       "covered_version": "1.0.0",
-      "baseline": "",
       "path": "skills/systemd-knowledge-patch",
       "languages": [
         "c",
@@ -1652,7 +1578,6 @@
       "display_name": "Tailwind Knowledge Patch",
       "description": "Tailwind CSS 4.1: CSS-first theming, migration changes, logical utilities, composable variants, source controls, and modern build integrations. Load before working with Tailwind CSS.",
       "covered_version": "4.1",
-      "baseline": "",
       "path": "skills/tailwind-knowledge-patch",
       "languages": [
         "html",
@@ -1675,7 +1600,6 @@
       "display_name": "Tauri Knowledge Patch",
       "description": "Tauri 2.5.0: introduces capability-based security, raw IPC and channels, separate window/webview APIs, redesigned configuration and bundling, expanded mobile and core plugins, and an experimental Verso runtime. Load before working with Tauri.",
       "covered_version": "2.5.0",
-      "baseline": "",
       "path": "skills/tauri-knowledge-patch",
       "languages": [
         "rust",
@@ -1698,7 +1622,6 @@
       "display_name": "Terraform Knowledge Patch",
       "description": "Terraform 1.7–1.15 and OpenTofu 1.7–1.12 add ephemeral and write-only data, dynamic module sources, query and action operations, state encryption, Stacks, and major backend and testing changes. Load before working with Terraform.",
       "covered_version": "1.15",
-      "baseline": "Terraform through 1.6.x, including tests, import and check blocks, HCL, providers, state, modules, workspaces, and the OpenTofu 1.6 fork; covered range: Terraform 1.7–1.15, OpenTofu 1.7–1.12, current Stacks/HCP behavior, and Plugin Framework v1.5–v1.19",
       "path": "skills/terraform-knowledge-patch",
       "languages": [
         "bash"
@@ -1717,9 +1640,8 @@
     {
       "id": "tokio-knowledge-patch",
       "display_name": "Tokio Knowledge Patch",
-      "description": "Tokio changes since 1.39.x through 1.52.0, including MSRV and patch-floor upgrades, LocalRuntime, cooperative scheduling, runtime metrics, channel APIs, io_uring, sockets, tokio-util, and tokio-stream. Load before working with Tokio.",
-      "covered_version": "null",
-      "baseline": "Tokio through 1.39.x",
+      "description": "Tokio 1.52.0: MSRV and patch-floor upgrades, LocalRuntime, cooperative scheduling, runtime metrics, channel APIs, io_uring, sockets, tokio-util, and tokio-stream. Load before working with Tokio.",
+      "covered_version": "1.52.0",
       "path": "skills/tokio-knowledge-patch",
       "languages": [
         "rust",
@@ -1732,8 +1654,8 @@
         "io",
         "networking"
       ],
-      "content_hash": "sha256:f23f4bdb87d78b9433f290bb5d141523b7aa486d5c49bde5b8f099175f968c3f",
-      "generated_at": "2026-07-12T22:54:49Z",
+      "content_hash": "sha256:713fbd83c3efbbfe7dacccd92596da20017689bdfa721656567f624c04903130",
+      "generated_at": "2026-07-15T15:18:56Z",
       "coverage_path": "skills/tokio-knowledge-patch/coverage.json"
     },
     {
@@ -1741,7 +1663,6 @@
       "display_name": "Traefik Knowledge Patch",
       "description": "Traefik 3.6.9: multi-layer routing, Kubernetes provider changes, service health and failover, ACME/TLS controls, and observability updates. Load before working with Traefik.",
       "covered_version": "3.6.9",
-      "baseline": "Traefik through 3.0.x",
       "path": "skills/traefik-knowledge-patch",
       "languages": [
         "yaml",
@@ -1766,7 +1687,6 @@
       "display_name": "Trpc Knowledge Patch",
       "description": "tRPC 11.0: adds native non-JSON inputs, async-iterable streaming, SSE subscriptions, TanStack Query integration, App Router actions, local links, and static OpenAPI generation. Load before working with tRPC.",
       "covered_version": "11.0",
-      "baseline": "",
       "path": "skills/trpc-knowledge-patch",
       "languages": [
         "typescript"
@@ -1787,7 +1707,6 @@
       "display_name": "Typescript Knowledge Patch",
       "description": "TypeScript 5.9.0: deferred imports, pinned Node.js 20 modules, stricter buffer types, modernized configuration, and native compiler migration guidance. Load before working with TypeScript.",
       "covered_version": "5.9.0",
-      "baseline": "",
       "path": "skills/typescript-knowledge-patch",
       "languages": [
         "typescript"
@@ -1806,9 +1725,8 @@
     {
       "id": "ubuntu-knowledge-patch",
       "display_name": "Ubuntu Knowledge Patch",
-      "description": "Ubuntu version null: APT 3, sudo-rs, Rust coreutils, cloud-init datasource enforcement, systemd and Dracut boot changes, OpenSSH 10, installer constraints, and service migrations. Load before working with Ubuntu.",
-      "covered_version": "null",
-      "baseline": "",
+      "description": "Ubuntu 26.04: APT 3, sudo-rs, Rust coreutils, cloud-init datasource enforcement, systemd and Dracut boot changes, OpenSSH, installer constraints, and service migrations. Load before working with Ubuntu.",
+      "covered_version": "26.04",
       "path": "skills/ubuntu-knowledge-patch",
       "languages": [
         "bash"
@@ -1820,8 +1738,8 @@
         "system-administration",
         "lts"
       ],
-      "content_hash": "sha256:1ee51f51df0634aa94f04d87c51cfec51db2aeefa5b254d97ca19d3f3d7b878b",
-      "generated_at": "2026-07-15T05:45:29Z",
+      "content_hash": "sha256:ff882be1b272c6495c6bd926ba5d0f1b52139ffb4ef4e8bc27f00497f8a39be8",
+      "generated_at": "2026-07-15T15:18:56Z",
       "coverage_path": "skills/ubuntu-knowledge-patch/coverage.json"
     },
     {
@@ -1829,7 +1747,6 @@
       "display_name": "Vercel Ai Sdk Knowledge Patch",
       "description": "Vercel AI SDK 6.0: agent control loops, typed tool approvals, UI streams, MCP clients, durable execution, provider telemetry, multimodal generation, and migration-critical API changes. Load before working with Vercel AI SDK.",
       "covered_version": "6.0",
-      "baseline": "",
       "path": "skills/vercel-ai-sdk-knowledge-patch",
       "languages": [
         "typescript"
@@ -1850,7 +1767,6 @@
       "display_name": "Vite Knowledge Patch",
       "description": "Vite 8.1.0: Node.js 20.19+/22.12+, baseline browser targets, ESM-only packaging, removed APIs, Environment API coordination, bundled development, chunk import maps, direct WebAssembly imports, and expanded asset and CSS handling. Load before working with Vite.",
       "covered_version": "8.1.0",
-      "baseline": "",
       "path": "skills/vite-knowledge-patch",
       "languages": [
         "typescript",
@@ -1873,7 +1789,6 @@
       "display_name": "Vitest Knowledge Patch",
       "description": "Vitest 4.1: projects supersede deprecated workspaces, Browser Mode uses provider packages and adds traces and visual regression, while tags, annotations, scoped fixtures, native Node execution, coverage controls, reporters, and diagnostics expand. Load before working with Vitest.",
       "covered_version": "4.1",
-      "baseline": "",
       "path": "skills/vitest-knowledge-patch",
       "languages": [
         "typescript",
@@ -1895,7 +1810,6 @@
       "display_name": "Vuejs Knowledge Patch",
       "description": "Vue.js 3.6.0-beta: Vue Router 5 file-based routing and data loaders, Pinia 3 packaging, typed template refs, Pinia Colada queries, mutations, SSR, and plugins. Load before working with Vue.js.",
       "covered_version": "3.6.0-beta",
-      "baseline": "",
       "path": "skills/vuejs-knowledge-patch",
       "languages": [
         "typescript",
@@ -1917,7 +1831,6 @@
       "display_name": "Workos Knowledge Patch",
       "description": "WorkOS 8.10: Node SDK v9/v10 migrations, AuthKit Next.js and React session behavior, PKCE and CSRF handling, authorization resources, Feature Flags, Connect and MCP support, Vault, and Radar. Load before working with WorkOS.",
       "covered_version": "8.10",
-      "baseline": "",
       "path": "skills/workos-knowledge-patch",
       "languages": [
         "typescript",
@@ -1941,9 +1854,8 @@
     {
       "id": "zig-knowledge-patch",
       "display_name": "Zig Knowledge Patch",
-      "description": "Zig changes after 0.12.x through 0.15.1, including allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API migrations, and language breaking changes. Load before working with Zig.",
-      "covered_version": "null",
-      "baseline": "Zig through 0.12.x",
+      "description": "Zig 0.15.1: allocator-explicit containers, concrete I/O interfaces, removed async and usingnamespace, build API migrations, and language breaking changes. Load before working with Zig.",
+      "covered_version": "0.15.1",
       "path": "skills/zig-knowledge-patch",
       "languages": [
         "zig"
@@ -1955,8 +1867,8 @@
         "memory",
         "cross-compilation"
       ],
-      "content_hash": "sha256:11c2cda0d2d2fcdcad4bb883ea62d9fa2a634424f764d762f6ca8bdaf1479090",
-      "generated_at": "2026-07-12T22:54:50Z",
+      "content_hash": "sha256:2abf5e619a3c0d673f65408e9e4902149a978c81ada6b54fab77ecce547b85a5",
+      "generated_at": "2026-07-15T15:18:56Z",
       "coverage_path": "skills/zig-knowledge-patch/coverage.json"
     },
     {
@@ -1964,7 +1876,6 @@
       "display_name": "Zitadel Knowledge Patch",
       "description": "Zitadel 4.15.3: resource-based APIs, Login V2 and the Session API, Actions V2, hardened OIDC, SAML, SCIM, identity-provider, PostgreSQL, SDK, and operations contracts. Load before working with Zitadel.",
       "covered_version": "4.15.3",
-      "baseline": "",
       "path": "skills/zitadel-knowledge-patch",
       "languages": [
         "go",

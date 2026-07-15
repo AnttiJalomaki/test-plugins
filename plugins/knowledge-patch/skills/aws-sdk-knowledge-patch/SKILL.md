@@ -1,6 +1,6 @@
 ---
 name: aws-sdk-knowledge-patch
-description: AWS SDK changes after the stated baseline through July 2026, including lifecycle migrations, retry and endpoint defaults, authentication, runtime support, removed clients, Lambda Durable Functions, AgentCore, S3 Vectors, and current service APIs. Load before working with AWS SDKs.
+description: "AWS SDKs as of July 2026: lifecycle migrations, retry and endpoint defaults, authentication, runtime support, removed clients, Lambda Durable Functions, AgentCore, S3 Vectors, and current service APIs. Load before working with AWS SDKs."
 license: MIT
 version: null
 metadata:
