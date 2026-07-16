@@ -1,7 +1,7 @@
 {
-  "name": "nevaberry",
+  "name": "anttijalomaki",
   "interface": {
-    "displayName": "Nevaberry"
+    "displayName": "AnttiJalomaki"
   },
   "plugins": [
     {

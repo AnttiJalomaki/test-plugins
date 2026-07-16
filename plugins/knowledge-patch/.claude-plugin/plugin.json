@@ -1,13 +1,13 @@
 {
   "name": "knowledge-patch",
-  "version": "2.20260716.0",
+  "version": "2.20260716.2",
   "description": "Offline monoplugin that ships current technology knowledge patches as native skills with catalog-based activation.",
   "author": {
     "name": "Nevaberry",
     "url": "https://github.com/Nevaberry"
   },
-  "homepage": "https://github.com/Nevaberry/nevaberry-plugins",
-  "repository": "https://github.com/Nevaberry/nevaberry-plugins",
+  "homepage": "https://github.com/AnttiJalomaki/test-plugins",
+  "repository": "https://github.com/AnttiJalomaki/test-plugins",
   "license": "MIT",
   "keywords": [
     "knowledge-patch",
