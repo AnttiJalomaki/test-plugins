@@ -1,7 +1,7 @@
 {
-  "name": "knowledge-patch-test",
+  "name": "nevaberry",
   "interface": {
-    "displayName": "Knowledge Patch Test"
+    "displayName": "Nevaberry"
   },
   "plugins": [
     {

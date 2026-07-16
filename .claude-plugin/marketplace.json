@@ -1,6 +1,6 @@
 {
-  "name": "knowledge-patch-test",
-  "description": "Local test marketplace for the knowledge-patch monoplugin.",
+  "name": "nevaberry",
+  "description": "Public marketplace for Nevaberry plugins.",
   "owner": {
     "name": "Nevaberry"
   },

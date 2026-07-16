@@ -1,4 +1,4 @@
-# test-plugins
+# nevaberry-plugins
 
 Public plugin marketplace for the `knowledge-patch` plugin: one dual-format Claude Code / Codex plugin shipping versioned technology knowledge patches as native skills.
 
@@ -21,13 +21,13 @@ Knowledge patches are derived from the respective projects' official release not
 Add the marketplace in Claude Code:
 
 ```text
-/plugin marketplace add anttijalomaki/test-plugins
+/plugin marketplace add Nevaberry/nevaberry-plugins
 ```
 
 Install the plugin:
 
 ```text
-/plugin install knowledge-patch@knowledge-patch-test
+/plugin install knowledge-patch@nevaberry
 ```
 
 Reload plugins:
@@ -49,9 +49,9 @@ You can also ask Claude Code to set up Knowledge Patch in natural language. The 
 Add the marketplace from the Codex CLI:
 
 ```text
-codex plugin marketplace add anttijalomaki/test-plugins
+codex plugin marketplace add Nevaberry/nevaberry-plugins
 ```
 
-Open `/plugins`, choose **Knowledge Patch Test**, install `knowledge-patch`, and start a new session. In the IDE extension, use **Settings > Plugins** and start a new chat after installation.
+Open `/plugins`, choose **Nevaberry**, install `knowledge-patch`, and start a new session. In the IDE extension, use **Settings > Plugins** and start a new chat after installation.
 
 Then invoke `$knowledge-patch-setup` or ask Codex to set up Knowledge Patch for the current project. The plugin is fully offline and does not require service credentials.
