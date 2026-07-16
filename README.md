@@ -2,12 +2,6 @@
 
 Public plugin marketplace for the `knowledge-patch` plugin: one dual-format Claude Code / Codex plugin shipping versioned technology knowledge patches as native skills.
 
-## Public Repository Notice
-
-THIS REPO IS PUBLIC.
-
-Future contributors and AI agents: never commit anything sensitive, private, local-machine-specific, or questionable to this repository. That includes absolute home paths, hostnames, emails, keys, credentials, internal repository names, private notes, or generated material that has not been reviewed for public release.
-
 ## Knowledge Patch Plugin
 
 See `plugins/knowledge-patch/README.md` for plugin layout, commands, hooks, and activation details.
