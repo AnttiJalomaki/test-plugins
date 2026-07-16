@@ -1,51 +1,25 @@
 # test-plugins
 
-Public plugin marketplace for the `knowledge-patch` plugin: one dual-format Claude Code / Codex plugin shipping versioned technology knowledge patches as native skills.
+Knowledge Patch is a fleet of SKILL.md files that fill the gap between an LLM's knowledge cutoff and today.
 
-## Knowledge Patch Plugin
+Nevaberry mines ~90 technologies (Kubernetes, Bun, Next.js, RHEL, Dioxus, Rust) and extracts what current models do not yet know, compressed into topic-organized skills. Every release is benchmarked against frontier models and the extraction process is refined on those results.
 
-See `plugins/knowledge-patch/README.md` for plugin layout, commands, hooks, and activation details.
+Why: Claude or Codex loaded with the knowledge-patch plugin uses the newest syntax and API on the first try, instead of confidently generating last year's deprecated API.
 
-This repository also ships a Codex marketplace manifest at `.agents/plugins/marketplace.json` for Codex's plugin installer.
-
-Knowledge patches are derived from the respective projects' official release notes and documentation. This project is not affiliated with or endorsed by those projects.
+<https://nevaberry.com/en/knowledge-patch>
 
 ## Install
 
-Add the marketplace in Claude Code:
+Claude Code:
 
 ```text
 /plugin marketplace add anttijalomaki/test-plugins
-```
-
-Install the plugin:
-
-```text
 /plugin install knowledge-patch@anttijalomaki
-```
-
-Reload plugins:
-
-```text
-/reload-plugins
-```
-
-Then invoke the native setup skill:
-
-```text
 /knowledge-patch:knowledge-patch-setup
 ```
 
-You can also ask Claude Code to set up Knowledge Patch in natural language. The shorter `/knowledge-patch:setup` command remains a compatibility alias.
+Codex: `codex plugin marketplace add anttijalomaki/test-plugins`, install `knowledge-patch` from `/plugins`, start a new session, then run `$knowledge-patch-setup`.
 
-## Install with Codex
+The plugin is fully offline, works in both CLIs, and needs no credentials. See `plugins/knowledge-patch/README.md` for skills, activation, hooks, and versioning.
 
-Add the marketplace from the Codex CLI:
-
-```text
-codex plugin marketplace add anttijalomaki/test-plugins
-```
-
-Open `/plugins`, choose **AnttiJalomaki**, install `knowledge-patch`, and start a new session. In the IDE extension, use **Settings > Plugins** and start a new chat after installation.
-
-Then invoke `$knowledge-patch-setup` or ask Codex to set up Knowledge Patch for the current project. The plugin is fully offline and does not require service credentials.
+Knowledge patches are derived from the respective projects' official release notes and documentation. This project is not affiliated with or endorsed by those projects.
