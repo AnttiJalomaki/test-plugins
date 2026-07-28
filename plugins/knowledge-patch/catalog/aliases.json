@@ -1,24 +1,12 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-26T23:44:06Z",
+  "generated_at": "2026-07-28T23:37:24Z",
   "aliases": {
     "actions runner": [
       "github-actions-knowledge-patch"
     ],
     "ai sdk": [
       "vercel-ai-sdk-knowledge-patch"
-    ],
-    "alma": [
-      "almalinux-knowledge-patch"
-    ],
-    "alma linux": [
-      "almalinux-knowledge-patch"
-    ],
-    "almalinux": [
-      "almalinux-knowledge-patch"
-    ],
-    "almalinux knowledge patch": [
-      "almalinux-knowledge-patch"
     ],
     "angular": [
       "angular-knowledge-patch"
@@ -563,6 +551,12 @@
     "kubernetes knowledge patch": [
       "kubernetes-knowledge-patch"
     ],
+    "kustomize": [
+      "kustomize-knowledge-patch"
+    ],
+    "kustomize knowledge patch": [
+      "kustomize-knowledge-patch"
+    ],
     "lang chain": [
       "langchain-knowledge-patch"
     ],
@@ -952,15 +946,6 @@
     ],
     "rn": [
       "react-native-knowledge-patch"
-    ],
-    "rocky": [
-      "rocky-knowledge-patch"
-    ],
-    "rocky knowledge patch": [
-      "rocky-knowledge-patch"
-    ],
-    "rocky linux": [
-      "rocky-knowledge-patch"
     ],
     "ror": [
       "rails-knowledge-patch"

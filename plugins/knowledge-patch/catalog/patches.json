@@ -1,30 +1,7 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-26T23:44:06Z",
+  "generated_at": "2026-07-28T23:37:24Z",
   "patches": [
-    {
-      "id": "almalinux-knowledge-patch",
-      "display_name": "AlmaLinux",
-      "short_label": "AlmaLinux",
-      "description": "AlmaLinux",
-      "coverage_kind": "versioned",
-      "covered_through": "10.2",
-      "coverage_label": "10.2",
-      "path": "skills/almalinux-knowledge-patch",
-      "languages": [
-        "bash"
-      ],
-      "tags": [
-        "linux",
-        "enterprise-linux",
-        "packages",
-        "system-administration",
-        "security"
-      ],
-      "content_hash": "sha256:eea383213870109b58e43b6a58ed86d91cb6c520560cc0b5388dfc721f557c31",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/almalinux-knowledge-patch/coverage.json"
-    },
     {
       "id": "angular-knowledge-patch",
       "display_name": "Angular",
@@ -33,7 +10,10 @@
       "coverage_kind": "versioned",
       "covered_through": "22.0.0",
       "coverage_label": "22.0.0",
-      "path": "skills/angular-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/angular-knowledge-patch",
+        "codex": "skills-codex/angular-knowledge-patch"
+      },
       "languages": [
         "typescript"
       ],
@@ -45,9 +25,19 @@
         "routing",
         "ssr"
       ],
-      "content_hash": "sha256:01f429aeba9a6838a80124d0adf9101c96f1e44f6c6c7bea7bfaf80a946a11c6",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/angular-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:ce44a75f5d12a5ee9cff8193c8a94c4b3c4727ffd331af66efaf95734b87ee9c",
+        "codex": "sha256:ce44a75f5d12a5ee9cff8193c8a94c4b3c4727ffd331af66efaf95734b87ee9c"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/angular-knowledge-patch/coverage.json",
+        "codex": "skills-codex/angular-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "ansible-knowledge-patch",
@@ -57,7 +47,10 @@
       "coverage_kind": "range",
       "covered_through": "2.21.2",
       "coverage_label": "2.19–2.21.2",
-      "path": "skills/ansible-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/ansible-knowledge-patch",
+        "codex": "skills-codex/ansible-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "python"
@@ -69,9 +62,19 @@
         "yaml",
         "operations"
       ],
-      "content_hash": "sha256:a5219d77846d68cbfec620fa1e811be8fd31041f9198ffbba0aa0042fbb94e34",
-      "generated_at": "2026-07-26T22:39:44Z",
-      "coverage_path": "skills/ansible-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:4d72b63f7b3d1e493f7bdc57e048d4cba3ee1394cb810329bf748f5c665574f0",
+        "codex": "sha256:4d72b63f7b3d1e493f7bdc57e048d4cba3ee1394cb810329bf748f5c665574f0"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ansible-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ansible-knowledge-patch/coverage.json"
+      },
       "covered_from": "2.19"
     },
     {
@@ -82,7 +85,10 @@
       "coverage_kind": "rolling",
       "covered_through": null,
       "coverage_label": "rolling coverage",
-      "path": "skills/arch-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/arch-knowledge-patch",
+        "codex": "skills-codex/arch-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -93,9 +99,19 @@
         "system-administration",
         "pacman"
       ],
-      "content_hash": "sha256:13702e6dcb9458ed56c917c26c3d2eee893870f0a035e66b0c788856ed6ab945",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/arch-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:ae43edc06d74a9870779e4d88e5161dabe63709f92794296e6b7926c33ec16fd",
+        "codex": "sha256:ae43edc06d74a9870779e4d88e5161dabe63709f92794296e6b7926c33ec16fd"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/arch-knowledge-patch/coverage.json",
+        "codex": "skills-codex/arch-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "argo-cd-knowledge-patch",
@@ -105,7 +121,10 @@
       "coverage_kind": "range",
       "covered_through": "3.2.0",
       "coverage_label": "3.0.0–3.2.0",
-      "path": "skills/argo-cd-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/argo-cd-knowledge-patch",
+        "codex": "skills-codex/argo-cd-knowledge-patch"
+      },
       "languages": [
         "yaml"
       ],
@@ -116,9 +135,19 @@
         "continuous-delivery",
         "operations"
       ],
-      "content_hash": "sha256:f890c9f66eefdf057c6b7c915b4f6c4d486ccc8c7a9a3e9dc8616309be92712c",
-      "generated_at": "2026-07-26T22:45:09Z",
-      "coverage_path": "skills/argo-cd-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:93bda670ed4b4c04f1ea5e82999db9ce7d3f2a24ec80ec4dbc41dc2f154b8c62",
+        "codex": "sha256:93bda670ed4b4c04f1ea5e82999db9ce7d3f2a24ec80ec4dbc41dc2f154b8c62"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/argo-cd-knowledge-patch/coverage.json",
+        "codex": "skills-codex/argo-cd-knowledge-patch/coverage.json"
+      },
       "covered_from": "3.0.0"
     },
     {
@@ -129,7 +158,10 @@
       "coverage_kind": "versioned",
       "covered_through": "7.0.0",
       "coverage_label": "7.0.0",
-      "path": "skills/astro-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/astro-knowledge-patch",
+        "codex": "skills-codex/astro-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "jsx",
@@ -142,9 +174,19 @@
         "ssr",
         "content-collections"
       ],
-      "content_hash": "sha256:b17c1aef4e0d36465e024eaafc7317fd8be75fdf10aa4556ba8f3ed6e8767680",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/astro-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:b7c5304e9b66f14abfb9ea856b85e3e75603a3f65bfc7e31c204b839ed5c53e3",
+        "codex": "sha256:b7c5304e9b66f14abfb9ea856b85e3e75603a3f65bfc7e31c204b839ed5c53e3"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/astro-knowledge-patch/coverage.json",
+        "codex": "skills-codex/astro-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "authjs-knowledge-patch",
@@ -154,7 +196,10 @@
       "coverage_kind": "versioned",
       "covered_through": "5.0.0",
       "coverage_label": "5.0.0",
-      "path": "skills/authjs-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/authjs-knowledge-patch",
+        "codex": "skills-codex/authjs-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript"
@@ -166,9 +211,19 @@
         "adapters",
         "nextjs"
       ],
-      "content_hash": "sha256:fa4299ec8f7e6ebe0b380a543444e4b5f714995c64c3fdf64655f342223d0dc3",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/authjs-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:7e45bf8bbc615d9113e41a22d807a3ad52c23b8deb4611bbd7e0ffb43e6714f9",
+        "codex": "sha256:7e45bf8bbc615d9113e41a22d807a3ad52c23b8deb4611bbd7e0ffb43e6714f9"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/authjs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/authjs-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "aws-sdk-knowledge-patch",
@@ -178,7 +233,10 @@
       "coverage_kind": "rolling",
       "covered_through": null,
       "coverage_label": "rolling coverage",
-      "path": "skills/aws-sdk-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/aws-sdk-knowledge-patch",
+        "codex": "skills-codex/aws-sdk-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -197,9 +255,19 @@
         "retries",
         "clients"
       ],
-      "content_hash": "sha256:6b59dc5e55eb20434bca88355bee614667ab39e8dc4c4fd32de7fcdef5149153",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/aws-sdk-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:26d7f57abea6e176b9f3310a479d2758e3c8e73d275bfdcf99a69098df21de40",
+        "codex": "sha256:26d7f57abea6e176b9f3310a479d2758e3c8e73d275bfdcf99a69098df21de40"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/aws-sdk-knowledge-patch/coverage.json",
+        "codex": "skills-codex/aws-sdk-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "axum-knowledge-patch",
@@ -209,7 +277,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.8.0",
       "coverage_label": "0.8.0",
-      "path": "skills/axum-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/axum-knowledge-patch",
+        "codex": "skills-codex/axum-knowledge-patch"
+      },
       "languages": [
         "rust",
         "toml"
@@ -221,9 +292,19 @@
         "extractors",
         "async"
       ],
-      "content_hash": "sha256:06553c4e066e366c4c45afc10f162bd98f2c5c5f8c8aad9795783d0f3b714507",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/axum-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:2b1f7b15d0081fb06b0c7513c5d86b3200cc957ac380aa28aef5876aad55b4a2",
+        "codex": "sha256:2b1f7b15d0081fb06b0c7513c5d86b3200cc957ac380aa28aef5876aad55b4a2"
+      },
+      "generated_at": "2026-07-28T23:31:57Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:31:57Z",
+        "codex": "2026-07-28T23:31:57Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/axum-knowledge-patch/coverage.json",
+        "codex": "skills-codex/axum-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "better-auth-knowledge-patch",
@@ -233,7 +314,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.6.0",
       "coverage_label": "1.6.0",
-      "path": "skills/better-auth-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/better-auth-knowledge-patch",
+        "codex": "skills-codex/better-auth-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript"
@@ -245,9 +329,19 @@
         "plugins",
         "typescript"
       ],
-      "content_hash": "sha256:dbf8d90be7f94beecd2ebf83799283d162396fea0ba35725d7ca6b6390c8bbee",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/better-auth-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:c62ea074c6e7e7938d405f18f0de63684ad7db9edd60d435c1fdf13e0e38170a",
+        "codex": "sha256:c62ea074c6e7e7938d405f18f0de63684ad7db9edd60d435c1fdf13e0e38170a"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/better-auth-knowledge-patch/coverage.json",
+        "codex": "skills-codex/better-auth-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "biome-knowledge-patch",
@@ -257,7 +351,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.5.0",
       "coverage_label": "2.5.0",
-      "path": "skills/biome-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/biome-knowledge-patch",
+        "codex": "skills-codex/biome-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -271,9 +368,19 @@
         "javascript",
         "css"
       ],
-      "content_hash": "sha256:111b7a520bf87d3de364589eb626ed70302b103214a7a92524da374bd2bc0833",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/biome-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:cbd66ab739385e8f53f8511f566b79a4eb659a1c5c1898c0819fe89099318412",
+        "codex": "sha256:cbd66ab739385e8f53f8511f566b79a4eb659a1c5c1898c0819fe89099318412"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/biome-knowledge-patch/coverage.json",
+        "codex": "skills-codex/biome-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "bun-knowledge-patch",
@@ -283,7 +390,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.3.14",
       "coverage_label": "1.3.14",
-      "path": "skills/bun-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/bun-knowledge-patch",
+        "codex": "skills-codex/bun-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -296,9 +406,19 @@
         "testing",
         "javascript"
       ],
-      "content_hash": "sha256:8faaadb28d84304350247d5306cfe2f501d4715a40a5cd4b5676448ef14c0582",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/bun-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:50599cd1e7508d7218bc82b1c0b1529ca85bc03eac676eba4c6fce2d4fca6d12",
+        "codex": "sha256:50599cd1e7508d7218bc82b1c0b1529ca85bc03eac676eba4c6fce2d4fca6d12"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/bun-knowledge-patch/coverage.json",
+        "codex": "skills-codex/bun-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "caddy-knowledge-patch",
@@ -308,7 +428,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.11.1",
       "coverage_label": "2.11.1",
-      "path": "skills/caddy-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/caddy-knowledge-patch",
+        "codex": "skills-codex/caddy-knowledge-patch"
+      },
       "languages": [
         "caddyfile",
         "json"
@@ -320,9 +443,19 @@
         "routing",
         "configuration"
       ],
-      "content_hash": "sha256:aa864bd9dadca02970bc36608c782111c7d13668c994f841867b667d1f471345",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/caddy-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:8e494da885b00453da0f31a689c78c0723667f97af0fe919cb2fc850eb6d6e46",
+        "codex": "sha256:8e494da885b00453da0f31a689c78c0723667f97af0fe919cb2fc850eb6d6e46"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/caddy-knowledge-patch/coverage.json",
+        "codex": "skills-codex/caddy-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "centos-stream-knowledge-patch",
@@ -332,7 +465,10 @@
       "coverage_kind": "versioned",
       "covered_through": "10.0",
       "coverage_label": "10.0",
-      "path": "skills/centos-stream-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/centos-stream-knowledge-patch",
+        "codex": "skills-codex/centos-stream-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -343,9 +479,19 @@
         "system-administration",
         "rpm"
       ],
-      "content_hash": "sha256:e30a1fa8e9ccb818cfb2ba0d8b7842e37c5ac559683ddcb2ab6624a22cce1252",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/centos-stream-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:d5355eeb5751bccc630f2e4d4f5f5a0911e1cf9e27c8c8890ad4457867c4ddf2",
+        "codex": "sha256:d5355eeb5751bccc630f2e4d4f5f5a0911e1cf9e27c8c8890ad4457867c4ddf2"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/centos-stream-knowledge-patch/coverage.json",
+        "codex": "skills-codex/centos-stream-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "chrony-knowledge-patch",
@@ -355,7 +501,10 @@
       "coverage_kind": "range",
       "covered_through": "4.8",
       "coverage_label": "4.7–4.8",
-      "path": "skills/chrony-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/chrony-knowledge-patch",
+        "codex": "skills-codex/chrony-knowledge-patch"
+      },
       "languages": [
         "c",
         "bash"
@@ -367,9 +516,19 @@
         "networking",
         "clock"
       ],
-      "content_hash": "sha256:c05d840200e4deeb74ea5592f9e9bdd3bf3a7800492becc0aae48aac8e113c33",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/chrony-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:90fa7501b4640ba48395d12b3480fdef629671ac88bbfdda08e67e6f9c204475",
+        "codex": "sha256:90fa7501b4640ba48395d12b3480fdef629671ac88bbfdda08e67e6f9c204475"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/chrony-knowledge-patch/coverage.json",
+        "codex": "skills-codex/chrony-knowledge-patch/coverage.json"
+      },
       "covered_from": "4.7"
     },
     {
@@ -380,7 +539,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.0.0",
       "coverage_label": "1.0.0",
-      "path": "skills/clerk-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/clerk-knowledge-patch",
+        "codex": "skills-codex/clerk-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -395,9 +557,19 @@
         "organizations",
         "oauth"
       ],
-      "content_hash": "sha256:fd2c8cea63088a1e7c5e7f8188bf87105ec0d92e3126b96ed9dd6b5f0aaafd3e",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/clerk-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:1bf6bc1d61610243c0df3e886d9e32f6de106f7b18e75065ea73e16acf6c3b13",
+        "codex": "sha256:1bf6bc1d61610243c0df3e886d9e32f6de106f7b18e75065ea73e16acf6c3b13"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/clerk-knowledge-patch/coverage.json",
+        "codex": "skills-codex/clerk-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "clickhouse-knowledge-patch",
@@ -407,7 +579,10 @@
       "coverage_kind": "range",
       "covered_through": "26.7",
       "coverage_label": "25.1–26.7",
-      "path": "skills/clickhouse-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/clickhouse-knowledge-patch",
+        "codex": "skills-codex/clickhouse-knowledge-patch"
+      },
       "languages": [
         "sql"
       ],
@@ -418,9 +593,19 @@
         "sql",
         "operations"
       ],
-      "content_hash": "sha256:e566ab824086d2a1d1cabe84cc618c88b73be67538c487e196d87db2bbac254e",
-      "generated_at": "2026-07-26T23:25:45Z",
-      "coverage_path": "skills/clickhouse-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:2af0418142829aa1d4bde514c301ed91fc2d1360bac985386ba75189894cd876",
+        "codex": "sha256:2af0418142829aa1d4bde514c301ed91fc2d1360bac985386ba75189894cd876"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/clickhouse-knowledge-patch/coverage.json",
+        "codex": "skills-codex/clickhouse-knowledge-patch/coverage.json"
+      },
       "covered_from": "25.1"
     },
     {
@@ -431,7 +616,10 @@
       "coverage_kind": "versioned",
       "covered_through": "26.1",
       "coverage_label": "26.1",
-      "path": "skills/cloud-init-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/cloud-init-knowledge-patch",
+        "codex": "skills-codex/cloud-init-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "python"
@@ -443,9 +631,19 @@
         "configuration",
         "infrastructure"
       ],
-      "content_hash": "sha256:896e450ddf974820e16456b7ba6b5d4fa1aac709d48ff9ff5a73009afef4a8fc",
-      "generated_at": "2026-07-26T21:21:29Z",
-      "coverage_path": "skills/cloud-init-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:08cdb6b88f5df54730bb165031b422ac4346113e3f1c13821dcc3e2c036a7f12",
+        "codex": "sha256:08cdb6b88f5df54730bb165031b422ac4346113e3f1c13821dcc3e2c036a7f12"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/cloud-init-knowledge-patch/coverage.json",
+        "codex": "skills-codex/cloud-init-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "codex-knowledge-patch",
@@ -455,7 +653,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.144.0",
       "coverage_label": "0.144.0",
-      "path": "skills/codex-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/codex-knowledge-patch",
+        "codex": "skills-codex/codex-knowledge-patch"
+      },
       "languages": [
         "bash",
         "toml",
@@ -468,9 +669,19 @@
         "automation",
         "configuration"
       ],
-      "content_hash": "sha256:5aecd71fe768275f5878711b1f71970f4c6c2d4b4030638d6b130653afd8606e",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/codex-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:256c8b6dc1b99ba146da739dd34220c04f7a738fc0815d1ffca3dc21fe0b13ef",
+        "codex": "sha256:256c8b6dc1b99ba146da739dd34220c04f7a738fc0815d1ffca3dc21fe0b13ef"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/codex-knowledge-patch/coverage.json",
+        "codex": "skills-codex/codex-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "debian-knowledge-patch",
@@ -480,7 +691,10 @@
       "coverage_kind": "versioned",
       "covered_through": "13.0",
       "coverage_label": "13.0",
-      "path": "skills/debian-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/debian-knowledge-patch",
+        "codex": "skills-codex/debian-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -491,9 +705,19 @@
         "system-administration",
         "security"
       ],
-      "content_hash": "sha256:3020af229fcf15c04ae6bca10058bed8508c11e37833af1e7a0c4ebff35e30ce",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/debian-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:f3c07607922655ab26d1821e6371f031dc485d56a5c914d383993ad967a26d9e",
+        "codex": "sha256:f3c07607922655ab26d1821e6371f031dc485d56a5c914d383993ad967a26d9e"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/debian-knowledge-patch/coverage.json",
+        "codex": "skills-codex/debian-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "deno-knowledge-patch",
@@ -503,7 +727,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.9.0",
       "coverage_label": "2.9.0",
-      "path": "skills/deno-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/deno-knowledge-patch",
+        "codex": "skills-codex/deno-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -516,9 +743,19 @@
         "javascript",
         "tooling"
       ],
-      "content_hash": "sha256:a81194aa8c3fe3d607cec420dcc01d7bae01c11480cf6b4e8a457f28a1feec17",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/deno-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:9772f21765e25981cf831ca9732dd2022149a2aad4fdfc0c42620b13ced2d025",
+        "codex": "sha256:9772f21765e25981cf831ca9732dd2022149a2aad4fdfc0c42620b13ced2d025"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/deno-knowledge-patch/coverage.json",
+        "codex": "skills-codex/deno-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "dioxus-knowledge-patch",
@@ -528,7 +765,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.7.9",
       "coverage_label": "0.7.9",
-      "path": "skills/dioxus-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/dioxus-knowledge-patch",
+        "codex": "skills-codex/dioxus-knowledge-patch"
+      },
       "languages": [
         "rust"
       ],
@@ -541,9 +781,19 @@
         "desktop",
         "mobile"
       ],
-      "content_hash": "sha256:1360629f63ee5e0621a0447ab4159a8de18a64dd42116b32abedf480b6d5f907",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/dioxus-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:1f463a31c220e0f8fba3132102779702fd7aef295c06b70700ed61f13b5e8d4f",
+        "codex": "sha256:1f463a31c220e0f8fba3132102779702fd7aef295c06b70700ed61f13b5e8d4f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/dioxus-knowledge-patch/coverage.json",
+        "codex": "skills-codex/dioxus-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "django-knowledge-patch",
@@ -553,7 +803,10 @@
       "coverage_kind": "versioned",
       "covered_through": "6.0.8",
       "coverage_label": "6.0.8",
-      "path": "skills/django-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/django-knowledge-patch",
+        "codex": "skills-codex/django-knowledge-patch"
+      },
       "languages": [
         "python"
       ],
@@ -564,9 +817,19 @@
         "templates",
         "async"
       ],
-      "content_hash": "sha256:ec654b49a30717174b0a3dcbea3d55156c8e0b8b01cbc7122d9b5d2d8a9ad87d",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/django-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:d755f7b85e27fd533d3df55997ee5df0ef64925c45215ad79d01a26b941023d3",
+        "codex": "sha256:d755f7b85e27fd533d3df55997ee5df0ef64925c45215ad79d01a26b941023d3"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/django-knowledge-patch/coverage.json",
+        "codex": "skills-codex/django-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "dnf5-security-updates-knowledge-patch",
@@ -576,7 +839,10 @@
       "coverage_kind": "versioned",
       "covered_through": "5.4.1",
       "coverage_label": "5.4.1",
-      "path": "skills/dnf5-security-updates-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/dnf5-security-updates-knowledge-patch",
+        "codex": "skills-codex/dnf5-security-updates-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -587,9 +853,19 @@
         "updates",
         "rpm"
       ],
-      "content_hash": "sha256:0b5e539a78e4ff12c907e72dd953eff549aed5730044dd9bb527204f56dcfd2c",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/dnf5-security-updates-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:0c9ebc0130895270d94f37d20c9bdafcc3f75ea05b032d8e631d1d53fe5ed86a",
+        "codex": "sha256:0c9ebc0130895270d94f37d20c9bdafcc3f75ea05b032d8e631d1d53fe5ed86a"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/dnf5-security-updates-knowledge-patch/coverage.json",
+        "codex": "skills-codex/dnf5-security-updates-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "docker-knowledge-patch",
@@ -599,7 +875,10 @@
       "coverage_kind": "range",
       "covered_through": "29.3",
       "coverage_label": "25.0.0–29.3",
-      "path": "skills/docker-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/docker-knowledge-patch",
+        "codex": "skills-codex/docker-knowledge-patch"
+      },
       "languages": [
         "bash",
         "yaml"
@@ -611,9 +890,19 @@
         "buildkit",
         "networking"
       ],
-      "content_hash": "sha256:98a95c470cb216618dfb7cf57cae8708e4de0d7df1d687023445bce5c630e043",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/docker-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:f845764773fff03823210152f795efc843b0cabf0242035db7e8c5d73fe34293",
+        "codex": "sha256:f845764773fff03823210152f795efc843b0cabf0242035db7e8c5d73fe34293"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/docker-knowledge-patch/coverage.json",
+        "codex": "skills-codex/docker-knowledge-patch/coverage.json"
+      },
       "covered_from": "25.0.0"
     },
     {
@@ -624,7 +913,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.0.0-beta.19",
       "coverage_label": "1.0.0-beta.19",
-      "path": "skills/drizzle-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/drizzle-knowledge-patch",
+        "codex": "skills-codex/drizzle-knowledge-patch"
+      },
       "languages": [
         "typescript"
       ],
@@ -635,9 +927,19 @@
         "schema",
         "database"
       ],
-      "content_hash": "sha256:b1e378c23fb6537bc0132fca9d9608fdf0f8b02d98ac0ac48dafcd2c5cf76cfe",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/drizzle-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:7c783dd7a97ec5240272fd8fc003b7d50e5ef7faaf1a64fe4bd5e01b7dcce898",
+        "codex": "sha256:7c783dd7a97ec5240272fd8fc003b7d50e5ef7faaf1a64fe4bd5e01b7dcce898"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/drizzle-knowledge-patch/coverage.json",
+        "codex": "skills-codex/drizzle-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "duckdb-knowledge-patch",
@@ -647,7 +949,10 @@
       "coverage_kind": "range",
       "covered_through": "1.5.0",
       "coverage_label": "1.2.0–1.5.0",
-      "path": "skills/duckdb-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/duckdb-knowledge-patch",
+        "codex": "skills-codex/duckdb-knowledge-patch"
+      },
       "languages": [
         "sql",
         "python"
@@ -659,9 +964,19 @@
         "embedded",
         "data-science"
       ],
-      "content_hash": "sha256:25ab5b03013228b9698b92f91bb5209d902c52dc7350cb287f4e8eae8d2cb473",
-      "generated_at": "2026-07-26T23:31:39Z",
-      "coverage_path": "skills/duckdb-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:20d345d9f4a0b34ec8c57a681b70464aff6aac973b9f5a415c7e3a0e26099109",
+        "codex": "sha256:20d345d9f4a0b34ec8c57a681b70464aff6aac973b9f5a415c7e3a0e26099109"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/duckdb-knowledge-patch/coverage.json",
+        "codex": "skills-codex/duckdb-knowledge-patch/coverage.json"
+      },
       "covered_from": "1.2.0"
     },
     {
@@ -672,7 +987,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.20.0-rc",
       "coverage_label": "1.20.0-rc",
-      "path": "skills/elixir-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/elixir-knowledge-patch",
+        "codex": "skills-codex/elixir-knowledge-patch"
+      },
       "languages": [
         "elixir"
       ],
@@ -683,9 +1001,19 @@
         "phoenix",
         "liveview"
       ],
-      "content_hash": "sha256:c57e7e0f75518bed97352fa5e61663f6607d77cd27e4533768c3f70153e000ae",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/elixir-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:733b0cfd97278893f8af6b231794136ccdbcaa56f3f28c0f47efa359bc4d4eca",
+        "codex": "sha256:733b0cfd97278893f8af6b231794136ccdbcaa56f3f28c0f47efa359bc4d4eca"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/elixir-knowledge-patch/coverage.json",
+        "codex": "skills-codex/elixir-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "eslint-knowledge-patch",
@@ -695,7 +1023,10 @@
       "coverage_kind": "versioned",
       "covered_through": "10.0.0",
       "coverage_label": "10.0.0",
-      "path": "skills/eslint-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/eslint-knowledge-patch",
+        "codex": "skills-codex/eslint-knowledge-patch"
+      },
       "languages": [
         "javascript",
         "typescript",
@@ -708,9 +1039,19 @@
         "static-analysis",
         "tooling"
       ],
-      "content_hash": "sha256:46b9ea0d69ba92e1afecbcf3ca34d41b8ee417b738a7d73d04e820f78b7f3da5",
-      "generated_at": "2026-07-26T21:35:35Z",
-      "coverage_path": "skills/eslint-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:3ae4cccaca254e1a60a22cb5bf851c2146134ef1a14fad189336894f07775ee0",
+        "codex": "sha256:3ae4cccaca254e1a60a22cb5bf851c2146134ef1a14fad189336894f07775ee0"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/eslint-knowledge-patch/coverage.json",
+        "codex": "skills-codex/eslint-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "expo-knowledge-patch",
@@ -720,7 +1061,10 @@
       "coverage_kind": "range",
       "covered_through": "SDK 56",
       "coverage_label": "SDK 55–SDK 56",
-      "path": "skills/expo-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/expo-knowledge-patch",
+        "codex": "skills-codex/expo-knowledge-patch"
+      },
       "languages": [
         "javascript",
         "typescript",
@@ -734,9 +1078,19 @@
         "android",
         "tooling"
       ],
-      "content_hash": "sha256:066fd7144028fa5dc96d29abab35f3516951068fb7191e0bd55b4ae3f438ed3f",
-      "generated_at": "2026-07-26T21:44:12Z",
-      "coverage_path": "skills/expo-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:f397e39bc1250b2dcb730ed6c23efda76ec65544f7179b14460e27d62115e225",
+        "codex": "sha256:f397e39bc1250b2dcb730ed6c23efda76ec65544f7179b14460e27d62115e225"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/expo-knowledge-patch/coverage.json",
+        "codex": "skills-codex/expo-knowledge-patch/coverage.json"
+      },
       "covered_from": "SDK 55"
     },
     {
@@ -747,7 +1101,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.135.3",
       "coverage_label": "0.135.3",
-      "path": "skills/fastapi-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/fastapi-knowledge-patch",
+        "codex": "skills-codex/fastapi-knowledge-patch"
+      },
       "languages": [
         "python"
       ],
@@ -758,9 +1115,19 @@
         "validation",
         "openapi"
       ],
-      "content_hash": "sha256:28169edb63bfc4de24558c1ec0f2679da90ec32bba91c317bd3a24a814bcbbd6",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/fastapi-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:7752ce1d6c6beb8216859cf98de9fd81aff7f83cea953d4f883a0252429b76db",
+        "codex": "sha256:7752ce1d6c6beb8216859cf98de9fd81aff7f83cea953d4f883a0252429b76db"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/fastapi-knowledge-patch/coverage.json",
+        "codex": "skills-codex/fastapi-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "fedora-knowledge-patch",
@@ -770,7 +1137,10 @@
       "coverage_kind": "versioned",
       "covered_through": "44",
       "coverage_label": "44",
-      "path": "skills/fedora-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/fedora-knowledge-patch",
+        "codex": "skills-codex/fedora-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -781,9 +1151,19 @@
         "system-administration",
         "selinux"
       ],
-      "content_hash": "sha256:cef58d0ee9f193c5d82f1dccbe2d032b0c4366f5fd8e1a109fb294d148ba4084",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/fedora-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:273c96e9621e0ef0297ebbd2cf180fec8f55ffe8bc1c9e72d458ddbc4f478066",
+        "codex": "sha256:273c96e9621e0ef0297ebbd2cf180fec8f55ffe8bc1c9e72d458ddbc4f478066"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/fedora-knowledge-patch/coverage.json",
+        "codex": "skills-codex/fedora-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "flutter-knowledge-patch",
@@ -793,7 +1173,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.44.0",
       "coverage_label": "3.44.0",
-      "path": "skills/flutter-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/flutter-knowledge-patch",
+        "codex": "skills-codex/flutter-knowledge-patch"
+      },
       "languages": [
         "dart"
       ],
@@ -804,9 +1187,19 @@
         "dart",
         "cross-platform"
       ],
-      "content_hash": "sha256:7a5e08a6e65405a310ddbe709d01b4ed02ce64c4cd7c65f85a24fed9f8b88342",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/flutter-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:ee5f7b12c3d3b4f54b9c4951e4aa8ad633aafd89f8b2675405eaacdf77281b60",
+        "codex": "sha256:ee5f7b12c3d3b4f54b9c4951e4aa8ad633aafd89f8b2675405eaacdf77281b60"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/flutter-knowledge-patch/coverage.json",
+        "codex": "skills-codex/flutter-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "gcp-knowledge-patch",
@@ -816,7 +1209,10 @@
       "coverage_kind": "rolling",
       "covered_through": null,
       "coverage_label": "rolling coverage",
-      "path": "skills/gcp-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/gcp-knowledge-patch",
+        "codex": "skills-codex/gcp-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "bash",
@@ -830,9 +1226,19 @@
         "kubernetes",
         "data"
       ],
-      "content_hash": "sha256:a82d679c0d93a082fe00559cf099370c6b3980a59ca7c1f8e8695e533809d633",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/gcp-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:d2850d0cda536aed1580597b0eb8a912173224da3487ccf2c208632b061fe575",
+        "codex": "sha256:d2850d0cda536aed1580597b0eb8a912173224da3487ccf2c208632b061fe575"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gcp-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gcp-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "geodesy-wgs84-knowledge-patch",
@@ -842,7 +1248,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/geodesy-wgs84-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/geodesy-wgs84-knowledge-patch",
+        "codex": "skills-codex/geodesy-wgs84-knowledge-patch"
+      },
       "languages": [
         "python",
         "cpp"
@@ -854,9 +1263,19 @@
         "projections",
         "reference-frames"
       ],
-      "content_hash": "sha256:b7eb7254aafd0ed65efb59958708c311f2f0936ae28959e12282f2cb84591c87",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/geodesy-wgs84-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:5f8d5105bf0cb32bb3ddad468bd322da16710737f70c94c82ec8dc9f1e663ebc",
+        "codex": "sha256:5f8d5105bf0cb32bb3ddad468bd322da16710737f70c94c82ec8dc9f1e663ebc"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/geodesy-wgs84-knowledge-patch/coverage.json",
+        "codex": "skills-codex/geodesy-wgs84-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "github-actions-knowledge-patch",
@@ -866,7 +1285,10 @@
       "coverage_kind": "rolling",
       "covered_through": null,
       "coverage_label": "rolling coverage",
-      "path": "skills/github-actions-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/github-actions-knowledge-patch",
+        "codex": "skills-codex/github-actions-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "bash"
@@ -878,9 +1300,19 @@
         "automation",
         "security"
       ],
-      "content_hash": "sha256:aab10daecab4ed79f5554ccf3f4efc5293d8fae2d964cb90fd140489dd0db547",
-      "generated_at": "2026-07-26T23:42:54Z",
-      "coverage_path": "skills/github-actions-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:806638a16be9b74a5c7635376442f1d97d5c45666a82ee0deab2bb05faf650e1",
+        "codex": "sha256:806638a16be9b74a5c7635376442f1d97d5c45666a82ee0deab2bb05faf650e1"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/github-actions-knowledge-patch/coverage.json",
+        "codex": "skills-codex/github-actions-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "gleam-knowledge-patch",
@@ -890,7 +1322,10 @@
       "coverage_kind": "range",
       "covered_through": "1.17.0",
       "coverage_label": "1.7.0–1.17.0",
-      "path": "skills/gleam-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/gleam-knowledge-patch",
+        "codex": "skills-codex/gleam-knowledge-patch"
+      },
       "languages": [
         "gleam"
       ],
@@ -901,9 +1336,19 @@
         "concurrency",
         "ffi"
       ],
-      "content_hash": "sha256:15b8362e989af8558b704cdeb3fd6c59bc015f094f84c89bd984e49028fa8088",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/gleam-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:546b2af96336345639478f5de53f5e819b216f5fc25ba71c5ffcfb9726877da9",
+        "codex": "sha256:546b2af96336345639478f5de53f5e819b216f5fc25ba71c5ffcfb9726877da9"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gleam-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gleam-knowledge-patch/coverage.json"
+      },
       "covered_from": "1.7.0"
     },
     {
@@ -914,7 +1359,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/gnss-navigation-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/gnss-navigation-knowledge-patch",
+        "codex": "skills-codex/gnss-navigation-knowledge-patch"
+      },
       "languages": [
         "cpp",
         "python"
@@ -926,9 +1374,19 @@
         "rtk",
         "ppp"
       ],
-      "content_hash": "sha256:3459ce4f545ea70f83fd7576fe507cfc9affd9578aa1cd38ee4fd612f6b1e2a6",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/gnss-navigation-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:686c4424a8f39f3b05bc1656e02eb6d1b1dde1159496d15eb04bfddc07dbbccf",
+        "codex": "sha256:686c4424a8f39f3b05bc1656e02eb6d1b1dde1159496d15eb04bfddc07dbbccf"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gnss-navigation-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gnss-navigation-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "go-knowledge-patch",
@@ -938,7 +1396,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.26.0",
       "coverage_label": "1.26.0",
-      "path": "skills/go-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/go-knowledge-patch",
+        "codex": "skills-codex/go-knowledge-patch"
+      },
       "languages": [
         "go"
       ],
@@ -949,9 +1410,19 @@
         "concurrency",
         "generics"
       ],
-      "content_hash": "sha256:3623e069279abf0941ebce0dc4260f9f1239975e64a13e5f5e3602a11b3e8ce3",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/go-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:d33cc8aa4002567cbfb90f49451136b4f980d3cde4d220d8deffe82485d8c4c2",
+        "codex": "sha256:d33cc8aa4002567cbfb90f49451136b4f980d3cde4d220d8deffe82485d8c4c2"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/go-knowledge-patch/coverage.json",
+        "codex": "skills-codex/go-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "gpsd-knowledge-patch",
@@ -961,7 +1432,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.27",
       "coverage_label": "3.27",
-      "path": "skills/gpsd-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/gpsd-knowledge-patch",
+        "codex": "skills-codex/gpsd-knowledge-patch"
+      },
       "languages": [
         "c",
         "python",
@@ -974,9 +1448,19 @@
         "positioning",
         "nmea"
       ],
-      "content_hash": "sha256:488c02af0711e6aaf5be41eb41246df34c5422810f0253c93756267510b1a906",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/gpsd-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:d7bd215ac8eee0fdf55d8885827fa5c0ddef429d453866689cfbda6d74728dac",
+        "codex": "sha256:d7bd215ac8eee0fdf55d8885827fa5c0ddef429d453866689cfbda6d74728dac"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gpsd-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gpsd-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "grpc-knowledge-patch",
@@ -986,7 +1470,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/grpc-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/grpc-knowledge-patch",
+        "codex": "skills-codex/grpc-knowledge-patch"
+      },
       "languages": [
         "go",
         "java",
@@ -1000,9 +1487,19 @@
         "services",
         "streaming"
       ],
-      "content_hash": "sha256:8cac71c25ffa370e76eb04b11b36bf1348ffec54290ec86df0fa97a44620f29f",
-      "generated_at": "2026-07-26T21:07:00Z",
-      "coverage_path": "skills/grpc-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:81e40a1df7c5564e3a5bd19428451c5996630b9fc0162eccf021a3fdca391b0d",
+        "codex": "sha256:81e40a1df7c5564e3a5bd19428451c5996630b9fc0162eccf021a3fdca391b0d"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/grpc-knowledge-patch/coverage.json",
+        "codex": "skills-codex/grpc-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "helm-knowledge-patch",
@@ -1012,7 +1509,10 @@
       "coverage_kind": "range",
       "covered_through": "4.2.3",
       "coverage_label": "4.0.0–4.2.3",
-      "path": "skills/helm-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/helm-knowledge-patch",
+        "codex": "skills-codex/helm-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "go"
@@ -1024,9 +1524,19 @@
         "templating",
         "package-manager"
       ],
-      "content_hash": "sha256:1b3e9b9de3c23b7e31f8b669eac26ff465604d34a0df9d778f1e7196362e2f7f",
-      "generated_at": "2026-07-26T21:47:42Z",
-      "coverage_path": "skills/helm-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:b4ae1c40d403312c26d5222e99a0620d6c891530f4d24bd4f34d728ebc91e37a",
+        "codex": "sha256:b4ae1c40d403312c26d5222e99a0620d6c891530f4d24bd4f34d728ebc91e37a"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/helm-knowledge-patch/coverage.json",
+        "codex": "skills-codex/helm-knowledge-patch/coverage.json"
+      },
       "covered_from": "4.0.0"
     },
     {
@@ -1037,7 +1547,10 @@
       "coverage_kind": "range",
       "covered_through": "4.12.0",
       "coverage_label": "4.8.0–4.12.0",
-      "path": "skills/hono-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/hono-knowledge-patch",
+        "codex": "skills-codex/hono-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript"
@@ -1049,9 +1562,19 @@
         "edge-runtime",
         "rpc"
       ],
-      "content_hash": "sha256:ae53f0a716a57ff693effbd0643e25e82b3ba5a88a5a6b8478ea23227fb8f3fa",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/hono-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:243c24b3ed584b43619690cd1ae43673a98c08f81a2a7423c19be7e6d3cc54f9",
+        "codex": "sha256:243c24b3ed584b43619690cd1ae43673a98c08f81a2a7423c19be7e6d3cc54f9"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/hono-knowledge-patch/coverage.json",
+        "codex": "skills-codex/hono-knowledge-patch/coverage.json"
+      },
       "covered_from": "4.8.0"
     },
     {
@@ -1062,7 +1585,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.0.0",
       "coverage_label": "4.0.0",
-      "path": "skills/htmx-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/htmx-knowledge-patch",
+        "codex": "skills-codex/htmx-knowledge-patch"
+      },
       "languages": [
         "html",
         "javascript"
@@ -1074,9 +1600,19 @@
         "frontend",
         "sse"
       ],
-      "content_hash": "sha256:094691d3a2b839931e79a396b452bcfb0bf64f155ff5466aaba7853b8c477308",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/htmx-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:ca2e9e7d936c50260a764cd989130f0f037197515b80de149c60a2f7cbb120fb",
+        "codex": "sha256:ca2e9e7d936c50260a764cd989130f0f037197515b80de149c60a2f7cbb120fb"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/htmx-knowledge-patch/coverage.json",
+        "codex": "skills-codex/htmx-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "kotlin-knowledge-patch",
@@ -1086,7 +1622,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.3.20",
       "coverage_label": "2.3.20",
-      "path": "skills/kotlin-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/kotlin-knowledge-patch",
+        "codex": "skills-codex/kotlin-knowledge-patch"
+      },
       "languages": [
         "kotlin"
       ],
@@ -1097,9 +1636,19 @@
         "coroutines",
         "compose"
       ],
-      "content_hash": "sha256:d344e9db6b933744acadb11fc955a69f315d2aa585e1ff0bee3472c0e4859e7d",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/kotlin-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:f103ceacb63ad570952b093e07c613f6a4e7807b426f46442fa93d2b8bb456b0",
+        "codex": "sha256:f103ceacb63ad570952b093e07c613f6a4e7807b426f46442fa93d2b8bb456b0"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/kotlin-knowledge-patch/coverage.json",
+        "codex": "skills-codex/kotlin-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "kubernetes-knowledge-patch",
@@ -1109,7 +1658,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.36.0",
       "coverage_label": "1.36.0",
-      "path": "skills/kubernetes-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/kubernetes-knowledge-patch",
+        "codex": "skills-codex/kubernetes-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "bash"
@@ -1122,9 +1674,57 @@
         "rbac",
         "gateway-api"
       ],
-      "content_hash": "sha256:79bf39d80af20bbb6d245aac27c692f63d16beea573282c8ccac08d750d3ce4f",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/kubernetes-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:40a4a124ff84f90420a1f7011785d8e0aaa740858f204ecc09e0c0bc98679a88",
+        "codex": "sha256:40a4a124ff84f90420a1f7011785d8e0aaa740858f204ecc09e0c0bc98679a88"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/kubernetes-knowledge-patch/coverage.json",
+        "codex": "skills-codex/kubernetes-knowledge-patch/coverage.json"
+      }
+    },
+    {
+      "id": "kustomize-knowledge-patch",
+      "display_name": "Kustomize",
+      "short_label": "Kustomize",
+      "description": "Kustomize",
+      "coverage_kind": "versioned",
+      "covered_through": "5.8.1",
+      "coverage_label": "5.8.1",
+      "paths": {
+        "claude": "skills-claude/kustomize-knowledge-patch",
+        "codex": "skills-codex/kustomize-knowledge-patch"
+      },
+      "languages": [
+        "yaml",
+        "go"
+      ],
+      "tags": [
+        "kubernetes",
+        "configuration",
+        "overlays",
+        "kustomize",
+        "yaml",
+        "go"
+      ],
+      "content_hashes": {
+        "claude": "sha256:3b26dbedbd369cc9a3aa9d1a6b9e1852b7db3045b93e930c06922194a90a2151",
+        "codex": "sha256:85e6906d7bc177fbba239e2d0a4903c01e2fe81db486d4d5b37419941f339e69"
+      },
+      "generated_at": "2026-07-28T23:37:24Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:37:24Z",
+        "codex": "2026-07-28T21:12:10Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/kustomize-knowledge-patch/coverage.json",
+        "codex": "skills-codex/kustomize-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "langchain-knowledge-patch",
@@ -1134,7 +1734,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.1.0",
       "coverage_label": "1.1.0",
-      "path": "skills/langchain-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/langchain-knowledge-patch",
+        "codex": "skills-codex/langchain-knowledge-patch"
+      },
       "languages": [
         "python",
         "typescript",
@@ -1148,9 +1751,19 @@
         "tools",
         "langgraph"
       ],
-      "content_hash": "sha256:9c4ed957ab7f28530ff5250bc03e06718c85d3c2c3fec6443d6651c3e1167a53",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/langchain-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:ef2ea9bdc018325525ee0b9a0b19d2249a5134775553fa53e4b6e33a7c44db9f",
+        "codex": "sha256:ef2ea9bdc018325525ee0b9a0b19d2249a5134775553fa53e4b6e33a7c44db9f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/langchain-knowledge-patch/coverage.json",
+        "codex": "skills-codex/langchain-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "lavaan-cfa-knowledge-patch",
@@ -1160,7 +1773,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/lavaan-cfa-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/lavaan-cfa-knowledge-patch",
+        "codex": "skills-codex/lavaan-cfa-knowledge-patch"
+      },
       "languages": [
         "r"
       ],
@@ -1171,9 +1787,19 @@
         "confirmatory-factor-analysis",
         "research"
       ],
-      "content_hash": "sha256:7c01a52229620184f62167d271efe03b219b20808a93c56c39d3389649582735",
-      "generated_at": "2026-07-26T22:11:54Z",
-      "coverage_path": "skills/lavaan-cfa-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:635a30e0d191f1ed7a6f7742b5450818a5231d0cd7fdb32c961caf5e4de0c33f",
+        "codex": "sha256:635a30e0d191f1ed7a6f7742b5450818a5231d0cd7fdb32c961caf5e4de0c33f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/lavaan-cfa-knowledge-patch/coverage.json",
+        "codex": "skills-codex/lavaan-cfa-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "leptos-knowledge-patch",
@@ -1183,7 +1809,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.8.17",
       "coverage_label": "0.8.17",
-      "path": "skills/leptos-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/leptos-knowledge-patch",
+        "codex": "skills-codex/leptos-knowledge-patch"
+      },
       "languages": [
         "rust"
       ],
@@ -1194,9 +1823,19 @@
         "ssr",
         "hydration"
       ],
-      "content_hash": "sha256:76ddb3626d534409c68bc8f66d3042a4ba009e91dd5a046f881a19f4cd7015a2",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/leptos-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:38051c144cd008e11fbeb34c39132d01fcba5cb12ff6dc3a6cab83241544deb4",
+        "codex": "sha256:38051c144cd008e11fbeb34c39132d01fcba5cb12ff6dc3a6cab83241544deb4"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/leptos-knowledge-patch/coverage.json",
+        "codex": "skills-codex/leptos-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "mongodb-knowledge-patch",
@@ -1206,7 +1845,10 @@
       "coverage_kind": "versioned",
       "covered_through": "8.2",
       "coverage_label": "8.2",
-      "path": "skills/mongodb-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/mongodb-knowledge-patch",
+        "codex": "skills-codex/mongodb-knowledge-patch"
+      },
       "languages": [
         "javascript",
         "json"
@@ -1218,9 +1860,19 @@
         "replication",
         "sharding"
       ],
-      "content_hash": "sha256:b134cd1a50a1bc60e5c20da54919256557e602aeae44e39ea4b8a1a70bcc5e80",
-      "generated_at": "2026-07-26T21:26:21Z",
-      "coverage_path": "skills/mongodb-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:c19a5bc8ef4ba1a04db581800ee0841f9cc78ef1c8a7056356817df46a70c18a",
+        "codex": "sha256:c19a5bc8ef4ba1a04db581800ee0841f9cc78ef1c8a7056356817df46a70c18a"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/mongodb-knowledge-patch/coverage.json",
+        "codex": "skills-codex/mongodb-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "mysql-knowledge-patch",
@@ -1230,7 +1882,10 @@
       "coverage_kind": "range",
       "covered_through": "9.7.0",
       "coverage_label": "9.2–9.7.0",
-      "path": "skills/mysql-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/mysql-knowledge-patch",
+        "codex": "skills-codex/mysql-knowledge-patch"
+      },
       "languages": [
         "sql"
       ],
@@ -1241,9 +1896,19 @@
         "administration",
         "innodb"
       ],
-      "content_hash": "sha256:35610fdb00e58724911e5ba80e8c704f55ccbf9b44512ac4f269696369720431",
-      "generated_at": "2026-07-26T23:16:23Z",
-      "coverage_path": "skills/mysql-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:832f679352b65a01ed4b4dc85caee9d3d1391427dc0781ac1031327def8d7ead",
+        "codex": "sha256:832f679352b65a01ed4b4dc85caee9d3d1391427dc0781ac1031327def8d7ead"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/mysql-knowledge-patch/coverage.json",
+        "codex": "skills-codex/mysql-knowledge-patch/coverage.json"
+      },
       "covered_from": "9.2"
     },
     {
@@ -1254,7 +1919,10 @@
       "coverage_kind": "versioned",
       "covered_through": "16.3.0",
       "coverage_label": "16.3.0",
-      "path": "skills/nextjs-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/nextjs-knowledge-patch",
+        "codex": "skills-codex/nextjs-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "tsx",
@@ -1268,9 +1936,19 @@
         "ssr",
         "caching"
       ],
-      "content_hash": "sha256:5861d9219d7a8dabdb904a6ccc1c4b02aa24b13a2532a40a8e349f91ad34a478",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/nextjs-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:09e2028b132dce333cd90469b1285925b85e50e5c9a063b653c6cc03d315e24a",
+        "codex": "sha256:09e2028b132dce333cd90469b1285925b85e50e5c9a063b653c6cc03d315e24a"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nextjs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nextjs-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "nginx-knowledge-patch",
@@ -1280,7 +1958,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.31.0",
       "coverage_label": "1.31.0",
-      "path": "skills/nginx-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/nginx-knowledge-patch",
+        "codex": "skills-codex/nginx-knowledge-patch"
+      },
       "languages": [
         "nginx",
         "bash"
@@ -1292,9 +1973,19 @@
         "tls",
         "load-balancing"
       ],
-      "content_hash": "sha256:8bc3867a85dcb0a8a071bfa386f09a210003215b60d858b07e2df0bb9f2947d3",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/nginx-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:041779dccca48f029acba50a0af55c4e50f98fb20faef17844ec9498b1ce8c77",
+        "codex": "sha256:041779dccca48f029acba50a0af55c4e50f98fb20faef17844ec9498b1ce8c77"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nginx-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nginx-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "nmea0183-knowledge-patch",
@@ -1304,7 +1995,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.30",
       "coverage_label": "4.30",
-      "path": "skills/nmea0183-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/nmea0183-knowledge-patch",
+        "codex": "skills-codex/nmea0183-knowledge-patch"
+      },
       "languages": [
         "c",
         "cpp",
@@ -1317,9 +2011,19 @@
         "sentences",
         "serial"
       ],
-      "content_hash": "sha256:a77e0c13aee049a391fe861148fb60035c11e2396ac5799477973ae421ef3b17",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/nmea0183-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:4fe842f3696cffc24c721eca14f208a98175976b0c827ab4627a08e2da68b31d",
+        "codex": "sha256:4fe842f3696cffc24c721eca14f208a98175976b0c827ab4627a08e2da68b31d"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nmea0183-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nmea0183-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "nodejs-knowledge-patch",
@@ -1329,7 +2033,10 @@
       "coverage_kind": "range",
       "covered_through": "26.5.0",
       "coverage_label": "23.0.0–26.5.0",
-      "path": "skills/nodejs-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/nodejs-knowledge-patch",
+        "codex": "skills-codex/nodejs-knowledge-patch"
+      },
       "languages": [
         "javascript",
         "typescript"
@@ -1341,9 +2048,19 @@
         "npm",
         "streams"
       ],
-      "content_hash": "sha256:cdc577f80267c769c9c18f47ad5bf20eb4d8be81c899c6ce731dcf238652f9a2",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/nodejs-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:aac7e90e074fd4af44b9ecf2566f65748a0421561d2849bf4adae6cbe537beca",
+        "codex": "sha256:aac7e90e074fd4af44b9ecf2566f65748a0421561d2849bf4adae6cbe537beca"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nodejs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nodejs-knowledge-patch/coverage.json"
+      },
       "covered_from": "23.0.0"
     },
     {
@@ -1354,7 +2071,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/ntrip-rtklib-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/ntrip-rtklib-knowledge-patch",
+        "codex": "skills-codex/ntrip-rtklib-knowledge-patch"
+      },
       "languages": [
         "c",
         "cpp",
@@ -1367,9 +2087,19 @@
         "ntrip",
         "positioning"
       ],
-      "content_hash": "sha256:2eb886dc0ad87e4d15ac00021687a41eb762ed063930c1540c842c1a58fed63d",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/ntrip-rtklib-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:0407d2deceef3398c4e91c5ed44e96cab15d8bfd19fccaa0129ce232c08ebc85",
+        "codex": "sha256:0407d2deceef3398c4e91c5ed44e96cab15d8bfd19fccaa0129ce232c08ebc85"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ntrip-rtklib-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ntrip-rtklib-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "nuxt-knowledge-patch",
@@ -1379,7 +2109,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.4.0",
       "coverage_label": "4.4.0",
-      "path": "skills/nuxt-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/nuxt-knowledge-patch",
+        "codex": "skills-codex/nuxt-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript"
@@ -1391,9 +2124,19 @@
         "routing",
         "nitro"
       ],
-      "content_hash": "sha256:16cfe3fbe9a5ca53a913d5f9845719a57d4b3128d9becc591697fe0d6867f153",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/nuxt-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:5bd342734aa381a8e2cb0b87ee127870c801ec515ad2bc73b97be7bc1c651ccc",
+        "codex": "sha256:5bd342734aa381a8e2cb0b87ee127870c801ec515ad2bc73b97be7bc1c651ccc"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nuxt-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nuxt-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "oauth2-oidc-knowledge-patch",
@@ -1403,7 +2146,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/oauth2-oidc-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/oauth2-oidc-knowledge-patch",
+        "codex": "skills-codex/oauth2-oidc-knowledge-patch"
+      },
       "languages": [
         "json",
         "javascript",
@@ -1416,9 +2162,19 @@
         "openid-connect",
         "security"
       ],
-      "content_hash": "sha256:56d549518fabd7498a503b13567857eef532377fcbd25524d7eed779ac6a0d54",
-      "generated_at": "2026-07-26T23:44:06Z",
-      "coverage_path": "skills/oauth2-oidc-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:62e3c7e91a1f798b41084dd6fed34154d74f04a22cc472837ca9ad6240ac9c76",
+        "codex": "sha256:62e3c7e91a1f798b41084dd6fed34154d74f04a22cc472837ca9ad6240ac9c76"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/oauth2-oidc-knowledge-patch/coverage.json",
+        "codex": "skills-codex/oauth2-oidc-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "openapi-knowledge-patch",
@@ -1428,7 +2184,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.2.0",
       "coverage_label": "3.2.0",
-      "path": "skills/openapi-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/openapi-knowledge-patch",
+        "codex": "skills-codex/openapi-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "json"
@@ -1440,9 +2199,19 @@
         "documentation",
         "code-generation"
       ],
-      "content_hash": "sha256:c238384bb9ee24d304bcaa656a1e5c910fbe2ab1797849b075321c49065596ec",
-      "generated_at": "2026-07-26T21:00:08Z",
-      "coverage_path": "skills/openapi-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:13002e53698b47651b8f2c5a99069b0c5d9d17eab2fdb01195bd9793b93846f9",
+        "codex": "sha256:13002e53698b47651b8f2c5a99069b0c5d9d17eab2fdb01195bd9793b93846f9"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/openapi-knowledge-patch/coverage.json",
+        "codex": "skills-codex/openapi-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "openssh-knowledge-patch",
@@ -1452,7 +2221,10 @@
       "coverage_kind": "range",
       "covered_through": "10.4",
       "coverage_label": "10.0–10.4",
-      "path": "skills/openssh-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/openssh-knowledge-patch",
+        "codex": "skills-codex/openssh-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -1463,9 +2235,19 @@
         "system-administration",
         "cryptography"
       ],
-      "content_hash": "sha256:3bb348687c678b9e8c36b2f866fe380932bca042018392fc58457cd196758887",
-      "generated_at": "2026-07-26T23:38:51Z",
-      "coverage_path": "skills/openssh-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:622f6ac65d478585e196a25913b848a425d063a774b3ab0464b1d16357aa253d",
+        "codex": "sha256:622f6ac65d478585e196a25913b848a425d063a774b3ab0464b1d16357aa253d"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/openssh-knowledge-patch/coverage.json",
+        "codex": "skills-codex/openssh-knowledge-patch/coverage.json"
+      },
       "covered_from": "10.0"
     },
     {
@@ -1476,7 +2258,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.0.0",
       "coverage_label": "4.0.0",
-      "path": "skills/openssl-tls-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/openssl-tls-knowledge-patch",
+        "codex": "skills-codex/openssl-tls-knowledge-patch"
+      },
       "languages": [
         "c",
         "bash"
@@ -1488,9 +2273,19 @@
         "pki",
         "security"
       ],
-      "content_hash": "sha256:66b5afc13c8eed5d6bd26f8502160e5ff6b5951ee9f3fa42f1b6b6b17612d02b",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/openssl-tls-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:68a11d91b76ce75912e90a7d39a7f805ceb9b4cd6bd8b2e83a1fe13ecc5d6b2b",
+        "codex": "sha256:68a11d91b76ce75912e90a7d39a7f805ceb9b4cd6bd8b2e83a1fe13ecc5d6b2b"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/openssl-tls-knowledge-patch/coverage.json",
+        "codex": "skills-codex/openssl-tls-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "opentelemetry-knowledge-patch",
@@ -1500,7 +2295,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/opentelemetry-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/opentelemetry-knowledge-patch",
+        "codex": "skills-codex/opentelemetry-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "json",
@@ -1516,9 +2314,19 @@
         "logs",
         "collector"
       ],
-      "content_hash": "sha256:aa169a3ac08bae5c00909777bb2f517d31e64c6e5c93dd7114a59f5254e20826",
-      "generated_at": "2026-07-26T20:55:38Z",
-      "coverage_path": "skills/opentelemetry-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:31882e962ad7e42a7ad412523a45ed0de689d4ff56c14f666674ea98ee395fef",
+        "codex": "sha256:31882e962ad7e42a7ad412523a45ed0de689d4ff56c14f666674ea98ee395fef"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/opentelemetry-knowledge-patch/coverage.json",
+        "codex": "skills-codex/opentelemetry-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "pgvector-knowledge-patch",
@@ -1528,7 +2336,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.8.5",
       "coverage_label": "0.8.5",
-      "path": "skills/pgvector-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/pgvector-knowledge-patch",
+        "codex": "skills-codex/pgvector-knowledge-patch"
+      },
       "languages": [
         "sql"
       ],
@@ -1539,9 +2350,19 @@
         "postgresql",
         "indexing"
       ],
-      "content_hash": "sha256:eb61eaee0aa4bb1a518604c8c64aa771c3c986ff1fc6aaf042dfcaccacdd5a90",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/pgvector-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:a52aa88c781514e95d38fac4f5b438a89c734e8ca0eee2d230d54c8d274713c5",
+        "codex": "sha256:a52aa88c781514e95d38fac4f5b438a89c734e8ca0eee2d230d54c8d274713c5"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/pgvector-knowledge-patch/coverage.json",
+        "codex": "skills-codex/pgvector-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "playwright-knowledge-patch",
@@ -1551,7 +2372,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.61.0",
       "coverage_label": "1.61.0",
-      "path": "skills/playwright-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/playwright-knowledge-patch",
+        "codex": "skills-codex/playwright-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -1564,9 +2388,19 @@
         "e2e",
         "fixtures"
       ],
-      "content_hash": "sha256:504dfc8304db78b067272b2fa613da5fae1dfaa2f1321a20a8f6f837f5e24793",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/playwright-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:09e73cde8a912ec0b8076611c67f5bc8982ac52ef68545cae5c96360712db337",
+        "codex": "sha256:09e73cde8a912ec0b8076611c67f5bc8982ac52ef68545cae5c96360712db337"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/playwright-knowledge-patch/coverage.json",
+        "codex": "skills-codex/playwright-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "podman-knowledge-patch",
@@ -1576,7 +2410,10 @@
       "coverage_kind": "versioned",
       "covered_through": "6.0.0",
       "coverage_label": "6.0.0",
-      "path": "skills/podman-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/podman-knowledge-patch",
+        "codex": "skills-codex/podman-knowledge-patch"
+      },
       "languages": [
         "bash",
         "yaml"
@@ -1588,9 +2425,19 @@
         "compose",
         "rootless"
       ],
-      "content_hash": "sha256:ea545d4e368d77ca81de82d84afab632381d706ffaa68b3fdef105813881cf66",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/podman-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:f9888249b8724b33dca6010c69ef1c71078a79c0332405cdec6b08c834f7d6ad",
+        "codex": "sha256:f9888249b8724b33dca6010c69ef1c71078a79c0332405cdec6b08c834f7d6ad"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/podman-knowledge-patch/coverage.json",
+        "codex": "skills-codex/podman-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "postgis-knowledge-patch",
@@ -1600,7 +2447,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.6.1",
       "coverage_label": "3.6.1",
-      "path": "skills/postgis-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/postgis-knowledge-patch",
+        "codex": "skills-codex/postgis-knowledge-patch"
+      },
       "languages": [
         "sql"
       ],
@@ -1611,9 +2461,19 @@
         "geometry",
         "geography"
       ],
-      "content_hash": "sha256:129d1a333d33213c56df6b239935f4767938b9ca1c46130871d017584c8741d6",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/postgis-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:a8890b7a986936f5bb5038fb6765c2634dd090f9d2d4b44c1a54d053c0ae715b",
+        "codex": "sha256:a8890b7a986936f5bb5038fb6765c2634dd090f9d2d4b44c1a54d053c0ae715b"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/postgis-knowledge-patch/coverage.json",
+        "codex": "skills-codex/postgis-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "postgresql-knowledge-patch",
@@ -1623,7 +2483,10 @@
       "coverage_kind": "versioned",
       "covered_through": "18.0",
       "coverage_label": "18.0",
-      "path": "skills/postgresql-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/postgresql-knowledge-patch",
+        "codex": "skills-codex/postgresql-knowledge-patch"
+      },
       "languages": [
         "sql"
       ],
@@ -1634,9 +2497,19 @@
         "replication",
         "indexing"
       ],
-      "content_hash": "sha256:c2daed28ead7a98a7aa250f6e0cf0ee3346647bfd94d77a8d6b0e87f70556004",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/postgresql-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:12d3c412ee24241da88ab9c5e487b0086ec3884ac68e2e7d8a539d2f5afbc34f",
+        "codex": "sha256:12d3c412ee24241da88ab9c5e487b0086ec3884ac68e2e7d8a539d2f5afbc34f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/postgresql-knowledge-patch/coverage.json",
+        "codex": "skills-codex/postgresql-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "prisma-knowledge-patch",
@@ -1646,7 +2519,10 @@
       "coverage_kind": "versioned",
       "covered_through": "7.8.0",
       "coverage_label": "7.8.0",
-      "path": "skills/prisma-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/prisma-knowledge-patch",
+        "codex": "skills-codex/prisma-knowledge-patch"
+      },
       "languages": [
         "typescript"
       ],
@@ -1657,9 +2533,19 @@
         "database",
         "client"
       ],
-      "content_hash": "sha256:c902e614fe1a873121fb96f9da0880e02a684acdc4db75ea0cfcaa1ec180913c",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/prisma-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:d7685caab6243f78514597a0e40cf37b4fc58f86bc0852a6b3272b011a9938cd",
+        "codex": "sha256:d7685caab6243f78514597a0e40cf37b4fc58f86bc0852a6b3272b011a9938cd"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/prisma-knowledge-patch/coverage.json",
+        "codex": "skills-codex/prisma-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "python-knowledge-patch",
@@ -1669,7 +2555,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.14",
       "coverage_label": "3.14",
-      "path": "skills/python-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/python-knowledge-patch",
+        "codex": "skills-codex/python-knowledge-patch"
+      },
       "languages": [
         "python"
       ],
@@ -1680,9 +2569,19 @@
         "async",
         "runtime"
       ],
-      "content_hash": "sha256:8dca3cba356851bd988d29a13aed61a99a2b17ca17863a91bf4a056a730d0f6b",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/python-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:08509b625bc197fc15ff246166cc3c175f8ab502857c85d6ae0396d6e4c802c6",
+        "codex": "sha256:08509b625bc197fc15ff246166cc3c175f8ab502857c85d6ae0396d6e4c802c6"
+      },
+      "generated_at": "2026-07-28T23:31:57Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:31:57Z",
+        "codex": "2026-07-28T23:31:57Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/python-knowledge-patch/coverage.json",
+        "codex": "skills-codex/python-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "pytorch-knowledge-patch",
@@ -1692,7 +2591,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.11.0",
       "coverage_label": "2.11.0",
-      "path": "skills/pytorch-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/pytorch-knowledge-patch",
+        "codex": "skills-codex/pytorch-knowledge-patch"
+      },
       "languages": [
         "python"
       ],
@@ -1703,9 +2605,19 @@
         "training",
         "gpu"
       ],
-      "content_hash": "sha256:821aef73a4cbb509c90bcfc53e2fe173036fb94b18002f7030f4c44a7aeed70a",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/pytorch-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:4bb81fee0467b7b083d71e6124ac15b3db4c13dff94692b239fe813409fcbcfa",
+        "codex": "sha256:4bb81fee0467b7b083d71e6124ac15b3db4c13dff94692b239fe813409fcbcfa"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/pytorch-knowledge-patch/coverage.json",
+        "codex": "skills-codex/pytorch-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "r-cran-knowledge-patch",
@@ -1715,7 +2627,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/r-cran-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/r-cran-knowledge-patch",
+        "codex": "skills-codex/r-cran-knowledge-patch"
+      },
       "languages": [
         "r"
       ],
@@ -1726,9 +2641,19 @@
         "packages",
         "scientific-computing"
       ],
-      "content_hash": "sha256:201b08e523c5a6d84ca91cde63f8334d9bf33d47ce0bf7e75fc89bb2e597ef79",
-      "generated_at": "2026-07-26T22:04:30Z",
-      "coverage_path": "skills/r-cran-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:5875ddc107349ae124b7861ec2b26f54e3350f5ff24c93c26547b8b6e9c51717",
+        "codex": "sha256:5875ddc107349ae124b7861ec2b26f54e3350f5ff24c93c26547b8b6e9c51717"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/r-cran-knowledge-patch/coverage.json",
+        "codex": "skills-codex/r-cran-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "rails-knowledge-patch",
@@ -1738,7 +2663,10 @@
       "coverage_kind": "versioned",
       "covered_through": "8.1",
       "coverage_label": "8.1",
-      "path": "skills/rails-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/rails-knowledge-patch",
+        "codex": "skills-codex/rails-knowledge-patch"
+      },
       "languages": [
         "ruby"
       ],
@@ -1749,9 +2677,19 @@
         "jobs",
         "hotwire"
       ],
-      "content_hash": "sha256:aacef4c9afb7c6c2e19d9d8eaa65de46752be52a5e598d73290293e0b5bf7579",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/rails-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:96d7cc4ba063491bb1a7d415c8a66bec0defed8c129f63bc375801d31d7ccb65",
+        "codex": "sha256:96d7cc4ba063491bb1a7d415c8a66bec0defed8c129f63bc375801d31d7ccb65"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rails-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rails-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "ratatui-knowledge-patch",
@@ -1761,7 +2699,10 @@
       "coverage_kind": "range",
       "covered_through": "0.31.0",
       "coverage_label": "0.29.0–0.31.0",
-      "path": "skills/ratatui-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/ratatui-knowledge-patch",
+        "codex": "skills-codex/ratatui-knowledge-patch"
+      },
       "languages": [
         "rust"
       ],
@@ -1772,9 +2713,19 @@
         "rendering",
         "events"
       ],
-      "content_hash": "sha256:83e15b504ff46aa337dc885333a21eb3b2d51ebe1a37998ddea253b00912f98e",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/ratatui-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:b6f32ec3a261868d50acc58c84e432755e6653fbcaa52c37b438626481799247",
+        "codex": "sha256:b6f32ec3a261868d50acc58c84e432755e6653fbcaa52c37b438626481799247"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ratatui-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ratatui-knowledge-patch/coverage.json"
+      },
       "covered_from": "0.29.0"
     },
     {
@@ -1785,7 +2736,10 @@
       "coverage_kind": "versioned",
       "covered_through": "19.2.0",
       "coverage_label": "19.2.0",
-      "path": "skills/react-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/react-knowledge-patch",
+        "codex": "skills-codex/react-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "tsx",
@@ -1798,9 +2752,19 @@
         "rendering",
         "jsx"
       ],
-      "content_hash": "sha256:9b98f662439347a624159c5d39524298d358956a3d2506fb66379afb07701a22",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/react-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:144e4d98e5264007a2d0ac296507e8588850481a7135f5df0cb4625138ae4757",
+        "codex": "sha256:144e4d98e5264007a2d0ac296507e8588850481a7135f5df0cb4625138ae4757"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/react-knowledge-patch/coverage.json",
+        "codex": "skills-codex/react-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "react-native-knowledge-patch",
@@ -1810,7 +2774,10 @@
       "coverage_kind": "range",
       "covered_through": "0.86.0",
       "coverage_label": "0.77–0.86.0",
-      "path": "skills/react-native-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/react-native-knowledge-patch",
+        "codex": "skills-codex/react-native-knowledge-patch"
+      },
       "languages": [
         "javascript",
         "typescript",
@@ -1823,9 +2790,19 @@
         "android",
         "javascript"
       ],
-      "content_hash": "sha256:ed1e9967b8bbf9536fcce8f3c78fa4e961389ab5188968926339c2f8edc1bd39",
-      "generated_at": "2026-07-26T23:03:16Z",
-      "coverage_path": "skills/react-native-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:b24e0744cb264c6407a57a87f782fe9ae180d995eee45a108b7b2455705b8dd6",
+        "codex": "sha256:b24e0744cb264c6407a57a87f782fe9ae180d995eee45a108b7b2455705b8dd6"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/react-native-knowledge-patch/coverage.json",
+        "codex": "skills-codex/react-native-knowledge-patch/coverage.json"
+      },
       "covered_from": "0.77"
     },
     {
@@ -1836,7 +2813,10 @@
       "coverage_kind": "versioned",
       "covered_through": "8.2.0",
       "coverage_label": "8.2.0",
-      "path": "skills/react-router-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/react-router-knowledge-patch",
+        "codex": "skills-codex/react-router-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -1850,9 +2830,19 @@
         "actions",
         "framework"
       ],
-      "content_hash": "sha256:a987edd6b4b832520b3534fcb72a7927536fd89ca4544582b4294debaec52eea",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/react-router-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:9daeb897ef4c03fdcc78bda80c9524ad3b56558b074c396ac631b8021e4486ee",
+        "codex": "sha256:9daeb897ef4c03fdcc78bda80c9524ad3b56558b074c396ac631b8021e4486ee"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/react-router-knowledge-patch/coverage.json",
+        "codex": "skills-codex/react-router-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "redis-knowledge-patch",
@@ -1862,7 +2852,10 @@
       "coverage_kind": "range",
       "covered_through": "8.8.1",
       "coverage_label": "8.0–8.8.1",
-      "path": "skills/redis-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/redis-knowledge-patch",
+        "codex": "skills-codex/redis-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -1873,9 +2866,19 @@
         "streams",
         "operations"
       ],
-      "content_hash": "sha256:8c342de77b97b4f4c6d69c08d1af8856ef018ad6657c1e16e4a7c69ede9fcbc8",
-      "generated_at": "2026-07-26T23:08:31Z",
-      "coverage_path": "skills/redis-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:aa91af0480bd375aebc17117fcb0882e0ac2e089924d665e3a1ba5f97a78a000",
+        "codex": "sha256:aa91af0480bd375aebc17117fcb0882e0ac2e089924d665e3a1ba5f97a78a000"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/redis-knowledge-patch/coverage.json",
+        "codex": "skills-codex/redis-knowledge-patch/coverage.json"
+      },
       "covered_from": "8.0"
     },
     {
@@ -1886,7 +2889,10 @@
       "coverage_kind": "versioned",
       "covered_through": "10.2",
       "coverage_label": "10.2",
-      "path": "skills/rhel-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/rhel-knowledge-patch",
+        "codex": "skills-codex/rhel-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -1897,32 +2903,19 @@
         "system-administration",
         "selinux"
       ],
-      "content_hash": "sha256:0b6bef165841910d7808cd8494ba1e845a0423d3bc4c3f590c4e9cca12086a2c",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/rhel-knowledge-patch/coverage.json"
-    },
-    {
-      "id": "rocky-knowledge-patch",
-      "display_name": "Rocky Linux",
-      "short_label": "Rocky Linux",
-      "description": "Rocky Linux",
-      "coverage_kind": "versioned",
-      "covered_through": "10.2",
-      "coverage_label": "10.2",
-      "path": "skills/rocky-knowledge-patch",
-      "languages": [
-        "bash"
-      ],
-      "tags": [
-        "linux",
-        "enterprise-linux",
-        "packages",
-        "system-administration",
-        "rpm"
-      ],
-      "content_hash": "sha256:2fb9018c6ccfb9dfe6308e87e0f4167e13570471e1ab8d26478792a66e5583dc",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/rocky-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:07e852b011e1e8d982bb89f055616538fead5222dea09fac56b760ec620672d3",
+        "codex": "sha256:07e852b011e1e8d982bb89f055616538fead5222dea09fac56b760ec620672d3"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rhel-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rhel-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "rtcm3-knowledge-patch",
@@ -1932,7 +2925,10 @@
       "coverage_kind": "versioned",
       "covered_through": "10403.4 Amendment 1",
       "coverage_label": "10403.4 Amendment 1",
-      "path": "skills/rtcm3-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/rtcm3-knowledge-patch",
+        "codex": "skills-codex/rtcm3-knowledge-patch"
+      },
       "languages": [
         "c",
         "cpp",
@@ -1946,9 +2942,19 @@
         "msm",
         "ssr"
       ],
-      "content_hash": "sha256:e5d450e4a19f51b58111715ca88cd995398d0ee45e030cc3275fb3e57919f891",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/rtcm3-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:fbd98638b945d3ad87023e8cc2ee6aa615d5a2b9b9312a246b62c4d1bca06883",
+        "codex": "sha256:fbd98638b945d3ad87023e8cc2ee6aa615d5a2b9b9312a246b62c4d1bca06883"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rtcm3-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rtcm3-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "rtkbase-knowledge-patch",
@@ -1958,7 +2964,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.7.0",
       "coverage_label": "2.7.0",
-      "path": "skills/rtkbase-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/rtkbase-knowledge-patch",
+        "codex": "skills-codex/rtkbase-knowledge-patch"
+      },
       "languages": [
         "python",
         "bash"
@@ -1970,9 +2979,19 @@
         "rtk",
         "corrections"
       ],
-      "content_hash": "sha256:d55b56e8356317a50f4cb529fa1a7a0a761212ae79a08688b2bdaf5841f13775",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/rtkbase-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:b09b5847fb4494324f2c6d5154069446c82974ee3894fca3b9cb2855d5f02bb4",
+        "codex": "sha256:b09b5847fb4494324f2c6d5154069446c82974ee3894fca3b9cb2855d5f02bb4"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rtkbase-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rtkbase-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "rust-knowledge-patch",
@@ -1982,7 +3001,10 @@
       "coverage_kind": "range",
       "covered_through": "1.97.0",
       "coverage_label": "1.84.0–1.97.0",
-      "path": "skills/rust-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/rust-knowledge-patch",
+        "codex": "skills-codex/rust-knowledge-patch"
+      },
       "languages": [
         "rust",
         "toml"
@@ -1994,9 +3016,19 @@
         "async",
         "edition-2024"
       ],
-      "content_hash": "sha256:6ab95896e347c5c7d61b726ab828884dabf3f8a8e2e13c9a321df9172c7d0026",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/rust-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:27491eb11c16ad293f4798de438e959204d2e697f29f5ec5ad5889c708f3ab7e",
+        "codex": "sha256:27491eb11c16ad293f4798de438e959204d2e697f29f5ec5ad5889c708f3ab7e"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rust-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rust-knowledge-patch/coverage.json"
+      },
       "covered_from": "1.84.0"
     },
     {
@@ -2007,7 +3039,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/selinux-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/selinux-knowledge-patch",
+        "codex": "skills-codex/selinux-knowledge-patch"
+      },
       "languages": [
         "bash",
         "cil"
@@ -2019,9 +3054,19 @@
         "labels",
         "access-control"
       ],
-      "content_hash": "sha256:5284dc1bf55bcb9107e92067f091aab9b5db92a865baacf8df9090bad5ce5360",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/selinux-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:00e0c5c1b1203674ac61fdd66ba6e783adb23835814f417fa1acb34b842aa29f",
+        "codex": "sha256:00e0c5c1b1203674ac61fdd66ba6e783adb23835814f417fa1acb34b842aa29f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/selinux-knowledge-patch/coverage.json",
+        "codex": "skills-codex/selinux-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "serde-knowledge-patch",
@@ -2031,7 +3076,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.0.220",
       "coverage_label": "1.0.220",
-      "path": "skills/serde-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/serde-knowledge-patch",
+        "codex": "skills-codex/serde-knowledge-patch"
+      },
       "languages": [
         "rust"
       ],
@@ -2042,9 +3090,19 @@
         "formats",
         "rust"
       ],
-      "content_hash": "sha256:d6f6a0bcf54d2b113ecd4665e02c288f000d1526f196c679230332eb594fc837",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/serde-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:fe917395158923a2308ee434133c4f19875bd1071c6700f2630166267b0745ec",
+        "codex": "sha256:fe917395158923a2308ee434133c4f19875bd1071c6700f2630166267b0745ec"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/serde-knowledge-patch/coverage.json",
+        "codex": "skills-codex/serde-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "sigstore-cosign-knowledge-patch",
@@ -2054,7 +3112,10 @@
       "coverage_kind": "range",
       "covered_through": "3.1.2",
       "coverage_label": "3.0.0–3.1.2",
-      "path": "skills/sigstore-cosign-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/sigstore-cosign-knowledge-patch",
+        "codex": "skills-codex/sigstore-cosign-knowledge-patch"
+      },
       "languages": [
         "bash",
         "yaml",
@@ -2067,9 +3128,19 @@
         "containers",
         "security"
       ],
-      "content_hash": "sha256:aadaffc7d1dcf313b643e385259f47e27fa5ddb26951453e2d9410e93facdc5f",
-      "generated_at": "2026-07-26T23:44:06Z",
-      "coverage_path": "skills/sigstore-cosign-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:876191c2b72d70a49fbfc3a898ac66a1bdfc3f6ea42f0ba8f1b5eb43811694ed",
+        "codex": "sha256:876191c2b72d70a49fbfc3a898ac66a1bdfc3f6ea42f0ba8f1b5eb43811694ed"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sigstore-cosign-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sigstore-cosign-knowledge-patch/coverage.json"
+      },
       "covered_from": "3.0.0"
     },
     {
@@ -2080,7 +3151,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.2",
       "coverage_label": "1.2",
-      "path": "skills/slsa-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/slsa-knowledge-patch",
+        "codex": "skills-codex/slsa-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "json"
@@ -2092,9 +3166,19 @@
         "security",
         "compliance"
       ],
-      "content_hash": "sha256:96476e62e09e95c05395a61e1e35a62e04569e8c27b1d17d929a95bd83d69bed",
-      "generated_at": "2026-07-26T21:59:07Z",
-      "coverage_path": "skills/slsa-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:a6feb435cd2fdf57e472413aaf809f1b0f0995872d088d80167f3ff491ccadab",
+        "codex": "sha256:a6feb435cd2fdf57e472413aaf809f1b0f0995872d088d80167f3ff491ccadab"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/slsa-knowledge-patch/coverage.json",
+        "codex": "skills-codex/slsa-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "solidjs-knowledge-patch",
@@ -2104,7 +3188,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/solidjs-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/solidjs-knowledge-patch",
+        "codex": "skills-codex/solidjs-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2118,9 +3205,19 @@
         "components",
         "ssr"
       ],
-      "content_hash": "sha256:b3e7d9ac2fcff15c057a8407efddcaca00b1e1626ffcdcf5dcccc0a728fb1c22",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/solidjs-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:c697017d3f90c9afbda94bc985fb16c1b75493e1c57bafef062a417196c753e0",
+        "codex": "sha256:c697017d3f90c9afbda94bc985fb16c1b75493e1c57bafef062a417196c753e0"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/solidjs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/solidjs-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "spring-boot-knowledge-patch",
@@ -2130,7 +3227,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.1.0",
       "coverage_label": "4.1.0",
-      "path": "skills/spring-boot-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/spring-boot-knowledge-patch",
+        "codex": "skills-codex/spring-boot-knowledge-patch"
+      },
       "languages": [
         "java",
         "kotlin"
@@ -2142,9 +3242,19 @@
         "configuration",
         "actuator"
       ],
-      "content_hash": "sha256:d61bd4ea9c13c6eb39c89655d328fa126026aaa8011a80a13d494191f246eb8c",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/spring-boot-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:b8892e0b4a9c8ee5b6cebe5e30bf82a1b63c04c2387bb0101e8106d0500a964c",
+        "codex": "sha256:b8892e0b4a9c8ee5b6cebe5e30bf82a1b63c04c2387bb0101e8106d0500a964c"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/spring-boot-knowledge-patch/coverage.json",
+        "codex": "skills-codex/spring-boot-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "sqlalchemy-knowledge-patch",
@@ -2154,7 +3264,10 @@
       "coverage_kind": "range",
       "covered_through": "2.0.51",
       "coverage_label": "2.0.37–2.0.51",
-      "path": "skills/sqlalchemy-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/sqlalchemy-knowledge-patch",
+        "codex": "skills-codex/sqlalchemy-knowledge-patch"
+      },
       "languages": [
         "python",
         "sql"
@@ -2166,9 +3279,19 @@
         "database",
         "async"
       ],
-      "content_hash": "sha256:26a2f9f9a29c3e0dc3eeedd84a8a2a282bcec5f4702e9d8e08a9645d5f26fb84",
-      "generated_at": "2026-07-26T23:44:06Z",
-      "coverage_path": "skills/sqlalchemy-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:4aaf6f94d60639f0ad51c3aeca8e4081daf71c9a036107bd5e6a4eb572cdc8bf",
+        "codex": "sha256:4aaf6f94d60639f0ad51c3aeca8e4081daf71c9a036107bd5e6a4eb572cdc8bf"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sqlalchemy-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sqlalchemy-knowledge-patch/coverage.json"
+      },
       "covered_from": "2.0.37"
     },
     {
@@ -2179,7 +3302,10 @@
       "coverage_kind": "range",
       "covered_through": "3.53.0",
       "coverage_label": "3.46.0–3.53.0",
-      "path": "skills/sqlite-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/sqlite-knowledge-patch",
+        "codex": "skills-codex/sqlite-knowledge-patch"
+      },
       "languages": [
         "sql"
       ],
@@ -2190,9 +3316,19 @@
         "transactions",
         "indexing"
       ],
-      "content_hash": "sha256:62236448328b60a656d384476a2d3a615327fb83827401822127e5f5052054e9",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/sqlite-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:67de87712068ed4c655368fbb4e71d1ed8f6a56d3b39ef07093bce21e24d6189",
+        "codex": "sha256:67de87712068ed4c655368fbb4e71d1ed8f6a56d3b39ef07093bce21e24d6189"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sqlite-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sqlite-knowledge-patch/coverage.json"
+      },
       "covered_from": "3.46.0"
     },
     {
@@ -2203,7 +3339,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.9.0",
       "coverage_label": "0.9.0",
-      "path": "skills/sqlx-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/sqlx-knowledge-patch",
+        "codex": "skills-codex/sqlx-knowledge-patch"
+      },
       "languages": [
         "rust",
         "sql"
@@ -2215,9 +3354,19 @@
         "macros",
         "migrations"
       ],
-      "content_hash": "sha256:2d7305be0c59e0ef2615a70be36df1a32cc5e5df93972a918f06ec6f472261b9",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/sqlx-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:0c8ffb60e89cf9a4ac36d29fb173dcd0ff21362e90a84ae05ac321a599f75506",
+        "codex": "sha256:0c8ffb60e89cf9a4ac36d29fb173dcd0ff21362e90a84ae05ac321a599f75506"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sqlx-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sqlx-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "storybook-knowledge-patch",
@@ -2227,7 +3376,10 @@
       "coverage_kind": "range",
       "covered_through": "10.5.0",
       "coverage_label": "9.0–10.5.0",
-      "path": "skills/storybook-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/storybook-knowledge-patch",
+        "codex": "skills-codex/storybook-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2240,9 +3392,19 @@
         "documentation",
         "ui"
       ],
-      "content_hash": "sha256:636d9d9640eac08ef9e670ea7e77e0a7fd4f3ec427e147fec22e7194985f36d9",
-      "generated_at": "2026-07-26T22:50:03Z",
-      "coverage_path": "skills/storybook-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:02b97330f9ddf02f2d9bfab274b8bd0f4155ca5ff02f770b60db4bf6ae4e2f70",
+        "codex": "sha256:02b97330f9ddf02f2d9bfab274b8bd0f4155ca5ff02f770b60db4bf6ae4e2f70"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/storybook-knowledge-patch/coverage.json",
+        "codex": "skills-codex/storybook-knowledge-patch/coverage.json"
+      },
       "covered_from": "9.0"
     },
     {
@@ -2253,7 +3415,10 @@
       "coverage_kind": "rolling",
       "covered_through": null,
       "coverage_label": "rolling coverage",
-      "path": "skills/stripe-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/stripe-knowledge-patch",
+        "codex": "skills-codex/stripe-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2270,9 +3435,19 @@
         "webhooks",
         "connect"
       ],
-      "content_hash": "sha256:e9e3838816735356b7e5dee8aaa10619dce60e47a277a893657f46f53a90b196",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/stripe-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:14b450c487bae21ac6d4826635b6dde88da358869101cb89b51fa09d24e43301",
+        "codex": "sha256:14b450c487bae21ac6d4826635b6dde88da358869101cb89b51fa09d24e43301"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/stripe-knowledge-patch/coverage.json",
+        "codex": "skills-codex/stripe-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "supabase-knowledge-patch",
@@ -2282,7 +3457,10 @@
       "coverage_kind": "rolling",
       "covered_through": null,
       "coverage_label": "rolling coverage",
-      "path": "skills/supabase-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/supabase-knowledge-patch",
+        "codex": "skills-codex/supabase-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2299,9 +3477,19 @@
         "realtime",
         "storage"
       ],
-      "content_hash": "sha256:cb2eeb372cf1307d066cc489cdd34ad028b60c74816a8ea55486ed75dded94ec",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/supabase-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:0e74f69b03abf78131dfb5437b3f5e9321575c96bc76ce7f066eb93b2d8917eb",
+        "codex": "sha256:0e74f69b03abf78131dfb5437b3f5e9321575c96bc76ce7f066eb93b2d8917eb"
+      },
+      "generated_at": "2026-07-28T23:31:57Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:31:57Z",
+        "codex": "2026-07-28T23:31:57Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/supabase-knowledge-patch/coverage.json",
+        "codex": "skills-codex/supabase-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "suse-knowledge-patch",
@@ -2311,7 +3499,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/suse-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/suse-knowledge-patch",
+        "codex": "skills-codex/suse-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -2322,9 +3513,19 @@
         "system-administration",
         "zypper"
       ],
-      "content_hash": "sha256:8509b9f287e003a59b050904d6d784e53ac7fa46a56bd84e26bfc59a2f895b90",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/suse-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:105bd7c06c27dae82e59918ddcf6c56b867296e7588a7e487493c2434cc352d5",
+        "codex": "sha256:105bd7c06c27dae82e59918ddcf6c56b867296e7588a7e487493c2434cc352d5"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/suse-knowledge-patch/coverage.json",
+        "codex": "skills-codex/suse-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "svelte-knowledge-patch",
@@ -2334,7 +3535,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/svelte-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/svelte-knowledge-patch",
+        "codex": "skills-codex/svelte-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2347,9 +3551,19 @@
         "sveltekit",
         "runes"
       ],
-      "content_hash": "sha256:2c83a7d4ced99e1e990e7f7be313a657df39f28a399afe1d174b2dccc3f89087",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/svelte-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:db98f41f3a361809aba53f52404696ca4c47101371757103c3525f2c0bc5590f",
+        "codex": "sha256:db98f41f3a361809aba53f52404696ca4c47101371757103c3525f2c0bc5590f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/svelte-knowledge-patch/coverage.json",
+        "codex": "skills-codex/svelte-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "swift-knowledge-patch",
@@ -2359,7 +3573,10 @@
       "coverage_kind": "range",
       "covered_through": "6.3.0",
       "coverage_label": "6.1–6.3.0",
-      "path": "skills/swift-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/swift-knowledge-patch",
+        "codex": "skills-codex/swift-knowledge-patch"
+      },
       "languages": [
         "swift"
       ],
@@ -2370,9 +3587,19 @@
         "macos",
         "package-manager"
       ],
-      "content_hash": "sha256:b0e618f1e8a1157a517ee2e27d7c8388c0d1b5b1056c4cddba47b2b2187cdc5e",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/swift-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:1c39064cfaaa6a2342a8c783ce70a6e7051d4387d63c8e9cdbdda6a285375e42",
+        "codex": "sha256:1c39064cfaaa6a2342a8c783ce70a6e7051d4387d63c8e9cdbdda6a285375e42"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/swift-knowledge-patch/coverage.json",
+        "codex": "skills-codex/swift-knowledge-patch/coverage.json"
+      },
       "covered_from": "6.1"
     },
     {
@@ -2383,7 +3610,10 @@
       "coverage_kind": "range",
       "covered_through": "260",
       "coverage_label": "256–260",
-      "path": "skills/systemd-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/systemd-knowledge-patch",
+        "codex": "skills-codex/systemd-knowledge-patch"
+      },
       "languages": [
         "c",
         "bash"
@@ -2395,9 +3625,19 @@
         "journald",
         "system-administration"
       ],
-      "content_hash": "sha256:c8bb8eed5a756dae366ad8c7bb661877387d9e2749fe9b1132ea6f58938dc7c1",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/systemd-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:485c95ad2d0058f0b6f21b1ec10f41f316f74cea69b49bfad2b94be4fea879e1",
+        "codex": "sha256:485c95ad2d0058f0b6f21b1ec10f41f316f74cea69b49bfad2b94be4fea879e1"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/systemd-knowledge-patch/coverage.json",
+        "codex": "skills-codex/systemd-knowledge-patch/coverage.json"
+      },
       "covered_from": "256"
     },
     {
@@ -2408,7 +3648,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.2.2",
       "coverage_label": "4.2.2",
-      "path": "skills/tailwind-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/tailwind-knowledge-patch",
+        "codex": "skills-codex/tailwind-knowledge-patch"
+      },
       "languages": [
         "html",
         "css",
@@ -2421,9 +3664,19 @@
         "frontend",
         "design-system"
       ],
-      "content_hash": "sha256:2652e17955c8f79a09e71b7978501a89d06f60e2807a5e8afe9cb91b66f0d365",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/tailwind-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:bc3b1ba29101bb3f861e75c7904a6e928b28888b405cd19b8265fb23b0e1ad26",
+        "codex": "sha256:bc3b1ba29101bb3f861e75c7904a6e928b28888b405cd19b8265fb23b0e1ad26"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tailwind-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tailwind-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "tanstack-query-knowledge-patch",
@@ -2433,7 +3686,10 @@
       "coverage_kind": "range",
       "covered_through": "5.101.4",
       "coverage_label": "5.66.0–5.101.4",
-      "path": "skills/tanstack-query-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/tanstack-query-knowledge-patch",
+        "codex": "skills-codex/tanstack-query-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "tsx"
@@ -2445,9 +3701,19 @@
         "cache",
         "state-management"
       ],
-      "content_hash": "sha256:7fb394735ce7b3ac0a1ae1af1540af44a06f8a8282ea25bf6ae00e3fc135f01d",
-      "generated_at": "2026-07-26T22:55:18Z",
-      "coverage_path": "skills/tanstack-query-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:40b661f7a101f8a5d1057aed4143a6ae5936dfd22012321d3a09d480de5b587e",
+        "codex": "sha256:40b661f7a101f8a5d1057aed4143a6ae5936dfd22012321d3a09d480de5b587e"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tanstack-query-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tanstack-query-knowledge-patch/coverage.json"
+      },
       "covered_from": "5.66.0"
     },
     {
@@ -2458,7 +3724,10 @@
       "coverage_kind": "versioned",
       "covered_through": "2.5.0",
       "coverage_label": "2.5.0",
-      "path": "skills/tauri-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/tauri-knowledge-patch",
+        "codex": "skills-codex/tauri-knowledge-patch"
+      },
       "languages": [
         "rust",
         "typescript",
@@ -2471,9 +3740,19 @@
         "webview",
         "plugins"
       ],
-      "content_hash": "sha256:aa29b8f7d415c788e303c44c5777d4517fbe94bc66b97cb5f779d2ba6a293f28",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/tauri-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:90535c7cc8d7341334f1c2a579c04ada24d1e948b005e6ad5ad0e036d968cce1",
+        "codex": "sha256:90535c7cc8d7341334f1c2a579c04ada24d1e948b005e6ad5ad0e036d968cce1"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tauri-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tauri-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "terraform-knowledge-patch",
@@ -2483,7 +3762,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/terraform-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/terraform-knowledge-patch",
+        "codex": "skills-codex/terraform-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -2494,9 +3776,19 @@
         "state",
         "modules"
       ],
-      "content_hash": "sha256:4693f7ceff2f195677920a0d8a549f9e119a4c60893ad6b89f21be2e9a5aa551",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/terraform-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:c7a7ea97cd075c5454dc8a43501a6d96a4af21494efe586f527c8742a51e4e75",
+        "codex": "sha256:c7a7ea97cd075c5454dc8a43501a6d96a4af21494efe586f527c8742a51e4e75"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/terraform-knowledge-patch/coverage.json",
+        "codex": "skills-codex/terraform-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "tokio-knowledge-patch",
@@ -2506,7 +3798,10 @@
       "coverage_kind": "versioned",
       "covered_through": "1.52.0",
       "coverage_label": "1.52.0",
-      "path": "skills/tokio-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/tokio-knowledge-patch",
+        "codex": "skills-codex/tokio-knowledge-patch"
+      },
       "languages": [
         "rust",
         "toml"
@@ -2518,9 +3813,19 @@
         "io",
         "networking"
       ],
-      "content_hash": "sha256:8361c0327af17c66831c4f2ae5c9e88713bf64d0f0041444486c070493d3c7cb",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/tokio-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:b841b5b23e1358f469d52abe0f2508177c8640f8770aa90e7a20bf93e70f37ef",
+        "codex": "sha256:b841b5b23e1358f469d52abe0f2508177c8640f8770aa90e7a20bf93e70f37ef"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tokio-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tokio-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "traefik-knowledge-patch",
@@ -2530,7 +3835,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.7.0",
       "coverage_label": "3.7.0",
-      "path": "skills/traefik-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/traefik-knowledge-patch",
+        "codex": "skills-codex/traefik-knowledge-patch"
+      },
       "languages": [
         "yaml",
         "toml"
@@ -2545,9 +3853,19 @@
         "acme",
         "observability"
       ],
-      "content_hash": "sha256:be4bc4392235507f9e66d8f2857e4ce6dde6d56ffb7f07317badac4c09060f86",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/traefik-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:8f9b7e85c66097b3555d5364c6538d149e352989cf71f5aade2304511370c6fa",
+        "codex": "sha256:81d4200cbecfd9c1053a5ca07d9c79ea8d934a53212376aa0b7f1e9ed371def0"
+      },
+      "generated_at": "2026-07-28T21:11:49Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T21:11:49Z",
+        "codex": "2026-07-28T21:11:49Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/traefik-knowledge-patch/coverage.json",
+        "codex": "skills-codex/traefik-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "trpc-knowledge-patch",
@@ -2557,7 +3875,10 @@
       "coverage_kind": "versioned",
       "covered_through": "11.18.0",
       "coverage_label": "11.18.0",
-      "path": "skills/trpc-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/trpc-knowledge-patch",
+        "codex": "skills-codex/trpc-knowledge-patch"
+      },
       "languages": [
         "typescript"
       ],
@@ -2568,9 +3889,19 @@
         "procedures",
         "typescript"
       ],
-      "content_hash": "sha256:ec8b535c9371032d5073d0e0b9f68f643cbb47484cb798453043d9f3b5967c84",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/trpc-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:cef1966cfa4cce0bd740ccf04ba1091e1a9b3eea5bb2ae8177c43c37859f42a2",
+        "codex": "sha256:cef1966cfa4cce0bd740ccf04ba1091e1a9b3eea5bb2ae8177c43c37859f42a2"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/trpc-knowledge-patch/coverage.json",
+        "codex": "skills-codex/trpc-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "typescript-knowledge-patch",
@@ -2580,7 +3911,10 @@
       "coverage_kind": "versioned",
       "covered_through": "7.0.0",
       "coverage_label": "7.0.0",
-      "path": "skills/typescript-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/typescript-knowledge-patch",
+        "codex": "skills-codex/typescript-knowledge-patch"
+      },
       "languages": [
         "typescript"
       ],
@@ -2591,9 +3925,19 @@
         "javascript",
         "modules"
       ],
-      "content_hash": "sha256:025cc29fc2b342a4e848c346ed8c9febe89d04607772100c8a15f49838c7e566",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/typescript-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:c18bdde4fda926f8180251145de8827adbc2585e07123ab0e67309462b8ace6b",
+        "codex": "sha256:c18bdde4fda926f8180251145de8827adbc2585e07123ab0e67309462b8ace6b"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/typescript-knowledge-patch/coverage.json",
+        "codex": "skills-codex/typescript-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "ubuntu-knowledge-patch",
@@ -2603,7 +3947,10 @@
       "coverage_kind": "versioned",
       "covered_through": "26.04",
       "coverage_label": "26.04",
-      "path": "skills/ubuntu-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/ubuntu-knowledge-patch",
+        "codex": "skills-codex/ubuntu-knowledge-patch"
+      },
       "languages": [
         "bash"
       ],
@@ -2614,9 +3961,19 @@
         "system-administration",
         "lts"
       ],
-      "content_hash": "sha256:31e0db6df397f6095abd453f4c16dd7f62fc1180ca2fa07e4f927086ec2bf064",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/ubuntu-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:5d273eea3893f4d343c504b3677db36da8083567c727081a842a377d2405d286",
+        "codex": "sha256:5d273eea3893f4d343c504b3677db36da8083567c727081a842a377d2405d286"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ubuntu-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ubuntu-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "uv-knowledge-patch",
@@ -2626,7 +3983,10 @@
       "coverage_kind": "range",
       "covered_through": "0.11.32",
       "coverage_label": "0.6.0–0.11.32",
-      "path": "skills/uv-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/uv-knowledge-patch",
+        "codex": "skills-codex/uv-knowledge-patch"
+      },
       "languages": [
         "python",
         "toml",
@@ -2639,9 +3999,19 @@
         "virtual-environments",
         "tooling"
       ],
-      "content_hash": "sha256:04a2255d558d6d9ba4293b59aab0b5508365d81a504d7d5859c9fe8fcae4c420",
-      "generated_at": "2026-07-26T22:34:50Z",
-      "coverage_path": "skills/uv-knowledge-patch/coverage.json",
+      "content_hashes": {
+        "claude": "sha256:a9d6549004cdcab2f96a8758174925ce6f37ed46eab829ce108e5d011e0c7e41",
+        "codex": "sha256:a9d6549004cdcab2f96a8758174925ce6f37ed46eab829ce108e5d011e0c7e41"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/uv-knowledge-patch/coverage.json",
+        "codex": "skills-codex/uv-knowledge-patch/coverage.json"
+      },
       "covered_from": "0.6.0"
     },
     {
@@ -2652,7 +4022,10 @@
       "coverage_kind": "versioned",
       "covered_through": "6.0",
       "coverage_label": "6.0",
-      "path": "skills/vercel-ai-sdk-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/vercel-ai-sdk-knowledge-patch",
+        "codex": "skills-codex/vercel-ai-sdk-knowledge-patch"
+      },
       "languages": [
         "typescript"
       ],
@@ -2663,9 +4036,19 @@
         "tools",
         "generative-ui"
       ],
-      "content_hash": "sha256:de6fb62b9589a4a2b055c076427781bd1cb5c47016506785429f2ee042afaadf",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/vercel-ai-sdk-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:92da78520c9cb46f5d3ad4fc25edb97ba04e05a6bc0da57cd38412fd32a1e47f",
+        "codex": "sha256:92da78520c9cb46f5d3ad4fc25edb97ba04e05a6bc0da57cd38412fd32a1e47f"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vercel-ai-sdk-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vercel-ai-sdk-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "vite-knowledge-patch",
@@ -2675,7 +4058,10 @@
       "coverage_kind": "versioned",
       "covered_through": "8.1.0",
       "coverage_label": "8.1.0",
-      "path": "skills/vite-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/vite-knowledge-patch",
+        "codex": "skills-codex/vite-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2688,9 +4074,19 @@
         "hmr",
         "frontend"
       ],
-      "content_hash": "sha256:0de0511737635b3c4cc6f02f2493e630d6c5489d047503be8f2fa05868400dc1",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/vite-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:22610480d5589128ca1185fc7252d653081b969999ba1c07ff8f35c1627c1089",
+        "codex": "sha256:22610480d5589128ca1185fc7252d653081b969999ba1c07ff8f35c1627c1089"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vite-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vite-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "vitest-knowledge-patch",
@@ -2700,7 +4096,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.1",
       "coverage_label": "4.1",
-      "path": "skills/vitest-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/vitest-knowledge-patch",
+        "codex": "skills-codex/vitest-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript"
@@ -2712,9 +4111,19 @@
         "coverage",
         "vite"
       ],
-      "content_hash": "sha256:a8568c040fb91ab86757c07a3d084421012c3a22e131f2a1e1d63dd75b4488b1",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/vitest-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:2f60eb14617c0215daea048ced195752085f52cdcdd07e8700f7e0058db1ba59",
+        "codex": "sha256:2f60eb14617c0215daea048ced195752085f52cdcdd07e8700f7e0058db1ba59"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vitest-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vitest-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "vuejs-knowledge-patch",
@@ -2724,7 +4133,10 @@
       "coverage_kind": "versioned",
       "covered_through": "3.6.0-beta",
       "coverage_label": "3.6.0-beta",
-      "path": "skills/vuejs-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/vuejs-knowledge-patch",
+        "codex": "skills-codex/vuejs-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript"
@@ -2736,9 +4148,19 @@
         "composition-api",
         "sfc"
       ],
-      "content_hash": "sha256:e158fa9646ce586ff0bc767edc41271b33ca5c1e9b7524411e0b327607b900e5",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/vuejs-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:9aafe05ac1125d39b757b623c769ff9db44a5a276b0dddb170928f3689e9b0ec",
+        "codex": "sha256:9aafe05ac1125d39b757b623c769ff9db44a5a276b0dddb170928f3689e9b0ec"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vuejs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vuejs-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "webauthn-passkeys-knowledge-patch",
@@ -2748,7 +4170,10 @@
       "coverage_kind": "multi-product",
       "covered_through": null,
       "coverage_label": "current compatibility guidance",
-      "path": "skills/webauthn-passkeys-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/webauthn-passkeys-knowledge-patch",
+        "codex": "skills-codex/webauthn-passkeys-knowledge-patch"
+      },
       "languages": [
         "javascript",
         "typescript",
@@ -2761,9 +4186,19 @@
         "fido2",
         "security"
       ],
-      "content_hash": "sha256:d65731493270a24fee587eb15b29b0b4472f8f65201e43eb6d2d934286e51009",
-      "generated_at": "2026-07-26T21:16:24Z",
-      "coverage_path": "skills/webauthn-passkeys-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:2b2b2f20aee910f42347e7e67db1e84f062f83f00b0fbb8e3f7abe940cd827bb",
+        "codex": "sha256:2b2b2f20aee910f42347e7e67db1e84f062f83f00b0fbb8e3f7abe940cd827bb"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/webauthn-passkeys-knowledge-patch/coverage.json",
+        "codex": "skills-codex/webauthn-passkeys-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "workos-knowledge-patch",
@@ -2773,7 +4208,10 @@
       "coverage_kind": "versioned",
       "covered_through": "8.10",
       "coverage_label": "8.10",
-      "path": "skills/workos-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/workos-knowledge-patch",
+        "codex": "skills-codex/workos-knowledge-patch"
+      },
       "languages": [
         "typescript",
         "javascript",
@@ -2789,9 +4227,19 @@
         "directory-sync",
         "organizations"
       ],
-      "content_hash": "sha256:d374cb816a0d0f59479601f3a9e14dd70450c910c86a771f87f756a8899628d7",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/workos-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:491fdb28b49de3a50708cb7a3f4cd9edc461cc6e21da36262c4a09c3bc3dfc27",
+        "codex": "sha256:491fdb28b49de3a50708cb7a3f4cd9edc461cc6e21da36262c4a09c3bc3dfc27"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/workos-knowledge-patch/coverage.json",
+        "codex": "skills-codex/workos-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "zig-knowledge-patch",
@@ -2801,7 +4249,10 @@
       "coverage_kind": "versioned",
       "covered_through": "0.15.1",
       "coverage_label": "0.15.1",
-      "path": "skills/zig-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/zig-knowledge-patch",
+        "codex": "skills-codex/zig-knowledge-patch"
+      },
       "languages": [
         "zig"
       ],
@@ -2812,9 +4263,19 @@
         "memory",
         "cross-compilation"
       ],
-      "content_hash": "sha256:e0a1ac7cb21ce311d001a9667a4a99a97a5aa338f8fa8dbb8d16789ec4495852",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/zig-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:6538f8acd47dd533ffe41a9b016a21e0022af430865716b8af800628d77d99bd",
+        "codex": "sha256:6538f8acd47dd533ffe41a9b016a21e0022af430865716b8af800628d77d99bd"
+      },
+      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:25:53Z",
+        "codex": "2026-07-28T23:25:53Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/zig-knowledge-patch/coverage.json",
+        "codex": "skills-codex/zig-knowledge-patch/coverage.json"
+      }
     },
     {
       "id": "zitadel-knowledge-patch",
@@ -2824,7 +4285,10 @@
       "coverage_kind": "versioned",
       "covered_through": "4.15.3",
       "coverage_label": "4.15.3",
-      "path": "skills/zitadel-knowledge-patch",
+      "paths": {
+        "claude": "skills-claude/zitadel-knowledge-patch",
+        "codex": "skills-codex/zitadel-knowledge-patch"
+      },
       "languages": [
         "go",
         "typescript",
@@ -2837,9 +4301,19 @@
         "authentication",
         "authorization"
       ],
-      "content_hash": "sha256:c6104c0efa4116be21d930c46714f17af0249277712eae345d09f1911889f683",
-      "generated_at": "2026-07-18T07:39:54Z",
-      "coverage_path": "skills/zitadel-knowledge-patch/coverage.json"
+      "content_hashes": {
+        "claude": "sha256:a03a2bd05d99aa664636b80d18c0019031f8225288c00ae6f56eadf50d8304dd",
+        "codex": "sha256:a03a2bd05d99aa664636b80d18c0019031f8225288c00ae6f56eadf50d8304dd"
+      },
+      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at_by_lane": {
+        "claude": "2026-07-28T23:17:16Z",
+        "codex": "2026-07-28T23:17:16Z"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/zitadel-knowledge-patch/coverage.json",
+        "codex": "skills-codex/zitadel-knowledge-patch/coverage.json"
+      }
     }
   ]
 }

@@ -1,40 +1,7 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-26T23:44:06Z",
+  "generated_at": "2026-07-28T23:37:24Z",
   "rules": [
-    {
-      "id": "almalinux-knowledge-patch",
-      "short_label": "AlmaLinux",
-      "coverage_kind": "versioned",
-      "covered_through": "10.2",
-      "coverage_label": "10.2",
-      "aliases": [
-        "alma",
-        "alma linux",
-        "almalinux",
-        "almalinux knowledge patch"
-      ],
-      "languages": [
-        "bash"
-      ],
-      "tags": [
-        "linux",
-        "enterprise-linux",
-        "packages",
-        "system-administration",
-        "security"
-      ],
-      "path": "skills/almalinux-knowledge-patch",
-      "coverage_path": "skills/almalinux-knowledge-patch/coverage.json",
-      "signals": {
-        "terms": [],
-        "files": [
-          "/etc/os-release::ID=\"almalinux\"",
-          "**/Dockerfile::FROM almalinux",
-          "**/Containerfile::FROM almalinux"
-        ]
-      }
-    },
     {
       "id": "angular-knowledge-patch",
       "short_label": "Angular",
@@ -59,8 +26,14 @@
         "routing",
         "ssr"
       ],
-      "path": "skills/angular-knowledge-patch",
-      "coverage_path": "skills/angular-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/angular-knowledge-patch",
+        "codex": "skills-codex/angular-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/angular-knowledge-patch/coverage.json",
+        "codex": "skills-codex/angular-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -95,8 +68,14 @@
         "yaml",
         "operations"
       ],
-      "path": "skills/ansible-knowledge-patch",
-      "coverage_path": "skills/ansible-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/ansible-knowledge-patch",
+        "codex": "skills-codex/ansible-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ansible-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ansible-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "ansible.builtin",
@@ -133,8 +112,14 @@
         "system-administration",
         "pacman"
       ],
-      "path": "skills/arch-knowledge-patch",
-      "coverage_path": "skills/arch-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/arch-knowledge-patch",
+        "codex": "skills-codex/arch-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/arch-knowledge-patch/coverage.json",
+        "codex": "skills-codex/arch-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -167,8 +152,14 @@
         "continuous-delivery",
         "operations"
       ],
-      "path": "skills/argo-cd-knowledge-patch",
-      "coverage_path": "skills/argo-cd-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/argo-cd-knowledge-patch",
+        "codex": "skills-codex/argo-cd-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/argo-cd-knowledge-patch/coverage.json",
+        "codex": "skills-codex/argo-cd-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "apiVersion: argoproj.io/",
@@ -207,8 +198,14 @@
         "ssr",
         "content-collections"
       ],
-      "path": "skills/astro-knowledge-patch",
-      "coverage_path": "skills/astro-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/astro-knowledge-patch",
+        "codex": "skills-codex/astro-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/astro-knowledge-patch/coverage.json",
+        "codex": "skills-codex/astro-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -244,8 +241,14 @@
         "adapters",
         "nextjs"
       ],
-      "path": "skills/authjs-knowledge-patch",
-      "coverage_path": "skills/authjs-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/authjs-knowledge-patch",
+        "codex": "skills-codex/authjs-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/authjs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/authjs-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -287,8 +290,14 @@
         "retries",
         "clients"
       ],
-      "path": "skills/aws-sdk-knowledge-patch",
-      "coverage_path": "skills/aws-sdk-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/aws-sdk-knowledge-patch",
+        "codex": "skills-codex/aws-sdk-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/aws-sdk-knowledge-patch/coverage.json",
+        "codex": "skills-codex/aws-sdk-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -322,8 +331,14 @@
         "extractors",
         "async"
       ],
-      "path": "skills/axum-knowledge-patch",
-      "coverage_path": "skills/axum-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/axum-knowledge-patch",
+        "codex": "skills-codex/axum-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/axum-knowledge-patch/coverage.json",
+        "codex": "skills-codex/axum-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -354,8 +369,14 @@
         "plugins",
         "typescript"
       ],
-      "path": "skills/better-auth-knowledge-patch",
-      "coverage_path": "skills/better-auth-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/better-auth-knowledge-patch",
+        "codex": "skills-codex/better-auth-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/better-auth-knowledge-patch/coverage.json",
+        "codex": "skills-codex/better-auth-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -391,8 +412,14 @@
         "javascript",
         "css"
       ],
-      "path": "skills/biome-knowledge-patch",
-      "coverage_path": "skills/biome-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/biome-knowledge-patch",
+        "codex": "skills-codex/biome-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/biome-knowledge-patch/coverage.json",
+        "codex": "skills-codex/biome-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -426,8 +453,14 @@
         "testing",
         "javascript"
       ],
-      "path": "skills/bun-knowledge-patch",
-      "coverage_path": "skills/bun-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/bun-knowledge-patch",
+        "codex": "skills-codex/bun-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/bun-knowledge-patch/coverage.json",
+        "codex": "skills-codex/bun-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -461,8 +494,14 @@
         "routing",
         "configuration"
       ],
-      "path": "skills/caddy-knowledge-patch",
-      "coverage_path": "skills/caddy-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/caddy-knowledge-patch",
+        "codex": "skills-codex/caddy-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/caddy-knowledge-patch/coverage.json",
+        "codex": "skills-codex/caddy-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -494,8 +533,14 @@
         "system-administration",
         "rpm"
       ],
-      "path": "skills/centos-stream-knowledge-patch",
-      "coverage_path": "skills/centos-stream-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/centos-stream-knowledge-patch",
+        "codex": "skills-codex/centos-stream-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/centos-stream-knowledge-patch/coverage.json",
+        "codex": "skills-codex/centos-stream-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -528,8 +573,14 @@
         "networking",
         "clock"
       ],
-      "path": "skills/chrony-knowledge-patch",
-      "coverage_path": "skills/chrony-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/chrony-knowledge-patch",
+        "codex": "skills-codex/chrony-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/chrony-knowledge-patch/coverage.json",
+        "codex": "skills-codex/chrony-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -566,8 +617,14 @@
         "organizations",
         "oauth"
       ],
-      "path": "skills/clerk-knowledge-patch",
-      "coverage_path": "skills/clerk-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/clerk-knowledge-patch",
+        "codex": "skills-codex/clerk-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/clerk-knowledge-patch/coverage.json",
+        "codex": "skills-codex/clerk-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -600,8 +657,14 @@
         "sql",
         "operations"
       ],
-      "path": "skills/clickhouse-knowledge-patch",
-      "coverage_path": "skills/clickhouse-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/clickhouse-knowledge-patch",
+        "codex": "skills-codex/clickhouse-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/clickhouse-knowledge-patch/coverage.json",
+        "codex": "skills-codex/clickhouse-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "ENGINE = MergeTree",
@@ -639,8 +702,14 @@
         "configuration",
         "infrastructure"
       ],
-      "path": "skills/cloud-init-knowledge-patch",
-      "coverage_path": "skills/cloud-init-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/cloud-init-knowledge-patch",
+        "codex": "skills-codex/cloud-init-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/cloud-init-knowledge-patch/coverage.json",
+        "codex": "skills-codex/cloud-init-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "#cloud-config",
@@ -678,8 +747,14 @@
         "automation",
         "configuration"
       ],
-      "path": "skills/codex-knowledge-patch",
-      "coverage_path": "skills/codex-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/codex-knowledge-patch",
+        "codex": "skills-codex/codex-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/codex-knowledge-patch/coverage.json",
+        "codex": "skills-codex/codex-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "codex exec",
@@ -713,8 +788,14 @@
         "system-administration",
         "security"
       ],
-      "path": "skills/debian-knowledge-patch",
-      "coverage_path": "skills/debian-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/debian-knowledge-patch",
+        "codex": "skills-codex/debian-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/debian-knowledge-patch/coverage.json",
+        "codex": "skills-codex/debian-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -747,8 +828,14 @@
         "javascript",
         "tooling"
       ],
-      "path": "skills/deno-knowledge-patch",
-      "coverage_path": "skills/deno-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/deno-knowledge-patch",
+        "codex": "skills-codex/deno-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/deno-knowledge-patch/coverage.json",
+        "codex": "skills-codex/deno-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -782,8 +869,14 @@
         "desktop",
         "mobile"
       ],
-      "path": "skills/dioxus-knowledge-patch",
-      "coverage_path": "skills/dioxus-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/dioxus-knowledge-patch",
+        "codex": "skills-codex/dioxus-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/dioxus-knowledge-patch/coverage.json",
+        "codex": "skills-codex/dioxus-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -814,8 +907,14 @@
         "templates",
         "async"
       ],
-      "path": "skills/django-knowledge-patch",
-      "coverage_path": "skills/django-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/django-knowledge-patch",
+        "codex": "skills-codex/django-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/django-knowledge-patch/coverage.json",
+        "codex": "skills-codex/django-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -850,8 +949,14 @@
         "updates",
         "rpm"
       ],
-      "path": "skills/dnf5-security-updates-knowledge-patch",
-      "coverage_path": "skills/dnf5-security-updates-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/dnf5-security-updates-knowledge-patch",
+        "codex": "skills-codex/dnf5-security-updates-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/dnf5-security-updates-knowledge-patch/coverage.json",
+        "codex": "skills-codex/dnf5-security-updates-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "dnf5 updateinfo",
@@ -888,8 +993,14 @@
         "buildkit",
         "networking"
       ],
-      "path": "skills/docker-knowledge-patch",
-      "coverage_path": "skills/docker-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/docker-knowledge-patch",
+        "codex": "skills-codex/docker-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/docker-knowledge-patch/coverage.json",
+        "codex": "skills-codex/docker-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -925,8 +1036,14 @@
         "schema",
         "database"
       ],
-      "path": "skills/drizzle-knowledge-patch",
-      "coverage_path": "skills/drizzle-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/drizzle-knowledge-patch",
+        "codex": "skills-codex/drizzle-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/drizzle-knowledge-patch/coverage.json",
+        "codex": "skills-codex/drizzle-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -960,8 +1077,14 @@
         "embedded",
         "data-science"
       ],
-      "path": "skills/duckdb-knowledge-patch",
-      "coverage_path": "skills/duckdb-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/duckdb-knowledge-patch",
+        "codex": "skills-codex/duckdb-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/duckdb-knowledge-patch/coverage.json",
+        "codex": "skills-codex/duckdb-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -996,8 +1119,14 @@
         "phoenix",
         "liveview"
       ],
-      "path": "skills/elixir-knowledge-patch",
-      "coverage_path": "skills/elixir-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/elixir-knowledge-patch",
+        "codex": "skills-codex/elixir-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/elixir-knowledge-patch/coverage.json",
+        "codex": "skills-codex/elixir-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1032,8 +1161,14 @@
         "static-analysis",
         "tooling"
       ],
-      "path": "skills/eslint-knowledge-patch",
-      "coverage_path": "skills/eslint-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/eslint-knowledge-patch",
+        "codex": "skills-codex/eslint-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/eslint-knowledge-patch/coverage.json",
+        "codex": "skills-codex/eslint-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1071,8 +1206,14 @@
         "android",
         "tooling"
       ],
-      "path": "skills/expo-knowledge-patch",
-      "coverage_path": "skills/expo-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/expo-knowledge-patch",
+        "codex": "skills-codex/expo-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/expo-knowledge-patch/coverage.json",
+        "codex": "skills-codex/expo-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1106,8 +1247,14 @@
         "validation",
         "openapi"
       ],
-      "path": "skills/fastapi-knowledge-patch",
-      "coverage_path": "skills/fastapi-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/fastapi-knowledge-patch",
+        "codex": "skills-codex/fastapi-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/fastapi-knowledge-patch/coverage.json",
+        "codex": "skills-codex/fastapi-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1139,8 +1286,14 @@
         "system-administration",
         "selinux"
       ],
-      "path": "skills/fedora-knowledge-patch",
-      "coverage_path": "skills/fedora-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/fedora-knowledge-patch",
+        "codex": "skills-codex/fedora-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/fedora-knowledge-patch/coverage.json",
+        "codex": "skills-codex/fedora-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1171,8 +1324,14 @@
         "dart",
         "cross-platform"
       ],
-      "path": "skills/flutter-knowledge-patch",
-      "coverage_path": "skills/flutter-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/flutter-knowledge-patch",
+        "codex": "skills-codex/flutter-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/flutter-knowledge-patch/coverage.json",
+        "codex": "skills-codex/flutter-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1208,8 +1367,14 @@
         "kubernetes",
         "data"
       ],
-      "path": "skills/gcp-knowledge-patch",
-      "coverage_path": "skills/gcp-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/gcp-knowledge-patch",
+        "codex": "skills-codex/gcp-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gcp-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gcp-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1245,8 +1410,14 @@
         "projections",
         "reference-frames"
       ],
-      "path": "skills/geodesy-wgs84-knowledge-patch",
-      "coverage_path": "skills/geodesy-wgs84-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/geodesy-wgs84-knowledge-patch",
+        "codex": "skills-codex/geodesy-wgs84-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/geodesy-wgs84-knowledge-patch/coverage.json",
+        "codex": "skills-codex/geodesy-wgs84-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "EPSG:4326",
@@ -1285,8 +1456,14 @@
         "automation",
         "security"
       ],
-      "path": "skills/github-actions-knowledge-patch",
-      "coverage_path": "skills/github-actions-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/github-actions-knowledge-patch",
+        "codex": "skills-codex/github-actions-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/github-actions-knowledge-patch/coverage.json",
+        "codex": "skills-codex/github-actions-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1318,8 +1495,14 @@
         "concurrency",
         "ffi"
       ],
-      "path": "skills/gleam-knowledge-patch",
-      "coverage_path": "skills/gleam-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/gleam-knowledge-patch",
+        "codex": "skills-codex/gleam-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gleam-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gleam-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1353,8 +1536,14 @@
         "rtk",
         "ppp"
       ],
-      "path": "skills/gnss-navigation-knowledge-patch",
-      "coverage_path": "skills/gnss-navigation-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/gnss-navigation-knowledge-patch",
+        "codex": "skills-codex/gnss-navigation-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gnss-navigation-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gnss-navigation-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "GNSS",
@@ -1392,8 +1581,14 @@
         "concurrency",
         "generics"
       ],
-      "path": "skills/go-knowledge-patch",
-      "coverage_path": "skills/go-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/go-knowledge-patch",
+        "codex": "skills-codex/go-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/go-knowledge-patch/coverage.json",
+        "codex": "skills-codex/go-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1427,8 +1622,14 @@
         "positioning",
         "nmea"
       ],
-      "path": "skills/gpsd-knowledge-patch",
-      "coverage_path": "skills/gpsd-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/gpsd-knowledge-patch",
+        "codex": "skills-codex/gpsd-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/gpsd-knowledge-patch/coverage.json",
+        "codex": "skills-codex/gpsd-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1465,8 +1666,14 @@
         "services",
         "streaming"
       ],
-      "path": "skills/grpc-knowledge-patch",
-      "coverage_path": "skills/grpc-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/grpc-knowledge-patch",
+        "codex": "skills-codex/grpc-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/grpc-knowledge-patch/coverage.json",
+        "codex": "skills-codex/grpc-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1502,8 +1709,14 @@
         "templating",
         "package-manager"
       ],
-      "path": "skills/helm-knowledge-patch",
-      "coverage_path": "skills/helm-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/helm-knowledge-patch",
+        "codex": "skills-codex/helm-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/helm-knowledge-patch/coverage.json",
+        "codex": "skills-codex/helm-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1538,8 +1751,14 @@
         "edge-runtime",
         "rpc"
       ],
-      "path": "skills/hono-knowledge-patch",
-      "coverage_path": "skills/hono-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/hono-knowledge-patch",
+        "codex": "skills-codex/hono-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/hono-knowledge-patch/coverage.json",
+        "codex": "skills-codex/hono-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1573,8 +1792,14 @@
         "frontend",
         "sse"
       ],
-      "path": "skills/htmx-knowledge-patch",
-      "coverage_path": "skills/htmx-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/htmx-knowledge-patch",
+        "codex": "skills-codex/htmx-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/htmx-knowledge-patch/coverage.json",
+        "codex": "skills-codex/htmx-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "hx-trigger",
@@ -1611,8 +1836,14 @@
         "coroutines",
         "compose"
       ],
-      "path": "skills/kotlin-knowledge-patch",
-      "coverage_path": "skills/kotlin-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/kotlin-knowledge-patch",
+        "codex": "skills-codex/kotlin-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/kotlin-knowledge-patch/coverage.json",
+        "codex": "skills-codex/kotlin-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1647,8 +1878,14 @@
         "rbac",
         "gateway-api"
       ],
-      "path": "skills/kubernetes-knowledge-patch",
-      "coverage_path": "skills/kubernetes-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/kubernetes-knowledge-patch",
+        "codex": "skills-codex/kubernetes-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/kubernetes-knowledge-patch/coverage.json",
+        "codex": "skills-codex/kubernetes-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1657,6 +1894,49 @@
           "**/kustomization.yml",
           "**/*.yaml::apiVersion: apps/",
           "**/*.yaml::kind: Deployment"
+        ]
+      }
+    },
+    {
+      "id": "kustomize-knowledge-patch",
+      "short_label": "Kustomize",
+      "coverage_kind": "versioned",
+      "covered_through": "5.8.1",
+      "coverage_label": "5.8.1",
+      "aliases": [
+        "kustomize",
+        "kustomize knowledge patch"
+      ],
+      "languages": [
+        "yaml",
+        "go"
+      ],
+      "tags": [
+        "kubernetes",
+        "configuration",
+        "overlays",
+        "kustomize",
+        "yaml",
+        "go"
+      ],
+      "paths": {
+        "claude": "skills-claude/kustomize-knowledge-patch",
+        "codex": "skills-codex/kustomize-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/kustomize-knowledge-patch/coverage.json",
+        "codex": "skills-codex/kustomize-knowledge-patch/coverage.json"
+      },
+      "signals": {
+        "terms": [
+          "patchesStrategicMerge",
+          "configMapGenerator"
+        ],
+        "files": [
+          "kustomization.yaml",
+          "kustomization.yml",
+          "**/kustomization.yaml",
+          "**/kustomization.yml"
         ]
       }
     },
@@ -1685,8 +1965,14 @@
         "tools",
         "langgraph"
       ],
-      "path": "skills/langchain-knowledge-patch",
-      "coverage_path": "skills/langchain-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/langchain-knowledge-patch",
+        "codex": "skills-codex/langchain-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/langchain-knowledge-patch/coverage.json",
+        "codex": "skills-codex/langchain-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1722,8 +2008,14 @@
         "confirmatory-factor-analysis",
         "research"
       ],
-      "path": "skills/lavaan-cfa-knowledge-patch",
-      "coverage_path": "skills/lavaan-cfa-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/lavaan-cfa-knowledge-patch",
+        "codex": "skills-codex/lavaan-cfa-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/lavaan-cfa-knowledge-patch/coverage.json",
+        "codex": "skills-codex/lavaan-cfa-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "lavaan::cfa",
@@ -1758,8 +2050,14 @@
         "ssr",
         "hydration"
       ],
-      "path": "skills/leptos-knowledge-patch",
-      "coverage_path": "skills/leptos-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/leptos-knowledge-patch",
+        "codex": "skills-codex/leptos-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/leptos-knowledge-patch/coverage.json",
+        "codex": "skills-codex/leptos-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1793,8 +2091,14 @@
         "replication",
         "sharding"
       ],
-      "path": "skills/mongodb-knowledge-patch",
-      "coverage_path": "skills/mongodb-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/mongodb-knowledge-patch",
+        "codex": "skills-codex/mongodb-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/mongodb-knowledge-patch/coverage.json",
+        "codex": "skills-codex/mongodb-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1829,8 +2133,14 @@
         "administration",
         "innodb"
       ],
-      "path": "skills/mysql-knowledge-patch",
-      "coverage_path": "skills/mysql-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/mysql-knowledge-patch",
+        "codex": "skills-codex/mysql-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/mysql-knowledge-patch/coverage.json",
+        "codex": "skills-codex/mysql-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1868,8 +2178,14 @@
         "ssr",
         "caching"
       ],
-      "path": "skills/nextjs-knowledge-patch",
-      "coverage_path": "skills/nextjs-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/nextjs-knowledge-patch",
+        "codex": "skills-codex/nextjs-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nextjs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nextjs-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1903,8 +2219,14 @@
         "tls",
         "load-balancing"
       ],
-      "path": "skills/nginx-knowledge-patch",
-      "coverage_path": "skills/nginx-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/nginx-knowledge-patch",
+        "codex": "skills-codex/nginx-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nginx-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nginx-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -1939,8 +2261,14 @@
         "sentences",
         "serial"
       ],
-      "path": "skills/nmea0183-knowledge-patch",
-      "coverage_path": "skills/nmea0183-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/nmea0183-knowledge-patch",
+        "codex": "skills-codex/nmea0183-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nmea0183-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nmea0183-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "$GPGGA",
@@ -1978,8 +2306,14 @@
         "npm",
         "streams"
       ],
-      "path": "skills/nodejs-knowledge-patch",
-      "coverage_path": "skills/nodejs-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/nodejs-knowledge-patch",
+        "codex": "skills-codex/nodejs-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nodejs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nodejs-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2016,8 +2350,14 @@
         "ntrip",
         "positioning"
       ],
-      "path": "skills/ntrip-rtklib-knowledge-patch",
-      "coverage_path": "skills/ntrip-rtklib-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/ntrip-rtklib-knowledge-patch",
+        "codex": "skills-codex/ntrip-rtklib-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ntrip-rtklib-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ntrip-rtklib-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "NTRIP caster",
@@ -2054,8 +2394,14 @@
         "routing",
         "nitro"
       ],
-      "path": "skills/nuxt-knowledge-patch",
-      "coverage_path": "skills/nuxt-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/nuxt-knowledge-patch",
+        "codex": "skills-codex/nuxt-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/nuxt-knowledge-patch/coverage.json",
+        "codex": "skills-codex/nuxt-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2092,8 +2438,14 @@
         "openid-connect",
         "security"
       ],
-      "path": "skills/oauth2-oidc-knowledge-patch",
-      "coverage_path": "skills/oauth2-oidc-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/oauth2-oidc-knowledge-patch",
+        "codex": "skills-codex/oauth2-oidc-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/oauth2-oidc-knowledge-patch/coverage.json",
+        "codex": "skills-codex/oauth2-oidc-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           ".well-known/openid-configuration",
@@ -2132,8 +2484,14 @@
         "documentation",
         "code-generation"
       ],
-      "path": "skills/openapi-knowledge-patch",
-      "coverage_path": "skills/openapi-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/openapi-knowledge-patch",
+        "codex": "skills-codex/openapi-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/openapi-knowledge-patch/coverage.json",
+        "codex": "skills-codex/openapi-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "openapi: 3.",
@@ -2171,8 +2529,14 @@
         "system-administration",
         "cryptography"
       ],
-      "path": "skills/openssh-knowledge-patch",
-      "coverage_path": "skills/openssh-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/openssh-knowledge-patch",
+        "codex": "skills-codex/openssh-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/openssh-knowledge-patch/coverage.json",
+        "codex": "skills-codex/openssh-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2209,8 +2573,14 @@
         "pki",
         "security"
       ],
-      "path": "skills/openssl-tls-knowledge-patch",
-      "coverage_path": "skills/openssl-tls-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/openssl-tls-knowledge-patch",
+        "codex": "skills-codex/openssl-tls-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/openssl-tls-knowledge-patch/coverage.json",
+        "codex": "skills-codex/openssl-tls-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2249,8 +2619,14 @@
         "logs",
         "collector"
       ],
-      "path": "skills/opentelemetry-knowledge-patch",
-      "coverage_path": "skills/opentelemetry-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/opentelemetry-knowledge-patch",
+        "codex": "skills-codex/opentelemetry-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/opentelemetry-knowledge-patch/coverage.json",
+        "codex": "skills-codex/opentelemetry-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -2288,8 +2664,14 @@
         "postgresql",
         "indexing"
       ],
-      "path": "skills/pgvector-knowledge-patch",
-      "coverage_path": "skills/pgvector-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/pgvector-knowledge-patch",
+        "codex": "skills-codex/pgvector-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/pgvector-knowledge-patch/coverage.json",
+        "codex": "skills-codex/pgvector-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2324,8 +2706,14 @@
         "e2e",
         "fixtures"
       ],
-      "path": "skills/playwright-knowledge-patch",
-      "coverage_path": "skills/playwright-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/playwright-knowledge-patch",
+        "codex": "skills-codex/playwright-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/playwright-knowledge-patch/coverage.json",
+        "codex": "skills-codex/playwright-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2359,8 +2747,14 @@
         "compose",
         "rootless"
       ],
-      "path": "skills/podman-knowledge-patch",
-      "coverage_path": "skills/podman-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/podman-knowledge-patch",
+        "codex": "skills-codex/podman-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/podman-knowledge-patch/coverage.json",
+        "codex": "skills-codex/podman-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2392,8 +2786,14 @@
         "geometry",
         "geography"
       ],
-      "path": "skills/postgis-knowledge-patch",
-      "coverage_path": "skills/postgis-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/postgis-knowledge-patch",
+        "codex": "skills-codex/postgis-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/postgis-knowledge-patch/coverage.json",
+        "codex": "skills-codex/postgis-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2427,8 +2827,14 @@
         "replication",
         "indexing"
       ],
-      "path": "skills/postgresql-knowledge-patch",
-      "coverage_path": "skills/postgresql-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/postgresql-knowledge-patch",
+        "codex": "skills-codex/postgresql-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/postgresql-knowledge-patch/coverage.json",
+        "codex": "skills-codex/postgresql-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2461,8 +2867,14 @@
         "database",
         "client"
       ],
-      "path": "skills/prisma-knowledge-patch",
-      "coverage_path": "skills/prisma-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/prisma-knowledge-patch",
+        "codex": "skills-codex/prisma-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/prisma-knowledge-patch/coverage.json",
+        "codex": "skills-codex/prisma-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2495,8 +2907,14 @@
         "async",
         "runtime"
       ],
-      "path": "skills/python-knowledge-patch",
-      "coverage_path": "skills/python-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/python-knowledge-patch",
+        "codex": "skills-codex/python-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/python-knowledge-patch/coverage.json",
+        "codex": "skills-codex/python-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2530,8 +2948,14 @@
         "training",
         "gpu"
       ],
-      "path": "skills/pytorch-knowledge-patch",
-      "coverage_path": "skills/pytorch-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/pytorch-knowledge-patch",
+        "codex": "skills-codex/pytorch-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/pytorch-knowledge-patch/coverage.json",
+        "codex": "skills-codex/pytorch-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2567,8 +2991,14 @@
         "packages",
         "scientific-computing"
       ],
-      "path": "skills/r-cran-knowledge-patch",
-      "coverage_path": "skills/r-cran-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/r-cran-knowledge-patch",
+        "codex": "skills-codex/r-cran-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/r-cran-knowledge-patch/coverage.json",
+        "codex": "skills-codex/r-cran-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "R CMD check",
@@ -2606,8 +3036,14 @@
         "jobs",
         "hotwire"
       ],
-      "path": "skills/rails-knowledge-patch",
-      "coverage_path": "skills/rails-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/rails-knowledge-patch",
+        "codex": "skills-codex/rails-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rails-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rails-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2638,8 +3074,14 @@
         "rendering",
         "events"
       ],
-      "path": "skills/ratatui-knowledge-patch",
-      "coverage_path": "skills/ratatui-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/ratatui-knowledge-patch",
+        "codex": "skills-codex/ratatui-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ratatui-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ratatui-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2673,8 +3115,14 @@
         "rendering",
         "jsx"
       ],
-      "path": "skills/react-knowledge-patch",
-      "coverage_path": "skills/react-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/react-knowledge-patch",
+        "codex": "skills-codex/react-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/react-knowledge-patch/coverage.json",
+        "codex": "skills-codex/react-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2709,8 +3157,14 @@
         "android",
         "javascript"
       ],
-      "path": "skills/react-native-knowledge-patch",
-      "coverage_path": "skills/react-native-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/react-native-knowledge-patch",
+        "codex": "skills-codex/react-native-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/react-native-knowledge-patch/coverage.json",
+        "codex": "skills-codex/react-native-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2747,8 +3201,14 @@
         "actions",
         "framework"
       ],
-      "path": "skills/react-router-knowledge-patch",
-      "coverage_path": "skills/react-router-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/react-router-knowledge-patch",
+        "codex": "skills-codex/react-router-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/react-router-knowledge-patch/coverage.json",
+        "codex": "skills-codex/react-router-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2782,8 +3242,14 @@
         "streams",
         "operations"
       ],
-      "path": "skills/redis-knowledge-patch",
-      "coverage_path": "skills/redis-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/redis-knowledge-patch",
+        "codex": "skills-codex/redis-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/redis-knowledge-patch/coverage.json",
+        "codex": "skills-codex/redis-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2818,46 +3284,20 @@
         "system-administration",
         "selinux"
       ],
-      "path": "skills/rhel-knowledge-patch",
-      "coverage_path": "skills/rhel-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/rhel-knowledge-patch",
+        "codex": "skills-codex/rhel-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rhel-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rhel-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
           "/etc/os-release::ID=\"rhel\"",
           "**/Dockerfile::registry.access.redhat.com/ubi",
           "**/Containerfile::registry.access.redhat.com/ubi"
-        ]
-      }
-    },
-    {
-      "id": "rocky-knowledge-patch",
-      "short_label": "Rocky Linux",
-      "coverage_kind": "versioned",
-      "covered_through": "10.2",
-      "coverage_label": "10.2",
-      "aliases": [
-        "rocky",
-        "rocky knowledge patch",
-        "rocky linux"
-      ],
-      "languages": [
-        "bash"
-      ],
-      "tags": [
-        "linux",
-        "enterprise-linux",
-        "packages",
-        "system-administration",
-        "rpm"
-      ],
-      "path": "skills/rocky-knowledge-patch",
-      "coverage_path": "skills/rocky-knowledge-patch/coverage.json",
-      "signals": {
-        "terms": [],
-        "files": [
-          "/etc/os-release::ID=\"rocky\"",
-          "**/Dockerfile::FROM rockylinux",
-          "**/Containerfile::FROM rockylinux"
         ]
       }
     },
@@ -2886,8 +3326,14 @@
         "msm",
         "ssr"
       ],
-      "path": "skills/rtcm3-knowledge-patch",
-      "coverage_path": "skills/rtcm3-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/rtcm3-knowledge-patch",
+        "codex": "skills-codex/rtcm3-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rtcm3-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rtcm3-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "RTCM 3",
@@ -2923,8 +3369,14 @@
         "rtk",
         "corrections"
       ],
-      "path": "skills/rtkbase-knowledge-patch",
-      "coverage_path": "skills/rtkbase-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/rtkbase-knowledge-patch",
+        "codex": "skills-codex/rtkbase-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rtkbase-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rtkbase-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2959,8 +3411,14 @@
         "async",
         "edition-2024"
       ],
-      "path": "skills/rust-knowledge-patch",
-      "coverage_path": "skills/rust-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/rust-knowledge-patch",
+        "codex": "skills-codex/rust-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/rust-knowledge-patch/coverage.json",
+        "codex": "skills-codex/rust-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -2995,8 +3453,14 @@
         "labels",
         "access-control"
       ],
-      "path": "skills/selinux-knowledge-patch",
-      "coverage_path": "skills/selinux-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/selinux-knowledge-patch",
+        "codex": "skills-codex/selinux-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/selinux-knowledge-patch/coverage.json",
+        "codex": "skills-codex/selinux-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3028,8 +3492,14 @@
         "formats",
         "rust"
       ],
-      "path": "skills/serde-knowledge-patch",
-      "coverage_path": "skills/serde-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/serde-knowledge-patch",
+        "codex": "skills-codex/serde-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/serde-knowledge-patch/coverage.json",
+        "codex": "skills-codex/serde-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3063,8 +3533,14 @@
         "containers",
         "security"
       ],
-      "path": "skills/sigstore-cosign-knowledge-patch",
-      "coverage_path": "skills/sigstore-cosign-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/sigstore-cosign-knowledge-patch",
+        "codex": "skills-codex/sigstore-cosign-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sigstore-cosign-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sigstore-cosign-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "cosign sign",
@@ -3104,8 +3580,14 @@
         "security",
         "compliance"
       ],
-      "path": "skills/slsa-knowledge-patch",
-      "coverage_path": "skills/slsa-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/slsa-knowledge-patch",
+        "codex": "skills-codex/slsa-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/slsa-knowledge-patch/coverage.json",
+        "codex": "skills-codex/slsa-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "https://slsa.dev/provenance/",
@@ -3145,8 +3627,14 @@
         "components",
         "ssr"
       ],
-      "path": "skills/solidjs-knowledge-patch",
-      "coverage_path": "skills/solidjs-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/solidjs-knowledge-patch",
+        "codex": "skills-codex/solidjs-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/solidjs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/solidjs-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3179,8 +3667,14 @@
         "configuration",
         "actuator"
       ],
-      "path": "skills/spring-boot-knowledge-patch",
-      "coverage_path": "skills/spring-boot-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/spring-boot-knowledge-patch",
+        "codex": "skills-codex/spring-boot-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/spring-boot-knowledge-patch/coverage.json",
+        "codex": "skills-codex/spring-boot-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3216,8 +3710,14 @@
         "database",
         "async"
       ],
-      "path": "skills/sqlalchemy-knowledge-patch",
-      "coverage_path": "skills/sqlalchemy-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/sqlalchemy-knowledge-patch",
+        "codex": "skills-codex/sqlalchemy-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sqlalchemy-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sqlalchemy-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "from sqlalchemy",
@@ -3253,8 +3753,14 @@
         "transactions",
         "indexing"
       ],
-      "path": "skills/sqlite-knowledge-patch",
-      "coverage_path": "skills/sqlite-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/sqlite-knowledge-patch",
+        "codex": "skills-codex/sqlite-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sqlite-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sqlite-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3288,8 +3794,14 @@
         "macros",
         "migrations"
       ],
-      "path": "skills/sqlx-knowledge-patch",
-      "coverage_path": "skills/sqlx-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/sqlx-knowledge-patch",
+        "codex": "skills-codex/sqlx-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/sqlx-knowledge-patch/coverage.json",
+        "codex": "skills-codex/sqlx-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3324,8 +3836,14 @@
         "documentation",
         "ui"
       ],
-      "path": "skills/storybook-knowledge-patch",
-      "coverage_path": "skills/storybook-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/storybook-knowledge-patch",
+        "codex": "skills-codex/storybook-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/storybook-knowledge-patch/coverage.json",
+        "codex": "skills-codex/storybook-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3365,8 +3883,14 @@
         "webhooks",
         "connect"
       ],
-      "path": "skills/stripe-knowledge-patch",
-      "coverage_path": "skills/stripe-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/stripe-knowledge-patch",
+        "codex": "skills-codex/stripe-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/stripe-knowledge-patch/coverage.json",
+        "codex": "skills-codex/stripe-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3404,8 +3928,14 @@
         "realtime",
         "storage"
       ],
-      "path": "skills/supabase-knowledge-patch",
-      "coverage_path": "skills/supabase-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/supabase-knowledge-patch",
+        "codex": "skills-codex/supabase-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/supabase-knowledge-patch/coverage.json",
+        "codex": "skills-codex/supabase-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3439,8 +3969,14 @@
         "system-administration",
         "zypper"
       ],
-      "path": "skills/suse-knowledge-patch",
-      "coverage_path": "skills/suse-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/suse-knowledge-patch",
+        "codex": "skills-codex/suse-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/suse-knowledge-patch/coverage.json",
+        "codex": "skills-codex/suse-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3476,8 +4012,14 @@
         "sveltekit",
         "runes"
       ],
-      "path": "skills/svelte-knowledge-patch",
-      "coverage_path": "skills/svelte-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/svelte-knowledge-patch",
+        "codex": "skills-codex/svelte-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/svelte-knowledge-patch/coverage.json",
+        "codex": "skills-codex/svelte-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3510,8 +4052,14 @@
         "macos",
         "package-manager"
       ],
-      "path": "skills/swift-knowledge-patch",
-      "coverage_path": "skills/swift-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/swift-knowledge-patch",
+        "codex": "skills-codex/swift-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/swift-knowledge-patch/coverage.json",
+        "codex": "skills-codex/swift-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3545,8 +4093,14 @@
         "journald",
         "system-administration"
       ],
-      "path": "skills/systemd-knowledge-patch",
-      "coverage_path": "skills/systemd-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/systemd-knowledge-patch",
+        "codex": "skills-codex/systemd-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/systemd-knowledge-patch/coverage.json",
+        "codex": "skills-codex/systemd-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3583,8 +4137,14 @@
         "frontend",
         "design-system"
       ],
-      "path": "skills/tailwind-knowledge-patch",
-      "coverage_path": "skills/tailwind-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/tailwind-knowledge-patch",
+        "codex": "skills-codex/tailwind-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tailwind-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tailwind-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3619,8 +4179,14 @@
         "cache",
         "state-management"
       ],
-      "path": "skills/tanstack-query-knowledge-patch",
-      "coverage_path": "skills/tanstack-query-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/tanstack-query-knowledge-patch",
+        "codex": "skills-codex/tanstack-query-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tanstack-query-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tanstack-query-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "new QueryClient",
@@ -3659,8 +4225,14 @@
         "webview",
         "plugins"
       ],
-      "path": "skills/tauri-knowledge-patch",
-      "coverage_path": "skills/tauri-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/tauri-knowledge-patch",
+        "codex": "skills-codex/tauri-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tauri-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tauri-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3694,8 +4266,14 @@
         "state",
         "modules"
       ],
-      "path": "skills/terraform-knowledge-patch",
-      "coverage_path": "skills/terraform-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/terraform-knowledge-patch",
+        "codex": "skills-codex/terraform-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/terraform-knowledge-patch/coverage.json",
+        "codex": "skills-codex/terraform-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3727,8 +4305,14 @@
         "io",
         "networking"
       ],
-      "path": "skills/tokio-knowledge-patch",
-      "coverage_path": "skills/tokio-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/tokio-knowledge-patch",
+        "codex": "skills-codex/tokio-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/tokio-knowledge-patch/coverage.json",
+        "codex": "skills-codex/tokio-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3762,8 +4346,14 @@
         "acme",
         "observability"
       ],
-      "path": "skills/traefik-knowledge-patch",
-      "coverage_path": "skills/traefik-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/traefik-knowledge-patch",
+        "codex": "skills-codex/traefik-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/traefik-knowledge-patch/coverage.json",
+        "codex": "skills-codex/traefik-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3796,8 +4386,14 @@
         "procedures",
         "typescript"
       ],
-      "path": "skills/trpc-knowledge-patch",
-      "coverage_path": "skills/trpc-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/trpc-knowledge-patch",
+        "codex": "skills-codex/trpc-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/trpc-knowledge-patch/coverage.json",
+        "codex": "skills-codex/trpc-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3830,8 +4426,14 @@
         "javascript",
         "modules"
       ],
-      "path": "skills/typescript-knowledge-patch",
-      "coverage_path": "skills/typescript-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/typescript-knowledge-patch",
+        "codex": "skills-codex/typescript-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/typescript-knowledge-patch/coverage.json",
+        "codex": "skills-codex/typescript-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3862,8 +4464,14 @@
         "system-administration",
         "lts"
       ],
-      "path": "skills/ubuntu-knowledge-patch",
-      "coverage_path": "skills/ubuntu-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/ubuntu-knowledge-patch",
+        "codex": "skills-codex/ubuntu-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/ubuntu-knowledge-patch/coverage.json",
+        "codex": "skills-codex/ubuntu-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3897,8 +4505,14 @@
         "virtual-environments",
         "tooling"
       ],
-      "path": "skills/uv-knowledge-patch",
-      "coverage_path": "skills/uv-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/uv-knowledge-patch",
+        "codex": "skills-codex/uv-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/uv-knowledge-patch/coverage.json",
+        "codex": "skills-codex/uv-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -3932,8 +4546,14 @@
         "tools",
         "generative-ui"
       ],
-      "path": "skills/vercel-ai-sdk-knowledge-patch",
-      "coverage_path": "skills/vercel-ai-sdk-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/vercel-ai-sdk-knowledge-patch",
+        "codex": "skills-codex/vercel-ai-sdk-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vercel-ai-sdk-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vercel-ai-sdk-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "streamText(",
@@ -3972,8 +4592,14 @@
         "hmr",
         "frontend"
       ],
-      "path": "skills/vite-knowledge-patch",
-      "coverage_path": "skills/vite-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/vite-knowledge-patch",
+        "codex": "skills-codex/vite-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vite-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vite-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -4006,8 +4632,14 @@
         "coverage",
         "vite"
       ],
-      "path": "skills/vitest-knowledge-patch",
-      "coverage_path": "skills/vitest-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/vitest-knowledge-patch",
+        "codex": "skills-codex/vitest-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vitest-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vitest-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -4041,8 +4673,14 @@
         "composition-api",
         "sfc"
       ],
-      "path": "skills/vuejs-knowledge-patch",
-      "coverage_path": "skills/vuejs-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/vuejs-knowledge-patch",
+        "codex": "skills-codex/vuejs-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/vuejs-knowledge-patch/coverage.json",
+        "codex": "skills-codex/vuejs-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -4080,8 +4718,14 @@
         "fido2",
         "security"
       ],
-      "path": "skills/webauthn-passkeys-knowledge-patch",
-      "coverage_path": "skills/webauthn-passkeys-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/webauthn-passkeys-knowledge-patch",
+        "codex": "skills-codex/webauthn-passkeys-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/webauthn-passkeys-knowledge-patch/coverage.json",
+        "codex": "skills-codex/webauthn-passkeys-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [
           "PublicKeyCredential",
@@ -4122,8 +4766,14 @@
         "directory-sync",
         "organizations"
       ],
-      "path": "skills/workos-knowledge-patch",
-      "coverage_path": "skills/workos-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/workos-knowledge-patch",
+        "codex": "skills-codex/workos-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/workos-knowledge-patch/coverage.json",
+        "codex": "skills-codex/workos-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -4156,8 +4806,14 @@
         "memory",
         "cross-compilation"
       ],
-      "path": "skills/zig-knowledge-patch",
-      "coverage_path": "skills/zig-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/zig-knowledge-patch",
+        "codex": "skills-codex/zig-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/zig-knowledge-patch/coverage.json",
+        "codex": "skills-codex/zig-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
@@ -4190,8 +4846,14 @@
         "authentication",
         "authorization"
       ],
-      "path": "skills/zitadel-knowledge-patch",
-      "coverage_path": "skills/zitadel-knowledge-patch/coverage.json",
+      "paths": {
+        "claude": "skills-claude/zitadel-knowledge-patch",
+        "codex": "skills-codex/zitadel-knowledge-patch"
+      },
+      "coverage_paths": {
+        "claude": "skills-claude/zitadel-knowledge-patch/coverage.json",
+        "codex": "skills-codex/zitadel-knowledge-patch/coverage.json"
+      },
       "signals": {
         "terms": [],
         "files": [
