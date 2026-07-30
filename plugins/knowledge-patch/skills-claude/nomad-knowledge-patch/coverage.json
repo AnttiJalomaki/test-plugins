@@ -1,0 +1,47 @@
+{
+  "patch": "nomad-knowledge-patch",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-07-29T11:24:52Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "1.10-upgrade": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.10.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.11-upgrade": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.11.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.0-upgrade": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2.0.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "upgrade-procedure": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

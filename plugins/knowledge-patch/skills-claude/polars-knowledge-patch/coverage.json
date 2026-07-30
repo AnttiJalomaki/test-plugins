@@ -1,0 +1,42 @@
+{
+  "patch": "polars-knowledge-patch",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-07-29T11:35:52Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "1.0-upgrade": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.10.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.20.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.30.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.40.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "1.41.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

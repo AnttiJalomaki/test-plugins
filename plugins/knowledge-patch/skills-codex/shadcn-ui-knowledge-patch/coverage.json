@@ -1,0 +1,52 @@
+{
+  "patch": "shadcn-ui-knowledge-patch",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-07-29T16:03:40Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "tailwind-v4-transition": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "cli-3-and-mcp": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "create-and-base-ui": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "cli-v4-and-presets": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "registry-composition-and-github": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "current-component-bases": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "registry-configuration": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "registry-schema-and-api": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

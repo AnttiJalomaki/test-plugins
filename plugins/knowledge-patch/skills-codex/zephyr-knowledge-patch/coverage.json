@@ -1,0 +1,62 @@
+{
+  "patch": "zephyr-knowledge-patch",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-07-29T18:07:33Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "migration-4.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.0.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "migration-4.1": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.1.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "migration-4.2": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.2.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "migration-4.3": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.3.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "migration-4.4": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "4.4.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

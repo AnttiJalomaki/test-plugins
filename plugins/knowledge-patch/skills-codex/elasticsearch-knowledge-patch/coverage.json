@@ -1,0 +1,62 @@
+{
+  "patch": "elasticsearch-knowledge-patch",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-07-29T22:33:06Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "8.18.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "9.0.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "8.19.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "9.1.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "9.2.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "9.3.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "9.4.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "breaking-changes": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "deprecations": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "known-issues": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

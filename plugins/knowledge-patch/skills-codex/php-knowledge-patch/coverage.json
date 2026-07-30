@@ -1,0 +1,32 @@
+{
+  "patch": "php-knowledge-patch",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-07-29T10:09:15Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "8.4-migration": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "8.4.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "8.5-migration": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "8.5.0": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

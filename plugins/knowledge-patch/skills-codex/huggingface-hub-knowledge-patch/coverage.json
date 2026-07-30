@@ -1,0 +1,32 @@
+{
+  "patch": "huggingface-hub-knowledge-patch",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-07-29T06:25:21Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "hub-repositories-api-auth": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "hub-files-cache-storage": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "hub-inference-spaces": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "huggingface-hub-v1-client": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

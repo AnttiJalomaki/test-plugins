@@ -1,0 +1,42 @@
+{
+  "patch": "ray-knowledge-patch",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-07-29T12:25:07Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "ray-core-tasks-and-actors": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "ray-data": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "ray-train-and-api-evolution": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "ray-tune": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "ray-serve": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "kuberay": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

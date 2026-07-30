@@ -1,0 +1,47 @@
+{
+  "patch": "remix-knowledge-patch",
+  "target": "claude",
+  "source": "codex",
+  "built_at": "2026-07-29T14:54:14Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "remix-3-direction": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "remix-jam-2025": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "remix-3-beta-preview": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "framework-overview": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "beta-changelog": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "routing-and-middleware": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "ui-runtime": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}

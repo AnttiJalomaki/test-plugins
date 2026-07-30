@@ -1,0 +1,67 @@
+{
+  "patch": "model-context-protocol-knowledge-patch",
+  "target": "codex",
+  "source": "codex",
+  "built_at": "2026-07-30T00:00:20Z",
+  "streams": {
+    "codex": "codex-gpt-5.6-sol-r2"
+  },
+  "batches": {
+    "2025-03-26-compat": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2025-03-26": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2025-06-18-compat": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2025-06-18": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2025-11-25-compat": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2025-11-25": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "2026-07-28-rc": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "typescript-sdk-v2-migration": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "typescript-sdk-2026-revision": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "python-sdk-v2-migration": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    },
+    "python-sdk-v2-overview": {
+      "kind": "unversioned",
+      "codex": "gaps",
+      "build": "included"
+    }
+  },
+  "retire_candidates": []
+}
