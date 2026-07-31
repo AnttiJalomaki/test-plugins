@@ -1,328 +1,307 @@
 # Fullstack, Server Functions, Routing, and WASM-Aware Navigation
 
-## Build targets and feature isolation
+## Fullstack feature boundary
 
-DX builds a Fullstack application twice: the client enables `web`, and the backend enables `server`. The `fullstack` feature alone is not a substitute for selecting each build side. A server-function body is server-only, but adjacent modules, constants, and native dependencies are not hidden automatically; gate them and their optional dependencies or secrets and native code may enter the browser bundle.
+The fullstack client and server are separate builds. Pair `dioxus/fullstack`
+with `dioxus/web` for the browser and `dioxus/server` for the backend.
 
-```toml
-[dependencies]
-tokio = { version = "1", optional = true }
+Native desktop and mobile clients can call server functions. Production native
+builds must set a server URL because they have no browser origin.
 
-[features]
-web = ["dioxus/web"]
-server = ["dioxus/server", "dep:tokio"]
-```
+## Building the Axum server
 
-```rust
-#[cfg(feature = "server")]
-mod backend {
-    pub static DB_PASSWORD: &str = "...";
-}
-```
-
-Server functions work from Desktop and Mobile clients as well as Web. Development native clients point to localhost; production native apps must call `server_fn::client::set_server_url(...)` with the deployed endpoint before launch. Native clients have no server render, hydration data, `FullstackContext`, HTML streaming, or SSG.
-
-## Axum-native server composition
-
-Since 0.7.0, Dioxus exposes `dioxus::serve` and route macros whose path and query fields map to handler arguments. Any valid Axum handler can serve as a server function, and JSON is the default codec.
-
-```rust
-#[get("/api/{name}/?age")]
-async fn get_message(name: String, age: i32) -> Result<String> {
-    Ok(format!("Hello {name}, you are {age} years old!"))
-}
-```
-
-`dioxus::server::router(app)` assembles static-file serving, registered server functions, and the SSR fallback. Ordinary Axum routes added to that router take precedence over the fallback. Fully custom servers can use `DioxusRouterExt`, or iterate `ServerFunction::collect()` and call `register_server_fn_on_router` for selected functions.
+`dioxus::serve` accepts an async closure returning an Axum router.
+`dioxus::server::router(app)` assembles static assets and `/public`, registered
+server functions, and SSR as a fallback. Routes added to that router take
+priority over the fallback. Import Axum through `dioxus::server::axum` so its
+version matches Dioxus.
 
 ```rust
 #[cfg(feature = "server")]
 dioxus::serve(|| async move {
-    use dioxus::server::axum::routing::get;
-
+    use dioxus::server::axum::routing::post;
     Ok(dioxus::server::router(app)
-        .route("/health", get(|| async { "ok" })))
+        .route("/submit", post(|| async { "Form submitted" })))
 });
 ```
 
-During development, the CLI reverse-proxies a custom Axum server. Bind it to `dioxus_cli_config::fullstack_address_or_localhost()` instead of a fixed address.
+For fine-grained assembly, `DioxusRouterExt` provides
+`.register_server_functions()` and `.serve_static_assets()`, while
+`RenderHandleState::new(config, app)` supplies SSR state. `ServerFunction::collect()`
+iterates registrations and exposes each function's method and path, allowing a
+router to register only a subset.
+
+`dioxus::serve` replaced hand-started Axum servers in `0.7.0`, enabling the
+router itself to hot-patch. That generation also permits a fullstack backend to
+target `wasm32` hosts such as server-side-WASM platforms.
+
+## Server-function route macros
+
+Since `0.7.0`, `#[get]`, `#[post]`, and the other HTTP-method macros expose
+stable routes with path (`{name}`) and query (`?age`) parameters. The body may
+use valid Axum handler arguments and responses; server-only extractors do not
+enter the client-callable function signature.
 
 ```rust
-let address = dioxus_cli_config::fullstack_address_or_localhost();
-let listener = tokio::net::TcpListener::bind(address).await?;
+#[get("/api/{name}/?age")]
+async fn greeting(name: String, age: i32) -> Result<String> {
+    Ok(format!("Hello {name}, age {age}"))
+}
 ```
 
-## Server state and authentication
+The result alias here is Dioxus's `Result`, and the default encoding changed to
+JSON with the Axum 0.8-based fullstack rewrite. Route queries use `serde_qs` since
+`0.7.1`, so nested structs and sequences round-trip. Named and anonymous server
+functions both support server-only `FromRequestParts`/`FromRequest` extractors
+since `0.7.3`.
 
-Fullstack `Lazy<T>` initializes a static server resource through an async closure. It implements `Deref<Target = T>` and blocks the accessing thread until initialization completes; it is a concise alternative to plumbing Axum `State` or `Extension` through a custom entrypoint.
+Bare `#[server]` generates an endpoint whose module/body/signature hash may
+change. Use explicit HTTP macros for a native client released independently of
+its backend. A custom wire format implements `Encoding` (`content_type`,
+`encode`, and `decode`) and is selected with
+`#[server(input = MyEncoding, output = MyEncoding)]`.
+
+Calling a server function from backend code is supported: since `0.7.1`, absent
+request context falls back to a blank `GET` request, and the caller's tracing
+span propagates into the function.
+
+Generated path/query parameters go through Axum `Path` and `Query` extraction,
+so signatures may use extractor-compatible shapes such as `Option<T>`.
+
+Annotate a single endpoint with `#[middleware]` to apply a Tower layer such as
+auth or timeout only to its generated `MethodRouter`; use `.layer()` for the
+whole Axum router.
+
+## Lazy server globals
+
+Dioxus's `Lazy<T>` is a global whose initializer is async. First dereference
+blocks the current thread until it resolves, making it useful for a pool that
+can be accessed synchronously without custom Axum state. The initializer
+returns a result, so use `dioxus::Ok`.
 
 ```rust
 static DATABASE: Lazy<sqlx::SqlitePool> = Lazy::new(|| async move {
     dioxus::Ok(
-        SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with("sqlite::memory:".parse().unwrap())
-            .await?,
+        sqlx::sqlite::SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await?
     )
 });
 ```
 
-Dioxus Fullstack does not supply an authentication or session store. Resolve sessions in an Axum or Tower layer and place them in request extensions. Anonymous server functions gained server-only extractors in 0.7.3, so a session can be hoisted into macro parameters without entering the client payload.
+## Errors and HTTP status
+
+`HttpError` carries a status and message. `OrHttpError` extends `Result<T>`,
+`Option<T>`, and `bool`; named helpers include authorization cases and
+`or_http_error(status, message)` handles arbitrary statuses. Dioxus downcasts a
+bubbled error to recover an `HttpError`; an unrecognized error becomes 500.
 
 ```rust
-#[post("/api/user/login", auth: auth::Session)]
-pub async fn login() -> Result<()> {
-    auth.login_user(2);
-    Ok(())
-}
-```
-
-## Forms and request bodies
-
-### Typed forms
-
-An endpoint can accept a Serde value in Axum `Form<T>`. `FormEvent::parsed_values()` constructs the same type from controls whose `name` values match its fields. GET forms expose their values in the URL; use POST for structured or sensitive data.
-
-```rust
-#[derive(Serialize, Deserialize)]
-struct LoginForm {
-    username: String,
-    password: String,
-}
-
 #[post("/api/login")]
-async fn login(form: Form<LoginForm>) -> Result<()> {
+async fn login() -> Result<()> {
+    authenticate().or_unauthorized("Login required")?;
+    authorize().or_http_error(StatusCode::FORBIDDEN, "Forbidden")?;
     Ok(())
-}
-
-onsubmit: move |event: FormEvent| async move {
-    event.prevent_default();
-    let values: LoginForm = event.parsed_values().unwrap();
-    _ = login(Form(values)).await;
 }
 ```
 
-Web forms submit normally unless the handler synchronously calls `prevent_default()`. Do that before the first `.await`.
-
-### Multipart uploads
-
-Converting `FormEvent` into `MultipartFormData` retains file parts. The server consumes fields asynchronously through `next_field()`. Multipart data is untyped in this API, so inspect names, filenames, MIME types, and bytes manually.
+At the SSR root, an uncaught error sets the response status. Catching it in an
+`ErrorBoundary` suppresses that automatic behavior; recommit it and render by
+status:
 
 ```rust
+handle_error: |ctx: ErrorContext| {
+    let http = FullstackContext::commit_error_status(ctx.error().unwrap());
+    match http.status {
+        StatusCode::NOT_FOUND => rsx! { "404" },
+        _ => rsx! { "Request failed" },
+    }
+}
+```
+
+Since `0.7.5`, an error from a `#[get]` endpoint passes through as the error
+response instead of becoming a redirect.
+
+## Error types across the wire
+
+A server-side concrete `anyhow` error cannot retain its Rust type on the client.
+An endpoint returning plain `Result<T>` arrives as `ServerFnError`, so client
+downcasts to the original type fail. Return `ServerFnResult` or
+`Result<T, ServerFnError>` when callers need to distinguish transport and server
+failures. Important variants include `ServerError { message, code, details }`
+and `Request(RequestError)`.
+
+A custom error that crosses the wire must implement `Serialize`, `Deserialize`,
+and `AsStatusCode`; it also needs `From<ServerFnError>` so request failures have
+a representation.
+
+## Forms and multipart uploads
+
+Cancel the browser submission synchronously. `FormEvent::parsed_values::<T>()`
+deserializes inputs by `name`; hand the result to an endpoint taking Axum's
+`Form<T>`. Converting the event with `.into()` produces `MultipartFormData`,
+whose server side is read field-by-field. Typed multipart is not available.
+
+```rust
+form {
+    onsubmit: move |event: FormEvent| async move {
+        event.prevent_default();
+        let values: LoginForm = event.parsed_values().unwrap();
+        login(Form(values)).await?;
+        Ok(())
+    },
+    input { name: "username" }
+}
+
 #[post("/api/upload")]
 async fn upload(mut form: MultipartFormData) -> Result<()> {
     while let Ok(Some(field)) = form.next_field().await {
-        let name = field.name().unwrap_or("<none>").to_string();
         let bytes = field.bytes().await?;
-        store(name, bytes).await?;
+        // persist bytes
     }
     Ok(())
 }
 ```
 
-### Custom transports
+## Streams and files
 
-Inputs can be multiple Serde values or one body implementing Axum `FromRequest` plus Dioxus `IntoRequest`. Outputs can be Serde values or implement Axum `IntoResponse` plus Dioxus `FromResponse`. If a third-party output lacks the client trait, convert it and return erased `axum::response::Response`.
+In the `0.5.0` API, streaming server functions selected an output codec in
+`#[server(output = StreamingText)]` and returned `TextStream`. The current
+family is the generic `Streaming<T, E>` with `TextStream` and `ByteStream`
+aliases. Built-in encodings include JSON, CBOR, Postcard, and MessagePack.
 
-```rust
-#[get("/api/video", range: RangeHeader)]
-async fn video_endpoint() -> Result<axum::response::Response> {
-    Ok(get_chunk_from_range(range).into_response())
-}
-```
-
-Fullstack endpoints also support middleware, redirects, request and response headers, captured status, and custom `Transport` implementations.
-
-## Errors and HTTP semantics
-
-The prelude `Result<T>` aliases `anyhow::Result<T>`. A concrete server error is erased at the client into Dioxus `ServerFnError`; an error without a recognized HTTP representation defaults to status 500. Use `ServerFnError` to distinguish transport from server failure, `OrHttpError` for an inline status, or a Serde error implementing `AsStatusCode` and `From<ServerFnError>` for a stable domain contract.
+`Streaming::spawn` supplies an `UnboundedSender`; stop when
+`unbounded_send(item)` fails because the client disconnected.
+`Streaming::new(stream)` wraps an existing stream, and consumers use ordinary
+`StreamExt` combinators.
 
 ```rust
-#[post("/api/private")]
-async fn private_data() -> Result<()> {
-    authorize()
-        .or_http_error(StatusCode::UNAUTHORIZED, "Log in first!")?;
-    Ok(())
-}
-```
-
-Error responses from `#[get]` server functions are returned as failures rather than redirects as of 0.7.5.
-
-An uncaught render error propagates its status to the SSR response. Handling it in `ErrorBoundary` stops that propagation; the fallback must call `FullstackContext::commit_error_status` if the response should retain the captured status.
-
-```rust
-ErrorBoundary {
-    handle_error: move |error: ErrorContext| {
-        let http_error =
-            FullstackContext::commit_error_status(error.error().unwrap());
-        rsx! { "Request failed: {http_error:?}" }
-    },
-    Outlet::<Route> {}
-}
-```
-
-## Hydration, suspense, and streamed HTML
-
-Hydration reruns every component on the client, so the tree must exactly match the server output. Put synchronous nondeterminism in `use_server_cached`, asynchronous nondeterminism in a server future or loader, and client-only reads in `use_effect`. Server-cached and server-future closures must have no side effects because the client may deserialize the result without running them.
-
-`SuspenseBoundary` can stream server-rendered boundary chunks as futures resolve. A Fullstack suspended resource should use `use_server_future`; only the outer closure is reactive, so read dependencies there.
-
-Out-of-order streaming is opt-in with `ServeConfig::enable_out_of_order_streaming`. Normally the router waits for suspense above it and calls `commit_initial_chunk()`. After the first commit, response headers and status cannot change. Head elements emitted in later chunks are installed only after hydration and are invisible to crawlers or no-JavaScript clients.
-
-## Typed streams and files
-
-### General streams
-
-Server functions have supported bidirectional streaming since 0.5.0. `Streaming<T, E>` serializes each item through an `Encoding`; built-ins include JSON, CBOR, Postcard, and MessagePack. `TextStream` and `ByteStream` specialize strings and raw bytes. `Streaming::spawn` supplies an unbounded sender, while `Streaming::new` adapts an existing futures `Stream`.
-
-```rust
-#[get("/api/numbers")]
-async fn numbers() -> Result<Streaming<u32, JsonEncoding>> {
+#[get("/api/dogs")]
+async fn dogs() -> Result<Streaming<Dog, JsonEncoding>> {
     Ok(Streaming::spawn(|tx| async move {
-        for number in 0..10 {
-            if tx.unbounded_send(number).is_err() {
-                break;
-            }
+        for age in 0..10 {
+            if tx.unbounded_send(Dog { age }).is_err() { break; }
         }
     }))
 }
 ```
 
-The older output-codec form remains useful context for migrations:
+`FileStream` is separate and streams through platform-native file support rather
+than buffering. Construct one on the server with
+`FileStream::from_path(path).await?`, or convert client `FileData` from an input
+or drop event. It sets `Content-Disposition` and `X-Content-Size` headers.
 
-```rust
-#[server(output = StreamingText)]
-async fn updates() -> Result<TextStream, ServerFnError> {
-    Ok(TextStream::new(make_stream()))
-}
-```
+## Custom request and response types
 
-### File streams
+A custom server argument combines Axum `FromRequest` with Dioxus `IntoRequest`;
+a custom return combines Axum `IntoResponse` with Dioxus `FromResponse`. The
+Dioxus traits define how calling the function as Rust code on the client makes
+the request and reconstructs the result.
 
-`FileStream` is distinct from `Streaming<T, E>` and transfers native paths without buffering the full file. Create one with `FileStream::from_path(...).await` or convert browser `FileData` for upload. It carries `Content-Disposition` and `X-Content-Size`. Since 0.7.2, `FileStream::from_response` rejects unsuccessful HTTP status codes instead of treating their bodies as ordinary file bytes.
+Their carrier generic defaults to `ClientResponse` but can transfer request-time
+state to the response conversion, as WebSocket upgrades do. For a third-party
+Axum response without `FromResponse`, return `axum::response::Response` and call
+`.into_response()` explicitly.
 
-```rust
-#[get("/api/download")]
-async fn download() -> Result<FileStream> {
-    Ok(FileStream::from_path(file!()).await?)
-}
-```
+## WebSockets and server events
 
-### Typed WebSockets
+A server function may return
+`Websocket<ClientMessage, ServerMessage, Encoding>`. On the client,
+`use_websocket` starts the call; `.recv()` waits for connection establishment.
+The server builds the upgrade from `WebSocketOptions::on_upgrade`.
 
-A WebSocket server function receives `WebSocketOptions` and returns `Websocket<In, Out, Encoding>`. Its `on_upgrade` future runs on a Tokio `LocalSet` and need not be `Send`. WebSocket handles implement standard stream and sink interfaces since 0.7.4.
+The upgrade future runs on a Tokio `LocalSet`, so it need not be `Send`.
+`send_raw` bypasses typed encoding for raw frames. Since `0.7.4`, the handle also
+implements `futures::Stream` and `Sink`, enabling `next`, `split`, `forward`, and
+`send_all`; earlier concurrent-borrow panics were replaced with errors.
 
-Calling the function opens the client connection directly. `use_websocket` adds reactive connection status plus `send` and `recv`; replacing its value through `.set()` restarts a failed connection.
+Related server-function types include `ServerEvents<T>` for SSE,
+`Streaming<T>` for arbitrary sequences, typed `Form<T>`,
+`MultipartFormData`, and `FileStream`.
 
-```rust
-#[get("/api/echo")]
-async fn echo(options: WebSocketOptions) -> Result<Websocket> {
-    Ok(options.on_upgrade(|mut socket| async move {
-        while let Ok(message) = socket.recv().await {
-            _ = socket.send(message).await;
-        }
-    }))
-}
+## SSR streaming and hydration
 
-let mut socket = use_websocket(|| echo(WebSocketOptions::new()));
-```
+Out-of-order HTML streaming is off by default. Enable it with
+`ServeConfig::enable_out_of_order_streaming()`. After
+`commit_initial_chunk()`, response headers and status are frozen. The router
+commits when the root suspense boundary resolves, so an error inside a later
+nested boundary may render a 404 view but still return 200. Late `Title`, `Meta`,
+or `Link` entries become client-only and are invisible to crawlers.
+
+Use `use_server_cached` for synchronous nondeterminism such as timestamps and
+`use_server_future` for async values. These closures must have no side effects
+because the client skips them when hydration already contains the value.
+
+## Server URL for native clients
+
+The setter lives at `dioxus::fullstack::set_server_url`; the older
+`server_fn::client::set_server_url` path moved. Call it before launch for a
+desktop or mobile release.
+
+### Repointing at runtime
+
+> **Prerelease (`0.8.0-alpha.1`):** This guidance may change before stable release.
+
+The server URL may be set more than once, allowing a native client to switch
+backends at runtime instead of being permanently fixed at startup.
 
 ## Static and incremental generation
 
-A Fullstack app can expose a JSON `static_routes` server function and run `dx build --platform web --ssg`. SSG uses the experimental incremental-generation path, so the server must build `ServeConfig` with `.incremental(IncrementalRendererConfig::new())`. ISG renders uncached routes on demand and stores them on disk.
+Since `0.6.0`, fullstack supports SSG. A server function named `static_routes`
+returns the URLs and `dx build --web --ssg` emits them. SSG sits on incremental
+static generation; on-demand filesystem caching must be enabled explicitly with
+`IncrementalRendererConfig` in the serve configuration.
+
+`Routable::SITE_MAP` exposes the route tree; `.flatten()` enumerates it and is a
+useful source for fully static routes.
+
+## Typed routing and matching
+
+Derive `Routable`, render `Router::<Route> {}`, and use typed variants for
+navigation. A variant normally renders the same-named component, but
+`#[route("/about", AboutPage)]` selects another component.
+
+Path matching uses specificity rather than enum order: query-bearing routes are
+considered, then static path segments outrank dynamic segments, which outrank
+catch-alls; ties use variant order. Dynamic fields require `FromStr + Display`.
+Catch-alls use route-segment conversion traits. A failed path parse rejects that
+variant and tries the next route.
+
+Query (`?:field`) and hash (`#:field`) values differ: a missing or invalid value
+defaults through `FromQueryArgument`/`FromHashFragment` instead of rejecting the
+route. Query, hash, and catch-all segments cannot occur inside `#[nest]`.
+
+Capture the entire query with `?:..field`; its type implements `From<&str>`
+(`FromQuery`) and `Display`:
 
 ```rust
-#[server(endpoint = "static_routes", output = server_fn::codec::Json)]
-async fn static_routes() -> Result<Vec<String>, ServerFnError> {
-    Ok(Route::static_routes()
-        .into_iter()
-        .map(|route| route.to_string())
-        .collect())
-}
+#[route("/search?:..query")]
+Search { query: MyQuery },
 ```
 
-```sh
-dx build --platform web --ssg
-```
+Layouts render their child with `Outlet::<Route> {}`. `#[redirect]` accepts both
+the path and a closure over that path's parameters, allowing a parameter rewrite
+rather than only a fixed target.
 
-Static generation should expand only fully static entries from `Routable::SITE_MAP`. SSG preserves HTTPS while processing static routes in 0.8.0-alpha.0.
+## History and route updates
 
-## Typed routing
+The router defaults to `MemoryHistory` on every platform. Select `WebHistory`,
+hash history, or `LiveviewHistory` explicitly through `RouterConfig`. Browser
+history does not reveal whether back/forward entries exist, so corresponding
+buttons cannot reliably disable under `WebHistory` and may leave the app.
 
-### Routable enums
+`RouterConfig::on_update` runs after routing state changes but before dependent
+components update. Returning a `NavigationTarget` replaces the current location
+without invoking the callback again. Navigation failures do not run it.
 
-`#[derive(Routable)]` parses and formats URLs and dispatches a route variant to an in-scope component of the same name. A second `#[route]` argument can select a different component. Mount `Router::<Route> {}` and navigate with typed variants instead of unchecked strings.
+LiveView routing does not integrate with browser history. Because controlled
+input events round-trip to the server, use a raw browser listener for latency-
+sensitive input behavior.
 
-```rust
-#[derive(Clone, PartialEq, Routable)]
-enum Route {
-    #[route("/")]
-    Home,
-    #[route("/post/:id")]
-    Post { id: u64 },
-}
+## Router-driven split points
 
-fn App() -> Element {
-    rsx! { Router::<Route> {} }
-}
-```
-
-### Segment grammar and precedence
-
-- `:id` dynamic path fields use `FromStr + Display` and fall through on parse failure.
-- A final `:..parts` catch-all uses `Vec<String>` or the route-segment traits.
-- `?:page&:sort` captures named query values; `?:..query` captures the remainder.
-- `#:section` captures a hash value.
-- Missing or malformed typed query/hash values default rather than reject the route.
-- Static paths outrank dynamic paths, which outrank catch-alls; enum order breaks ties.
-
-### Nests, layouts, and redirects
-
-`#[nest("/prefix")]` prefixes routes until `#[end_nest]`. Nests cannot contain query or catch-all segments. A dynamic nest field is passed to every child route and layout. Layouts render children at `Outlet::<Route> {}` and may receive route fields or call `use_route`. `#[redirect]` parses a source path and returns a `NavigationTarget`.
-
-```rust
-#[derive(Clone, PartialEq, Routable)]
-enum Route {
-    #[nest("/settings")]
-        #[route("/")]
-        Settings,
-        #[route("/privacy")]
-        Privacy,
-    #[end_nest]
-}
-```
-
-### Navigation and history
-
-`Link` and `Navigator::{push, replace}` accept `NavigationTarget`, either a typed internal route or external URL. The navigator also moves backward and forward. Histories exist for memory, LiveView, and browser URLs; Dioxus Web also supports hash history. Configure the provider explicitly when URL behavior matters because the nominal default is `MemoryHistory` and platform feature selection is not guaranteed.
-
-`RouterConfig::on_update` runs after router state changes but before dependent hooks/components update. Returning a target replaces the location without recursively calling the callback; navigation failures bypass it. Native UIs can render `GoBackButton` and `GoForwardButton`. `WebHistory` cannot reliably disable them at history boundaries and can leave the app's history entries.
-
-LiveView can render a router, but its history is not synchronized to browser history like `WebHistory`.
-
-### Sitemap enumeration and split routes
-
-`Routable::SITE_MAP` exposes the static/dynamic route tree; `.flatten()` produces a tooling-friendly list. Static generation must expand only all-static paths.
-
-Web routes can use `#[wasm_split]` so a variant is emitted into its own chunk. The router fetches it on first navigation and displays a loading state. Split files have content-hashed names as of 0.7.6, so changed code receives a new cache key.
-
-```rust
-#[derive(Routable, Clone, PartialEq)]
-enum Route {
-    #[route("/")]
-    Home,
-    #[wasm_split("/dashboard")]
-    Dashboard,
-}
-```
-
-## Durable native endpoints
-
-Anonymous `#[server]` functions use generated, code-dependent URLs. Desktop and Mobile clients can outlive a particular server build, so expose explicit method routes and evolve them through optional arguments or versioned paths.
-
-```rust
-#[post("/api/v1/do_it")]
-async fn do_it(name: Option<String>) -> Result<()> {
-    Ok(())
-}
-```
+Since `0.7.0`, web route variants may use `#[wasm_split("/path")]` in place of
+`#[route]`. Their code is downloaded on navigation and the router displays a
+loading state. The underlying async-function splitting model and toolchain
+constraints are covered in
+[renderers-testing-internals.md](renderers-testing-internals.md).

@@ -1,71 +1,19 @@
-# Migration and packaging
+# Migration and Packaging
 
-## Package and type changes
+Use this reference for library output, package compatibility, dependency
+ownership, and public imports.
 
-Qwik City is named Qwik Router in V2 and is published as `@qwik.dev/router`.
-Core and Router publish ESM only; CJS and UMD builds are not available.
+## Library builds and mixed-generation consumers
 
-The V2 type surface removes the old HTML-specific types in favor of `PropsOf`
-and trims other TypeScript exports. Core exposes `HTMLElementAttrs`, `SVGProps`,
-and `SVG` where explicit element and SVG typing is needed.
+*Batch: `v1.8-1.13`*
 
-Build constants can be imported directly from core:
+From 1.9, Qwik library builds no longer perform the Qwik transform. Library
+authors should publish a new build rather than assuming the old build output
+remains suitable. When a library supports consumers on both generations,
+extend its accepted Qwik range with `| ^2.0.0`.
 
-```ts
-import { isBrowser, isDev, isServer } from '@builder.io/qwik';
-```
-
-The V1 `@builder.io/qwik/build` entry point remains available. After migration,
-use the corresponding V2 core package path.
-
-## Automated V2 migration
-
-Run the migration before doing manual cleanup:
-
-```sh
-pnpm qwik migrate-v2
-```
-
-It updates package names, renamed identifiers, Qwik and Vite configuration, and
-dependencies. Check these less-obvious mappings:
-
-- `@builder.io/qwik-react` becomes `@qwik.dev/react`.
-- `@qwik-city-plan` becomes `@qwik-router-config`.
-- The JSX runtime becomes `@qwik.dev/core/jsx-runtime`.
-
-Finish the application configuration explicitly:
-
-```json
-{
-  "type": "module",
-  "devDependencies": {
-    "@qwik.dev/core": "^2",
-    "@qwik.dev/router": "^2"
-  }
-}
-```
-
-```json
-{
-  "compilerOptions": {
-    "moduleResolution": "Bundler",
-    "jsxImportSource": "@qwik.dev/core"
-  }
-}
-```
-
-All `@qwik.dev/*` packages belong in `devDependencies`. V2 supports Vite 8 and
-Rolldown, so migrated tooling can use those when the rest of the project is
-compatible.
-
-## V1 libraries and V2 consumers
-
-From Qwik 1.9, library builds stopped running the Qwik transform. Library
-authors should publish a new build and extend the accepted Qwik range with
-`| ^2.0.0`.
-
-A staged V2 consumer can deliberately retain V1 libraries by installing both
-generations:
+A second-generation application can retain first-generation libraries by
+installing both core generations:
 
 ```json
 {
@@ -76,67 +24,53 @@ generations:
 }
 ```
 
-This is a compatibility bridge, not a substitute for updating the library.
-The V2 qwikloader does not process V1 containers, so any page that retains
-those containers must also load the V1 qwikloader.
+This is a deliberate dual-runtime compatibility setup, not permission to
+remove the first-generation dependency while retained libraries still import
+it. Test library component rendering and server output after changing either
+range.
 
-## Third-party library overrides
+## Vite dependency placement
 
-Libraries that still name V1 packages can otherwise install a second Qwik
-runtime. Override or resolve both package names to V2:
+*Batch: `v1.8-1.13`*
 
-```json
-{
-  "overrides": {
-    "@builder.io/qwik": "npm:@qwik.dev/core@^2",
-    "@builder.io/qwik-city": "npm:@qwik.dev/router@^2"
-  }
-}
-```
+Vite is a peer dependency of Qwik, Qwik City, Qwik React, and Qwik Labs.
+Applications must depend on Vite directly. This prevents duplicate Vite
+imports and gives the application control of the resolved toolchain version.
 
-Also bundle the library into the server output and keep it out of Vite
-dependency optimization:
+Check `package.json` and the lockfile:
 
-```ts
-export default defineConfig({
-  ssr: { noExternal: ['some-qwik-library'] },
-  optimizeDeps: { exclude: ['some-qwik-library'] },
-});
-```
+- the application declares Vite directly;
+- workspace packages do not accidentally install private Vite copies; and
+- plugin resolution reaches the same Vite instance used to run the build.
 
-Missing either setting can produce `Code(Q30)` and external-dependency
-warnings.
+Qwik core and Qwik City later moved to Vite 7; see
+[Build and deployment](build-and-deployment.md#vite-7).
 
-## Replacing Qwik Labs
+## Direct build-constant exports
 
-The `qwik-labs` package is removed. Insights now uses core's `insights`
-experiment and core entry points:
+*Batch: `v1.8-1.13`*
+
+Import `isDev`, `isBrowser`, and `isServer` directly from
+`@builder.io/qwik`:
 
 ```ts
-import { qwikInsights } from '@qwik.dev/core/insights/vite';
-
-qwikVite({ experimental: ['insights'] });
+import { isBrowser, isDev, isServer } from '@builder.io/qwik';
 ```
 
-```tsx
-import { Insights } from '@qwik.dev/core/insights';
+The older `@builder.io/qwik/build` entry point remains available. New code can
+use the root exports without forcing an immediate rewrite of existing imports.
 
-<Insights publicApiKey="..." postUrl="..." />
-```
+## Package and build verification
 
-Typed routes are built into Qwik Router through `qwikTypes()`; do not look for
-a replacement package for the removed Labs implementation.
+After changing library packaging:
 
-## Migrating the router root
+1. build the library from a clean checkout;
+2. inspect published files rather than only source output;
+3. install the packed artifact into a representative application;
+4. verify the application owns the Vite dependency;
+5. run both client and SSR builds; and
+6. check that QRL-bearing library files are processed by the application
+   build.
 
-When removing V1's `<QwikCityProvider>`, a non-reactive root may call
-`useQwikRouter()` directly while rendering `RouterOutlet`. The hook runs only
-once during SSR. If the root itself reads signals and must update reactively,
-render `<QwikRouterProvider>` instead.
-
-## Serialized state tooling
-
-V2 no longer emits one `<script type="qwik/json">` element. It emits separate
-`<script type="qwik/vnode">` and `<script type="qwik/state">` elements at the
-end of the document. Update HTML transforms, security policies, and state
-extractors to recognize both tag types and their placement.
+The QRL filter rule is documented in
+[Build and deployment](build-and-deployment.md#library-qrl-file-filtering).

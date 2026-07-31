@@ -1,98 +1,85 @@
 # Python and upb runtime
 
-Source batches represented here: 30.0-migration, 31.0, 34.0-announcement,
-34.0-migration, 34.0, 35.0, 36.0-rc1.
+## Runtime baseline (`30.0-migration`)
 
-## Runtime baselines and compatibility
+The Python package major moves from 5.29.x to 6.30.x and requires Python 3.9 or
+newer. Protobuf `34.0-migration` raises the interpreter minimum again to Python
+3.10.
 
-The Python package major moves from 5.29.x to 6.30.x in the v30 migration and
-requires Python 3.9 or newer. Protobuf v34 raises the interpreter minimum to
-Python 3.10 and moves the runtime package to 7.34.x.
+## Closed-enum assignment (`30.0-migration`)
 
-Python gencode from 3.20.0 onward is descriptor-based and is supported through
-at least runtime 8.x. Never pair generated code with a runtime older than the
-compiler/plugin that produced it.
+Python and upb setters reject values that are invalid for closed enums under
+Edition 2023. Validate integer-to-enum conversions before assignment rather
+than depending on an unknown numeric value being stored.
 
-## Dynamic messages and removed APIs
+## Removed dynamic-message APIs (`30.0-migration`)
 
-The v30 migration removes:
+The following are removed:
 
-- `reflection.ParseMessage`
-- `reflection.MakeClass`
-- prototype/creation methods on `MessageFactory` and `SymbolDatabase`
-- `GetMessages` methods on those factory/database classes
+- `reflection.ParseMessage` and `reflection.MakeClass`;
+- prototype and creation methods on `MessageFactory` and `SymbolDatabase`; and
+- the corresponding `GetMessages` methods.
 
-Use module-level `message_factory.GetMessageClass()` or
-`message_factory.GetMessageClassesForFiles()`.
+Use `message_factory.GetMessageClass()` for one descriptor or
+`GetMessageClassesForFiles()` for a file set. Replace legacy `service` RPC
+interfaces with an RPC-specific generator plugin. The C++-extension-only
+`GetDebugString` has no replacement.
 
-Legacy `service` RPC interfaces are removed; use an RPC-specific generator
-plugin. The C++-extension-only `GetDebugString` has no replacement.
-
-`FieldDescriptor.label` is deprecated in v31 and removed in v34. Use
-`is_repeated`, `is_required`, and `has_presence`-style semantics rather than
-one label value.
-
-## Assignment and construction
-
-Closed-enum field setters reject invalid values under Edition 2023 beginning
-with the v30 migration.
+## Map `setdefault` (`30.0-migration`)
 
 `ScalarMap.setdefault` requires both key and value. Message-valued maps reject
-`setdefault` entirely.
+`setdefault` entirely; initialize the entry through the message-map API instead.
 
-Generated nested classes keep a short `__name__`, but `__qualname__` includes
-the outer message. For example, `Foo.Bar.__name__` is `"Bar"` and
-`Foo.Bar.__qualname__` is `"Foo.Bar"`.
+## Nested class qualification (`30.0-migration`)
 
-At the v34 boundary, assigning `bool` to an enum or integer field is rejected
-instead of coercing it. Invalid-type conversion to `Timestamp` or `Duration`
-raises `TypeError`, not `AttributeError`; update exception handlers.
+Generated nested message classes include the outer message in `__qualname__`
+while preserving the short `__name__`. For example, `Foo.Bar.__qualname__` is
+`"Foo.Bar"`, while `Foo.Bar.__name__` remains `"Bar"`. Update reflection,
+pickling assumptions, and name-based tests accordingly.
 
-Message construction from keyword arguments no longer swallows some
-repeated-field errors in v34. Invalid repeated-field initialization can now
-raise.
+## Scalar assignment and WKT conversions (`34.0-announcement`)
 
-## Formatting and recursion
+Assigning `bool` to an enum or integer field is rejected instead of converting
+it implicitly. Invalid-type conversion to `Timestamp` or `Duration` raises
+`TypeError` rather than `AttributeError`; exception handlers must catch the
+newly correct type.
 
-The v34 JSON serializer removes the deprecated `float_precision` option.
-Text-format serialization removes `float_format` and `double_format`.
+## Removed formatting options (`34.0-announcement`)
 
-Python `text_format` gains an optional recursion-depth limit in v35. Set it
-when parsing untrusted or deeply nested TextFormat.
+The JSON serializer no longer accepts deprecated `float_precision`. Text-format
+serialization no longer accepts `float_format` or `double_format`. Remove these
+arguments and validate output using the runtime's standard float rendering.
 
-Python and upb also add guards for nested-message recursion in v34. Inputs that
-previously bypassed recursion checks can be rejected.
+## Descriptor label removal (`34.0-migration`)
 
-## Repeated scalar interoperability
+`FieldDescriptor.label` is removed. Use `is_repeated`, `is_required`, and
+presence-oriented APIs rather than reconstructing a legacy label.
 
-Python repeated scalar fields gain a NumPy binding in v34.
+## Repeated-field initialization and NumPy (`34.0`)
 
-In 36.0-rc1, repeated scalar fields can be assigned from objects supported by
-the Python Buffer API, enabling compatible buffer-exporting containers without
-an intermediate list.
+Scalar repeated fields expose a NumPy binding for direct array-oriented
+interoperability.
 
-## Descriptor and options behavior
+Message construction through keyword arguments no longer suppresses some
+errors involving repeated fields. Invalid repeated-field initialization can now
+raise immediately; do not treat construction as successful until it returns.
 
-upb performs stricter validation of descriptor `syntax` and `edition` in v34.
-Malformed dynamic descriptor data can fail where it was previously accepted.
+## Descriptor parsing and Editions in upb (`34.0`)
 
-For scalar types, `GetOptions()` returns immutable options under Python/upb in
-36.0-rc1. Mutating the returned object raises `TypeError`.
+upb performs additional validation of descriptor `syntax` and `edition`, so
+malformed dynamic descriptor data can be rejected. upb generators also enable
+Edition 2024.
 
-`DescriptorDatabase.FindFileContainingSymbol()` accepts a fully qualified
-symbol beginning with `.` in 36.0-rc1, aligning it with `DescriptorPool` and
-other runtimes.
+## Recursion limits (`34.0`, `35.0`)
 
-The Python C API adds
-`PyDescriptorPool_FromSharedPool(std::shared_ptr)` in 36.0-rc1. A C++
-extension can expose a Python descriptor pool while retaining shared ownership
-of the underlying pool.
+Python and upb add recursion guards for nested messages. Python `text_format`
+also accepts an optional recursion-depth limit. Set it when parsing untrusted or
+deeply nested text to bound recursive work, and handle limit exhaustion as a
+normal parse failure.
 
-## Free-threaded Python
+## Free-threaded Python (`35.0`)
 
-The upb runtime supports free-threaded Python in v35. The same release fixes
-races in lazy message initialization and repeated-field presence handling that
-affected free-threaded use.
-
-Audit extension code and tests for actual free-threaded safety rather than
-assuming runtime support makes surrounding application code safe.
+The upb runtime supports free-threaded Python. The release fixes races in lazy
+message initialization and repeated-field presence handling that affected that
+mode. Exercise concurrent initialization and mutation paths when enabling a
+free-threaded interpreter.

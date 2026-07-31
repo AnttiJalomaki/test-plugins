@@ -2,7 +2,7 @@
   "patch": "dotnet-csharp-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T03:39:20Z",
+  "built_at": "2026-07-31T10:17:33Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -20,17 +20,17 @@
     "csharp-15-preview": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.6-compatibility": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.6": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     }
   },
   "retire_candidates": []

@@ -1,132 +1,224 @@
 # Migration Notes and Edge Cases
 
-## Component and runtime migrations
+Use this reference when code, dependencies, or behavior differ across Dioxus
+generations. Keep the application and `dx` CLI versions aligned, and prefer the
+rules for the version actually pinned by `Cargo.toml` and `Cargo.lock`.
 
-### Scope and element representation
+## Components, errors, and props
 
-The 0.5.0 component API removed `cx: Scope`, bump lifetimes, and scope arguments from runtime helpers. The 0.6.0 element representation then changed `Element` from `Option<VNode>` to a result. Replace `VNode::None` with `rsx! {}` and propagate ordinary errors with `?`; `.throw()` is only needed when maintaining transitional code from the earlier error API.
+### Moving from the old component error model
 
-`use_signal` handles are `Copy`, but their values remain owned by the creating component and are disposed on unmount. A copied handle is not permission to read it after its owner is gone.
+In `0.5.0`, `Element` was not a `Result`; an ordinary `Result` with a `Debug`
+error had to use `.throw()?` to become captured error state. An ancestor
+`ErrorBoundary` then rendered its `handle_error` closure. This form is correct
+only for that API generation:
 
-### Signal and global APIs
-
-`ReadOnlySignal` is deprecated in 0.7.0. Prefer `ReadSignal`, `Readable`, or store projections. `GlobalSignal` and `GlobalMemo` became aliases over `Global`; `.resolve()` replaces the former `.signal()` and `.memo()` accessors.
-
-`schedule_update` and `schedule_update_any` are no longer prelude exports. `Runtime`, `queue_effect`, and `provide_root_context` also left the prelude in 0.7.0. Import these low-level APIs explicitly if they are still necessary.
-
-`use_coroutine` accepts `FnMut` as of 0.6.0, so one coroutine closure can restart without forcing its component to rerender.
-
-### Props derive constraints
-
-The 0.6.0 props derive rejects property names beginning with an uppercase letter. It ignores `#[props(into)]` on `String`, because string props already use `ToString`; explicitly convert a type that implements only `Into<String>` or add `ToString`.
-
-Generated generic properties stopped receiving excess `Clone` bounds in 0.7.6. Preview-generated component props are non-exhaustive in 0.8.0-alpha.0, and preview store accessors enforce the source member's Rust visibility.
-
-## Event and RSX behavior changes
-
-Event dispatch is synchronous. Remove `dioxus_prevent_default` and call `event.prevent_default()` before any `.await`. Web form submission is allowed by default in 0.7.0, reversing the 0.6.0 inverted behavior; Desktop separately blocks page navigation. LiveView requires browser-side JavaScript for cancellation.
-
-In multi-node RSX, put the key on the first node; later keys do not apply to the group and warn as of 0.7.2.
-
-Native event access evolved from renderer helpers such as `.web_event()` to downcasting through `event.downcast::<T>()`. A custom renderer's 0.7.0 event attributes convert into `ListenerCallback<T>`, not component-level `EventHandler<Event<T>>`.
-
-## Router migration constraints
-
-With the Web feature enabled, the 0.6.0 `Routable` derive rejects variant fields absent from the route pattern. `ToRouteSegments` now borrows `&self`, so implement it for `T`, not `&T`.
-
-Web routing has a hash-history provider for hosts without path fallback. LiveView's router does not integrate with browser history. Configure history explicitly rather than relying on platform-feature inference.
-
-Applications using preview APIs can opt into a handler for external URL navigation in 0.8.0-alpha.0, allowing navigation away from the app to be intercepted or customized.
-
-## Fullstack server migrations
-
-### Custom server entrypoints
-
-The Cargo feature formerly named `dioxus/axum` is `dioxus/server`. During the 0.6.0 server API transition:
-
-- `serve_dioxus_application` began taking the component directly;
-- `register_server_fns` became `register_server_functions`;
-- `ServeConfigBuilder::build` became fallible;
-- `RenderHandleState::new` gained a `ServeConfig` argument;
-- per-platform configuration moved from one Fullstack `Config` into `LaunchBuilder`.
-
-Bind custom development servers with `dioxus_cli_config::fullstack_address_or_localhost()` so DX can reverse-proxy them.
-
-### Public dependency boundaries
-
-The identically named `ServerFnError` is now Dioxus's own type instead of generic `server_fn::ServerFnError`; adjust imports. It converts into `dioxus::Error`. Direct dependency types crossing Dioxus APIs must align with Axum 0.8, Wry 0.52, and server-fn 0.7.
-
-The `dioxus-lib` crate was removed in 0.7.0. Replace `dioxus_lib` paths with `dioxus`; depend on the main crate with `default-features = false, features = ["lib"]` for the framework-only surface.
-
-```toml
-[dependencies]
-dioxus = { version = "0.7", default-features = false, features = ["lib"] }
+```rust
+fn ThrowsError() -> Element {
+    let value: i32 = use_hook(|| "123").parse().throw()?;
+    rsx! { "{value}" }
+}
 ```
 
-### Durable behavior changes
+Since `0.6.0`, `Element` is `Result<VNode, RenderError>` and plain `?` propagates
+to the nearest boundary. Event handlers and async tasks may also return a result
+and end with `Ok(())`. Empty output is `rsx! {}`; `VNode::None` was removed.
+`dioxus::Result<T>` is `Result<T, CapturedError>`, and `dioxus::Ok(value)` is the
+helper for resource-like APIs that require a cloneable error.
 
-- `FileStream::from_response` checks HTTP status as of 0.7.2; handle unsuccessful responses instead of consuming them as file data.
-- `#[get]` endpoint failures remain errors rather than turning into redirects as of 0.7.5.
-- Anonymous server functions can use server-only extractors as of 0.7.3.
-- Static generation preserves HTTPS route URLs in 0.8.0-alpha.0.
-- Native clients should use explicit stable route paths because generated anonymous-server-function URLs can change with code.
+### Props and readable signals
 
-## Asset and styling migrations
+In `0.5.0`, props were memoized, required `Clone + PartialEq`, and non-`Clone`
+fields used `ReadOnlySignal<T>` while callers passed `T`. `ReadOnlySignal` was
+deprecated in `0.7.0`; use `ReadSignal<T>`, which also accepts signals, memos,
+store lenses, literals, and inline values.
 
-Replace the unstable 0.5.0 `mg!` declaration with linker-discovered `asset!`. Asset source paths are crate-root absolute since 0.6.0 and must begin with `/`. `asset!` no longer requires a manual hash.
+### Generated component props are non-exhaustive
 
-Manganis 0.7 unifies options under `AssetOptions`; use constructors such as `AssetOptions::image()` rather than `ImageAssetOptions::new()`.
+> **Prerelease (`0.8.0-alpha.0`):** This guidance may change before stable release.
 
-The CLI resolves configured icons relative to the crate as of 0.7.2. JavaScript bundling detects ESM, CommonJS, UMD, and generic snippets as of 0.7.7. Preview esbuild downloads honor `NPM_CONFIG_REGISTRY`.
+Props structs generated by `#[component]` are `#[non_exhaustive]`. Downstream
+crates cannot construct or exhaustively destructure them with struct syntax;
+use their generated builder. RSX call sites are unchanged.
 
-## CLI and lockfile edge cases
+### Store access follows source visibility
 
-### Stable dependency correction
+> **Prerelease (`0.8.0-alpha.0`):** This guidance may change before stable release.
 
-The 0.7.5 release corrected minimum versions for dependencies such as `futures` without publishing a new `dioxus` crate. An existing `Cargo.lock` can retain versions too old to compile. Refresh the lockfile before rewriting source:
+Accessors generated by `#[derive(Store)]` carry the source field or method's
+visibility. A private field no longer yields a lens callable from another
+module; expose an intentional method or adjust module visibility.
+
+## Crates, features, and dependency boundaries
+
+### Renderer and fullstack features
+
+The `0.5.0` feature layout used the unified `dioxus` crate for renderers, but its
+server side was `server = ["dioxus/axum"]` and `fullstack` was a target feature.
+That spelling is not current.
+
+For `0.7.0`-era projects, the server feature is `dioxus/server`. `fullstack` must
+be paired with `web` for the client and `server` for the backend. The router is
+not enabled by default. Default framework features are `signals`, `macro`,
+`html`, `hooks`, and `hot-reload`; `logger` installs the default tracing
+subscriber, and `third-party-renderer` only silences the no-platform warning.
+
+```toml
+[features]
+default = []
+web = ["dioxus/web", "dioxus/fullstack"]
+server = ["dioxus/server", "dioxus/fullstack"]
+desktop = ["dioxus/desktop"]
+```
+
+The old `dioxus-lib` crate was removed in `0.7.0`; depend on `dioxus` directly.
+`dioxus::serve` is gated by `server`, `LaunchBuilder` by `launch`, and
+`dioxus_stores` is re-exported as `dioxus::stores` under `signals`—there is no
+separate `stores` feature. `subsecond` is re-exported at `dioxus::subsecond`, so
+ordinary integration sites need not add a direct dependency.
+
+### Refresh a stale lockfile
+
+In `0.7.5`, tightened transitive bounds exposed existing lockfiles that held
+older `futures` patch releases even though Dioxus required newer ones. Changing
+the `dioxus` manifest version alone does not refresh those packages. Run:
 
 ```sh
 cargo update
 ```
 
-### Preview CLI install
+before rewriting application code around the resulting compiler errors.
 
-The 0.8.0-alpha.0 CLI requires `cargo install dioxus-cli --locked` when built from source. Its hot-patching default and broader watcher behavior are preview-only.
+## Assets and event access
 
-### Build and bundle ownership
+### `mg!` became `asset!`
 
-DX overrides Cargo profile `strip` and performs stripping through LLVM. Desktop bundles can target only the host OS and architecture. Files under `/public` and configured asset directories follow different paths: `/public` has fixed output paths, while `asset!` values are pipeline-managed and usually content-hashed.
+In `0.5.0`, the unstable asset system was the standalone `manganis` crate and
+used `mg!`; no `asset!` macro existed. In `0.6.0`, Manganis was folded into
+Dioxus and `asset!` replaced `mg!`. Asset metadata moved through linker sections,
+which lets dependency assets be optimized, deduplicated, hashed, and bundled.
 
-## Native platform edge cases
+Current asset paths are absolute from the declaring crate root. Do not preserve
+the old macro or infer a bundled filename from the source name.
 
-- Desktop `new_window` is async in 0.7.0; Tokio-backed file dialogs are async in 0.7.1.
-- Web `WebFileData::file_path` returns `webkitRelativePath` when available as of 0.7.2; native drop events provide full paths as of 0.7.3.
-- Android's generated application ID follows `bundle.identifier`, and the minimum SDK is 28.
-- An iOS Simulator supports hot-patching; a code-signed physical iOS device does not.
-- Native FFI compilation runs after `rustc`, so Rust cannot import headers generated by the Swift/Kotlin/C compilation stage.
-- Plugin crates cannot inject app permissions; add their documented permissions to the application's top-level table.
+### Keep the alpha toolchain coherent
 
-## Hot-patch interpretation
+> **Prerelease (`0.8.0-alpha.1`):** This guidance may change before stable release.
 
-Do not conflate these mechanisms:
+The compatibility fallback for resolving `0.7` assets with the newer toolchain
+was removed. Upgrade `dx`, `dioxus`, and Manganis-related crates together, then
+rebuild assets instead of relying on mixed-version resolution.
 
-- RSX hot reload updates supported literals and nested markup broadly without rebuilding Rust code.
-- Initial stable Subsecond patching modifies Rust code in the tip crate while retaining compatible runtime state.
-- Workspace Rust patching was added in 0.7.4.
-- Structural state migrations, changed static initializers, some dependency changes, and unsupported platforms still require rebuild or restart.
-- Preview watcher and default behavior differ from stable releases.
+### Platform event access evolved
 
-Thread-local state in a patched tip crate resets each patch, renamed globals create new globals, and newly added global destructors are not run.
+In `0.5.0`, web events exposed `.web_event()` and there was no generic
+downcast. Current cross-platform code can use `event.downcast::<T>()`, which
+returns `Option<T>`; the ergonomic web renderer extension is `as_web_event()`.
 
-## Packaging edge cases
+### Prevent defaults before awaiting
 
-- A Fullstack Web bundle contains both `public` and a server executable; deploy both.
-- `index_on_404` affects the DX development server, not an external Web host.
-- Sidecar source filenames contain target triples, but runtime lookup uses the unsuffixed name.
-- WiX `upgrade_code` must remain stable across app updates.
-- macOS signing and Windows certificate/timestamp settings are target-specific and should be tested on the host that creates the installer.
-- Windows on ARM tooling and FIPS-compatible WiX invocation arrived in 0.7.5.
+Since `0.6.0`, event dispatch is synchronous on all primary platforms and the
+old `dioxus_prevent_default` attribute is gone. Call `prevent_default()` during
+the synchronous handler phase. A LiveView Rust handler is too late to cancel a
+browser action, so use a browser-side raw listener there.
 
-## Preview boundary
+## Behavioral fixes that can invalidate workarounds
 
-Do not assume stable applications have the following 0.8.0-alpha.0 behavior: default hot-patching, Cargo-aware dependency watching, non-exhaustive generated props, visibility-witness store accessors, external-URL interception, Native custom elements, registry-aware esbuild downloads, or HTTPS-preserving SSG. Check the selected crate and CLI versions before using them.
+### Fullstack and WebSocket behavior
+
+- Since `0.7.1`, a server function called from backend code gets a blank `GET`
+  request when no incoming request is in scope; `extract()` no longer fails and
+  the caller's tracing span propagates into the body.
+- Since `0.7.1`, route-macro query strings use `serde_qs`, allowing nested
+  structs and sequences rather than only flat scalar queries.
+- Since `0.7.3`, server-only Axum extractors work in anonymous server
+  functions, not only named ones.
+- Since `0.7.4`, the fullstack `WebSocket` implements `Stream` and `Sink`.
+  Concurrent `recv()` calls no longer panic with `AlreadyBorrowed`, and paths
+  that once unwrapped failures now return errors.
+- Since `0.7.5`, an error response from a `#[get]` server function is returned
+  as the error response rather than transformed into a redirect. Remove code
+  that depended on or compensated for the redirect.
+
+### Renderer and tooling behavior
+
+- Since `0.7.1`, desktop file dialogs are async on Tokio and
+  `with_on_window_ready` runs after the window exists but before webview
+  attachment.
+- `use_drop`, absent from the prelude in `0.7.0` and `0.7.1`, is re-exported
+  again in `0.7.2`.
+- Since `0.7.2`, a `key` on anything except the first node of an RSX list item
+  warns because it has no effect.
+- Since `0.7.4`, bundle asset paths are corrected and NSIS/MSI bundling works
+  without prior workarounds; tray icons may show the main desktop window when
+  clicked.
+- Since `0.7.6`, panics in web event handlers are contained instead of poisoning
+  the WASM instance. Do not use panic as application control flow; surface the
+  failure through an error boundary.
+- Since `0.7.6`, references implement `IntoAttributeValue`, `inert` is a global
+  RSX attribute, Windows executables receive their configured app icon, Cursor
+  is recognized by the integrated debugger, and `dx fmt` preserves comments
+  inside expressions and commented RSX indentation.
+
+### Store and signal API details
+
+`0.7.0` removed `schedule_update` and `schedule_update_any` from the prelude,
+added `GlobalStore` there, removed `Resource`'s `#[must_use]`, and removed signal
+write warnings. Its documentation also began publishing a first-party
+`llms.txt` reference. `0.7.2` added `SyncStore<T>` and `use_store_sync` for state that
+must cross native threads. `0.7.4` added `WritableResultExt` as the writable
+counterpart for state containing a `Result`.
+
+## Prerelease toolchain changes
+
+### Rust edition and source installation
+
+> **Prerelease (`0.8.0-alpha.0`):** This guidance may change before stable release.
+
+The workspace uses Rust edition 2024 and requires Rust 1.85 or newer to build
+Dioxus itself. In this alpha, upstream dependency breakage required installing
+the CLI with its lockfile:
+
+```sh
+cargo install dioxus-cli --locked
+```
+
+### Plain CLI installation is restored
+
+> **Prerelease (`0.8.0-alpha.1`):** This guidance may change before stable release.
+
+Dependency pins were corrected, so `--locked` is no longer required for this
+alpha and a plain `cargo install dioxus-cli` resolves successfully.
+
+### Hot-patching and watcher defaults
+
+> **Prerelease (`0.8.0-alpha.0`):** This guidance may change before stable release.
+
+Subsecond hot-patching is the default `dx serve` behavior; `--hotpatch` is no
+longer necessary. The watcher reacts to `Cargo.toml`, Cargo depinfo paths, and
+`[web.watcher].watch_path` entries, which were previously accepted but inert.
+
+### Platform integration details
+
+> **Prerelease (`0.8.0-alpha.0`):** This guidance may change before stable release.
+
+- Desktop can opt into an external-navigation handler so outbound links open in
+  the system browser rather than the webview.
+- DX honors `NPM_CONFIG_REGISTRY` when downloading `esbuild`, enabling internal
+  package-registry mirrors.
+- macOS and iOS integration uses `objc2`; crates with their own Objective-C
+  bindings should avoid assuming the older `objc` stack.
+
+## Version-sensitive diagnostics
+
+- `dx build --raw-json-diagnostics` is available since `0.7.1` and is separate
+  from the general `--json-output` event stream.
+- The `--platform` flag, accidentally absent in `0.7.0`, returned in `0.7.1`;
+  current commands also offer bare platform flags such as `--web`.
+- `dx completions <shell>` is available since `0.7.6`.
+- `0.7.3` introduced scoped CSS/modules and DOM handlers for `onauxclick` and
+  `onscrollend`, plus `dioxus_native::prelude::*`.
+- `0.7.4` introduced first-party Kotlin/Java/Swift FFI, iOS widget bundles, and
+  complete typed mobile configuration in `Dioxus.toml`.
+- `0.7.6` is the final `0.7` release; later mainline work carries the breaking
+  `0.8` series.

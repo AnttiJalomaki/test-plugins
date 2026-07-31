@@ -1,35 +1,33 @@
 # Deployment, Containers, Native Output, and UI
 
-Use this reference for container publishing, NativeAOT and native-library
-artifacts, runtime configuration precedence, hardware and mobile deployment
-requirements, and desktop UI compatibility. It covers relevant items from
-`10.0-guides`, `10.0`, `11.0-preview.6-compatibility`, and
-`11.0-preview.6`.
+This reference combines deployment and desktop compatibility work from
+`10.0-guides` and `10.0`.
 
-## Container base images
+## Container Base Distribution
 
-Default .NET 10 container images use Ubuntu (`10.0-guides`). Builds that
-depend on the prior distribution's package names, filesystem paths, libc
-details, or package manager must either:
+Default .NET 10 container images use Ubuntu. Any build or runtime layer that
+depends on the previous distribution's package manager, package names,
+filesystem paths, native library versions, user setup, or shell tools must
+either adapt or pin a compatible base image.
 
-- pin a compatible base image deliberately; or
-- adapt installation and runtime assumptions to Ubuntu.
+Do not infer distribution compatibility from the .NET tag alone. Resolve the
+actual base image and exercise native dependencies in the produced container.
 
-Rebuild native dependencies and exercise container health checks when changing
-the distribution.
+## Publishing Console Projects as Containers
 
-## SDK container publishing
-
-Console projects can run:
+Console projects can invoke container publishing directly:
 
 ```bash
 dotnet publish /t:PublishContainer
 ```
 
-They no longer need `EnableSdkContainerSupport` (`10.0`).
+`EnableSdkContainerSupport` is no longer required for this scenario. Remove
+unnecessary compatibility properties when they obscure the active SDK
+behavior.
 
-Set `ContainerImageFormat` explicitly to avoid inheriting a default affected
-by the base image or multi-architecture publishing:
+## Selecting Docker or OCI Output
+
+Use `ContainerImageFormat` to select the image format explicitly:
 
 ```xml
 <PropertyGroup>
@@ -37,66 +35,53 @@ by the base image or multi-architecture publishing:
 </PropertyGroup>
 ```
 
-Supported explicit values are `Docker` and `OCI`.
+Valid choices include `Docker` and `OCI`. Without an explicit value, the
+effective format can depend on the base image and whether the publish is
+multi-architecture. Pin it when registries, signing, inspection, or deployment
+systems require one format.
 
-In `11.0-preview.6`, the SDK's built-in container publisher can create
-multi-architecture images with Podman. Verify that every requested
-architecture has matching application and native dependency artifacts.
+## Publishing File-Based Applications
 
-## File-based publishing and NativeAOT
-
-`dotnet publish app.cs` publishes a file-based application with native AOT by
-default (`10.0`). For dependencies that cannot be trimmed or compiled with
-NativeAOT, set:
+Publishing a file-based application with `dotnet publish app.cs` produces a
+native executable by default through native AOT. Opt out when reflection,
+dynamic code, or another dependency is incompatible:
 
 ```csharp
 #:property PublishAot=false
 ```
 
-File-based project references, includes, and CLI behavior are detailed in
-[sdk-cli-build-and-test.md](sdk-cli-build-and-test.md).
+File-based applications also support `#:project` references. An extensionless
+file with a `#!/usr/bin/env dotnet` shebang can be executable, which is useful
+for source-first utilities. Account for native AOT platform targeting and test
+the produced executable on the destination system.
 
-On Unix, NativeAOT native-library outputs use the `lib` prefix
-(`11.0-preview.6-compatibility`). Update packaging, loader configuration,
-artifact globbing, and deployment manifests to use the new filenames.
-
-## Runtime configuration precedence
-
-In `11.0-preview.6-compatibility`, values under `configProperties` in
-`.runtimeconfig.dev.json` override values in `.runtimeconfig.json`. Check both
-files when development behavior differs from production, and avoid depending
-on the older precedence.
-
-## Hardware and platform baselines
-
-The JIT minimum hardware requirements changed in
-`11.0-preview.6-compatibility`. Revalidate older deployment targets before
-upgrading instead of assuming a previously supported CPU remains valid.
-
-.NET MAUI requires Android API level 24 or later. Update application minimums,
-device matrices, emulators, and store metadata together.
-
-Cryptographic platform requirements, including OpenSSL, DSA, PQC, and macOS
-TLS behavior, are in
-[security-networking-and-interop.md](security-networking-and-interop.md).
-
-## Windows Forms and WPF
+## WPF and Windows Forms Type Collisions
 
 Projects that reference both WPF and Windows Forms must disambiguate
-`MenuItem` and `ContextMenu` (`10.0-guides`). Use namespace qualification or
-aliases rather than relying on an ambiguous using set.
+`MenuItem` and `ContextMenu`. Use aliases or fully qualified names at the
+boundary instead of relying on an ambiguous `using` set.
 
-Other Windows desktop compatibility changes:
+## Windows Forms Compatibility
 
 - `HtmlElement.InsertAdjacentElement` has a renamed parameter. Update named
-  arguments.
-- `StatusStrip` defaults to the system render mode. Set the desired render
-  mode explicitly when appearance is contractual.
-- Some `System.Drawing` failures throw `ExternalException` instead of
-  `OutOfMemoryException`. Catch or test the exception representing the actual
-  failure boundary.
-- WPF rejects empty `ColumnDefinitions` and `RowDefinitions`.
-- Incorrect `DynamicResource` usage can terminate the application.
+  arguments; positional calls are unaffected by the source-level name change.
+- `StatusStrip` defaults to the system render mode. Set a render mode
+  explicitly when visual consistency is required.
 
-Validate XAML at build/test time where possible, remove empty definitions, and
-correct invalid resource references rather than depending on prior tolerance.
+## System.Drawing Exceptions
+
+Some `System.Drawing` failures now throw `ExternalException` instead of
+`OutOfMemoryException`. Narrow catches and tests to the new failure contract.
+Avoid using `OutOfMemoryException` as a generic signal for drawing or image
+format failures.
+
+## WPF Validation and Failure Behavior
+
+WPF rejects empty `ColumnDefinitions` and `RowDefinitions`. Remove empty
+collections or provide actual definitions rather than relying on permissive
+parsing.
+
+Incorrect `DynamicResource` usage can terminate the application. Validate
+resource keys, resource types, and lookup placement during startup and in UI
+tests; do not assume every malformed dynamic resource degrades to a recoverable
+binding warning.

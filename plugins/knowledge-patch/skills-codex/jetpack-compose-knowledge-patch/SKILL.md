@@ -8,181 +8,187 @@ metadata:
 ---
 
 
+
+
+
 # Jetpack Compose Knowledge Patch
 
-Use this skill when upgrading, configuring, debugging, or testing AndroidX
-Compose UI, Foundation, Runtime, Animation, or Material 3. It focuses on API
-migrations, changed defaults, toolchain constraints, and newer capabilities
-that commonly invalidate older Compose code.
+Use this skill when upgrading, reviewing, or debugging modern Jetpack Compose
+code across Compose Runtime, UI, Foundation, Animation, Material 3, compiler,
+Gradle, Android hosts, and Compose UI tests.
 
-Treat the project's dependency graph as authoritative. Compose libraries do
-not all advance together, and a BOM can select different stable or prerelease
-versions for different artifacts. Check the resolved artifact containing an
-API before applying version-specific advice.
+## How to use this patch
+
+1. Identify the affected artifact and its actual resolved version. A Compose BOM
+   aligns library versions but does not make every library share one version.
+2. Check the breaking-change guidance first, especially toolchain floors,
+   removed flags, renamed APIs, state ownership, and test scheduling.
+3. Open the topic reference that matches the code being changed.
+4. Prefer the project's manifests, source, and tests when its dependency set
+   differs from the APIs described here.
+5. Verify Android-only behavior separately from common or multiplatform APIs.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [build-runtime-state.md](references/build-runtime-state.md) | Android and Kotlin floors, compiler configuration, BOMs, runtime annotations, snapshots, saveable state, pausing, retention, diagnostics |
-| [input-focus-scrolling.md](references/input-focus-scrolling.md) | Autofill, focus, haptics, gestures, overscroll, scrolling, visibility, trackpad input |
-| [layout-animation-graphics.md](references/layout-animation-graphics.md) | Lookahead, shared transitions, FlexBox, Grid, lazy layouts, modifier nodes, drawing, shaders, shadows |
-| [text-editing.md](references/text-editing.md) | Autosizing, ellipsis, annotations, state-backed editing, context menus, selection, secure fields, fonts |
-| [semantics-accessibility-testing.md](references/semantics-accessibility-testing.md) | Semantics changes, accessibility behavior, test artifacts, dispatcher scheduling, restoration |
-| [android-host-windows.md](references/android-host-windows.md) | Insets, window geometry, resources, host composition, dialogs, popups, Android interop |
-| [material3-components.md](references/material3-components.md) | Material 3 dependencies, search, pickers, navigation, sheets, tooltips, sliders, color and ripple migrations |
+| [Android hosts, windows, and insets](references/android-host-windows.md) | Compose views, resources, host defaults, windows, insets, haptics, clipboard, Android interop |
+| [Build, runtime, and state](references/build-runtime-state.md) | SDK and Gradle floors, compiler, BOMs, snapshots, saveable and retained state, runtime diagnostics |
+| [Input, focus, and scrolling](references/input-focus-scrolling.md) | Focus, gestures, overscroll, pointer input, lazy layouts, scroll state, visibility |
+| [Layout, animation, and graphics](references/layout-animation-graphics.md) | Lookahead, transitions, FlexBox, Grid, modifier nodes, shadows, shaders, layers |
+| [Material 3 components](references/material3-components.md) | Material migrations, text fields, search, navigation, pickers, sheets, sliders, tooltips |
+| [Semantics, accessibility, and testing](references/semantics-accessibility-testing.md) | Autofill, semantics trees, accessibility, rules, dispatchers, restoration |
+| [Text and editing](references/text-editing.md) | Autosizing, overflow, annotations, undo, transformations, menus, secure fields, IME state |
 
-## Breaking changes and migrations
+## Breaking changes first
 
-### Resolve build constraints first
+### Check the Android and Kotlin floors
 
 - Compose Animation, Foundation, Runtime, and UI require Android API 23 or
-  newer when using artifacts with the raised minimum SDK.
+  newer. Do not assume the historical API 21 floor still applies.
 - Artifacts built with Kotlin 2.0 require Kotlin Gradle Plugin 2.0.0 or newer.
-- Compose lint checks need AGP 8.8.2 or a standalone Lint 8.8.2 override.
-- Projects moving to Compose 1.12 must compile with SDK 37 and AGP 9. This
-  does not force `targetSdk` 37.
-- Import the same Compose BOM into application and instrumented-test
-  configurations, then omit versions from individual Compose dependencies.
+- Compose lint requires AGP 8.8.2 and Android Studio Ladybug or newer. An older
+  AGP can select standalone Lint 8.8.2 in `gradle.properties`.
+- Android projects adopting Compose 1.12 artifacts must compile against SDK 37
+  with AGP 9. `compileSdk` does not force the same `targetSdk`.
 
-### Remove expired compatibility flags
+See [Build, runtime, and state](references/build-runtime-state.md) before
+changing the build.
 
-- Do not rely on `ComposeFoundationFlags.isNonComposedClickableEnabled`; the
-  temporary bridge for old `Indication` implementations was removed. Supply
-  an `IndicationNodeFactory` through `LocalIndication` or use an overload with
-  an explicit indication while migrating.
-- Delete assignments to removed flags for immediate tap dispatch, scroll
-  callbacks, fling continuation, drag pickup, nested prefetch, pointer
-  interop, semantic autofill, text-field D-pad navigation, keep-in-view focus
-  observation, and movable-content behavior.
-- Delete `ComposeUiTestFlags.isStandardTestDispatcherSupportEnabled`; testing
-  v2 selects `StandardTestDispatcher` directly.
+### Finish the indication migration
 
-### Replace renamed and removed APIs
+Recompiled interaction modifiers obtain an `IndicationNodeFactory` from
+`LocalIndication`. Supplying the old `Indication` can fail at runtime. Migrate
+the indication or use an overload with an explicit indication during a staged
+upgrade. The temporary non-composed-clickable escape flag is no longer
+available in newer Foundation versions.
 
-- Replace `AutoSize` with `TextAutoSize`.
-- Replace `FocusProperties.enter` and `exit` with receiver-based `onEnter` and
-  `onExit`. Pass a non-null `fallback` requester to `focusRestorer`.
-- Replace `OverscrollConfiguration` and `LocalOverscrollConfiguration` with
-  `rememberPlatformOverscrollFactory` and `LocalOverscrollFactory`.
-- Replace `invisibleToUser()` with `hideFromAccessibility()` and obtain a
-  semantics ID from `fetchSemanticsNode().id`.
-- Replace `Snapshot.id` with `Snapshot.snapshotId`, and
-  `currentCompositeKeyHash` with `currentCompositeKeyHashCode`.
-- Remove the custom `key` argument from `rememberSaveable`; positional scoping
-  prevents state sharing and loss in nested lazy layouts.
-- Replace `ScaleToBounds` with `scaleToBounds`; removed shared-transition
-  factories and parameters have no direct compatibility shim.
-- Replace indirect-touch API names with their indirect-pointer equivalents.
-- Replace `UnplacedStateAwareModifierNode` with `UnplacedAwareModifierNode`
-  and `invalidateLayoutForSubtree` with `invalidateMeasurementForSubtree`.
-- Replace `NativePaint` with `android.graphics.Paint` and
-  `asFrameworkPaint()` with the `nativePaint` extension.
+### Delete removed behavior-flag assignments
 
-### Account for changed behavior
+Several temporary Foundation, UI, and Runtime flags were removed after their
+behaviors became unconditional or their migrations completed. Treat an
+unresolved flag as migration work, not as a symbol to recreate. The complete
+list and replacement behavior are in
+[Input, focus, and scrolling](references/input-focus-scrolling.md).
 
-- `AbstractComposeView.consumeWindowInsets` defaults to `false`; set it to
-  `true` only to retain consuming behavior.
-- `TextFieldState.edit {}` creates an undo entry. Explicitly call
-  `undoState.clearHistory()` when a programmatic edit should reset history.
-- `background`, `border`, and `graphicsLayer` can add semantics nodes. Avoid
-  tests that depend on exact parent, child, or sibling structure.
-- `BasicText` no longer creates an implicit graphics layer. Add
-  `Modifier.graphicsLayer()` only when that layer's behavior is required.
-- Pointer presses outside a focused node clear focus by default; opt out per
-  `AbstractComposeView` if the old behavior is required.
-- Parsing unknown `TextDirection`, `TextAlign`, `Hyphens`, or `FontSynthesis`
-  values throws `IllegalArgumentException`.
-- Material components may now avoid display cutouts by default. Override the
-  component inset when edge-to-edge content should occupy that region.
+### Migrate saveable and retained state deliberately
 
-## High-value runtime and state APIs
+- Remove custom `key` arguments from `rememberSaveable`; positional scoping is
+  required for reliable state ownership, especially inside lazy layouts.
+- Use `rememberSerializable` for the `KSerializer` overload. The `Saver`
+  overload remains `rememberSaveable`.
+- Use `retain` only for non-serialized values that may survive leaving the
+  composition. Avoid resource-owning keys and mark unsuitable types with
+  `@DoNotRetain`.
+- Install custom retained-value stores with
+  `LocalRetainedValuesStoreProvider`; do not directly provide the store local.
 
-### Retain values without serialization
+### Account for dispatcher changes in UI tests
 
-Use `retain` for values that should survive temporary removal from the
-composition but do not belong in serialized saveable state. Its lifetime is
-shorter than saveable state. On Android, a lifecycle-aware retain scope also
-survives configuration changes.
+The v2 Compose UI test APIs use `StandardTestDispatcher` by default. Work stays
+queued until the shared scheduler advances, so call `runCurrent()` when the
+test expects due coroutine work. Older test APIs retain unconfined scheduling.
 
-Keys are retained with their values, so do not use keys that hold resources
-longer than intended. Mark types that must never be retained with
-`@DoNotRetain`. Use `RetainedEffect` for retention-lifecycle work and install
-custom `ManagedRetainedValuesStore` instances through
-`LocalRetainedValuesStoreProvider`.
+### Update Material 3 dependencies and removed APIs
 
-### Pause and diagnose composition
+- Material 3 no longer brings in `material-icons-core`. Declare it explicitly
+  only for existing icons; prefer Material Symbols vector resources for new UI.
+- Stable Material 3 removed APIs still carrying expressive or component-
+  override experimental annotations; those APIs belong to a different alpha
+  line.
+- Replace `TabRow` and `ScrollableTabRow` with the appropriate primary or
+  secondary variants.
+- Supply both fixed-color and surface-container role families when constructing
+  a custom `ColorScheme`.
 
-`PausableComposition` can pause a subcomposition and apply it asynchronously,
-provided the compiler supports the feature. Inspect `isApplied` and
-`isCancelled`; always dispose a cancelled instance instead of reusing it.
+## High-value current APIs
 
-For production diagnostics, group-key stack traces work in minified builds
-when mapping generation is enabled. The compiler plugin begins generating the
-required mappings with Kotlin 2.3.0. Runtime tooling can also inspect the
-experimental `RecomposerInfo.errorState`.
+### Observe geometry and visibility efficiently
 
-## High-value UI capabilities
+Use `Modifier.onLayoutRectChanged` for debounced or throttled bounds in root,
+window, or screen coordinates. Use `onVisibilityChanged` for visibility state;
+`onFirstVisible` is deprecated because it can fire again after an item leaves
+and re-enters the viewport.
 
-### Scrolling, visibility, and input
+### Build state-backed text input
 
-- `Modifier.scrollable2D` and `Scrollable2DState` support two-axis scrolling;
-  `canScroll` receives an `Offset`.
-- `ScrollIndicatorState` is exposed by standard scroll states, while
-  `Modifier.scrollIndicator` and `ScrollIndicatorFactory` support custom
-  indicators.
-- Prefer `onVisibilityChanged()` to deprecated `onFirstVisible()`, and track
-  prior visibility yourself when an event must occur only once.
-- Trackpad pan and scale events have dedicated pointer types and test
-  injection support; cursor-driving trackpad gestures normally appear as
-  mouse input.
-- Typed semantic autofill uses `FillableData`, `fillableData`, and
-  `onFillData`; semantic autofill behavior is always enabled.
+Use `TextFieldState` with `OutputTransformation`. Rendered styling belongs in
+`TextFieldBuffer.addStyle`; programmatic
+`TextFieldState.edit` creates an undo entry unless history is explicitly
+cleared. Material 3 supplies state-backed normal, outlined, and secure fields.
 
-### Layout and animation
+### Separate scrolling, clipping, and indicators
 
-- `Modifier.animateBounds` animates size and position in a lookahead scope;
-  lazy grids and pagers participate in lookahead and approach passes.
-- Stable shared-transition APIs support dynamic enablement, fallback target
-  bounds, gesture velocity, lookahead coordinates, and skipping to a
-  lookahead position.
-- `FlexBox` covers row, column, and flow-style layouts with grow, shrink,
-  wrapping, direction, and alignment controls.
-- Experimental non-lazy `Grid` offers explicit two-dimensional tracks and
-  item placement; use `MinMax(0.dp, 1.fr)` to avoid intrinsic measurement of
-  flexible tracks containing subcomposition.
+`Modifier.scrollableArea()` combines scroll handling with bounds clipping.
+`ScrollableState.scrollIndicatorState` exposes indicator data, while
+`Modifier.scrollIndicator` and `ScrollIndicatorFactory` render custom
+indicators. For custom overscroll, keep event handling and drawing in the
+intended owners and never draw one effect twice.
 
-### Text and editing
+### Choose the right two-dimensional layout
 
-- `TextAutoSize` supports custom autosizing. Start and middle ellipsis require
-  a single line.
-- State-backed fields support styled output through
-  `OutputTransformation` and `TextFieldBuffer.addStyle`.
-- Public text-context-menu APIs can append or filter components, including
-  Android `PROCESS_TEXT` actions.
-- `InputTextSuggestionState` and `TextCompositionRange` expose
-  transliteration replacement and active composition state.
+- `FlexBox` covers row, column, and wrapping flex layouts with grow and shrink.
+- Experimental `Grid` provides explicit CSS-like tracks and placement without
+  lazy composition.
+- Stable `LazyLayout` primitives support custom virtualized layouts and
+  internal prefetch scheduling.
+- Use ordinary `FlowRow` or `FlowColumn` without the deprecated overflow
+  overloads for simpler wrapping layouts.
 
-### Material 3
+### Use retained values for non-serialized continuity
 
-- Prefer state-backed search APIs: collapsed and expanded surfaces are
-  separate, and stable slot-based APIs use `SearchBarState`.
-- Hoist slider state with `rememberSliderState` or
-  `rememberRangeSliderState`.
-- Use `rememberTooltipPositionProvider`; modern tooltip dismissal is
-  callback-based and `TooltipBox` is non-focusable by default.
-- Keep Material 3's built-in themed ripple configuration. Add
-  `material3-ripple` directly only when replacing a direct legacy ripple
-  dependency or using inset focus rings without the full library.
+`retain` bridges a gap between `remember` and saveable state: values can outlive
+their current composition placement without being serialized. On Android, a
+lifecycle-aware retain scope can span configuration changes. Pair lifecycle
+work with `RetainedEffect`, not a composition-only effect.
 
-## Applying this guidance
+### Diagnose animations and minified stack traces
 
-1. Identify the exact Compose artifact and resolved version behind the failing
-   call, not just the BOM coordinate.
-2. Fix toolchain and removed-API failures before debugging behavioral changes.
-3. Search the topic reference for both the old and new API names; successive
-   releases may first introduce a bridge and later remove it.
-4. For behavior-gated migrations, check whether the flag still exists at the
-   resolved version. Do not copy an obsolete opt-out into newer code.
-5. Update tests after semantics, dispatcher, focus, inset, or host-theme
-   changes; these can alter test observations without changing app intent.
+Lookahead visual-debugging APIs show target bounds, paths, matches, and active
+shared transitions. For runtime failures, group-key stack traces can work in
+minified apps when mapping generation is enabled by a compatible compiler
+plugin. Compose diagnostic stack traces also cover `LaunchedEffect` and
+`rememberCoroutineScope` work.
+
+## Common migration patterns
+
+### Focus
+
+Use receiver-based `FocusProperties.onEnter` and `onExit`, directional
+`requestFocus`, and `focusRestorer(fallback = ...)`. Mouse or touchpad presses
+outside the focused node clear focus by default; disable that behavior per view
+with `AbstractComposeView.isClearFocusOnPointerDownEnabled = false`.
+
+### Insets
+
+Compose views pass window insets through by default. Use
+`recalculateWindowInsets()` after ancestor alignment when descendants need
+correct padding, and use `disableWindowInsetsRulers()` per Compose view when
+rulers must be disabled.
+
+### Semantics and autofill
+
+Use typed `fillableData` and `onFillData` rather than the old text-only autofill
+action. Replace `invisibleToUser()` with `hideFromAccessibility()`, fetch a
+semantics node to read its ID, and avoid tests that assume decoration modifiers
+never insert semantics nodes.
+
+### Graphics
+
+Add `graphicsLayer()` explicitly when code depended on `BasicText` creating an
+implicit layer. Convert packed Compose colors before comparing them with
+Android color longs, and use `Paint.nativePaint` instead of the deprecated
+platform paint typealias bridge.
+
+## Validation checklist
+
+- Resolve the actual artifact versions after BOM alignment.
+- Compile with the required SDK, AGP, Kotlin, and lint versions.
+- Search for deprecated names and removed compatibility flags.
+- Exercise focus, pointer, nested scrolling, and accessibility behavior on a
+  real Android host when those behaviors matter.
+- Advance the test coroutine scheduler explicitly where v2 test APIs are used.
+- Re-run semantics tests with matchers resilient to inserted semantics nodes.
+- Check window insets and cutouts on edge-to-edge and overlay windows.
+- Confirm that custom retained stores, effects, and resource-owning values have
+  the intended lifecycle.

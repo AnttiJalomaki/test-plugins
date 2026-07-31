@@ -1,36 +1,26 @@
 # Graphics, Media, and Spatial APIs
 
-## Nearby Interaction and broadcast capture
+## Range in the background with Nearby Interaction
 
 An app with an active Live Activity can perform Ultra Wideband ranging through
-Nearby Interaction while it is in the background (18.4).
+Nearby Interaction while it is in the background. (18.4)
 
-Broadcast Extensions have a higher per-process memory limit on iOS and iPadOS
-18.5, permitting higher-quality capture and streaming when system resources
-allow it (18.5). Treat the limit as resource-dependent rather than a fixed
-budget guarantee.
+## Use the higher Broadcast Extension memory limit carefully
 
-## Metal and RealityKit
+Broadcast Extensions receive a higher per-process memory limit on iOS and
+iPadOS 18.5. This can support higher-quality capture and streaming, but the
+actual headroom still depends on system resources. Continue responding to
+memory pressure and test on representative devices. (18.5)
 
-When encoding Metal 4 commands, put render and compute pipelines that support
-indirect command buffers in the residency set. The driver does not currently
-enforce the requirement, but code should not rely on that gap (26.0).
+## Migrate legacy Push to Talk entitlement use
 
-`Chart3D` uses RealityKit to render data and mathematical surfaces in three
-dimensions on iOS 26, macOS 26, and visionOS 26 (26.6-rc).
+Apps built with the iOS 26 SDK or later cannot use
+`com.apple.developer.pushkit.unrestricted-voip.ptt`. Migrate Push to Talk
+features to the Push to Talk framework introduced in iOS 16, and remove the
+legacy entitlement from new-SDK builds. (26.0)
 
-The ShaderGraph `realitykit_hair_surfaceshader` node does not support
-`DiffuseLightProbeGroupComponent`; a material using it might not respond to
-diffuse light-probe-group lighting (27.0-beta4).
+## Declare Metal 4 indirect-command-buffer residency
 
-## SensorKit
-
-The SensorKit PPG reader can return no samples when fetching data in the beta.
-Handle empty results and revalidate the workaround on later seeds
-(27.0-beta4).
-
-## USDKit
-
-USDKit cannot currently read or modify some USD attribute types. It also cannot
-author array, vector, matrix, or quaternion values. Check attribute support
-before selecting it for an authoring workflow (27.0-beta4).
+When encoding with Metal 4, add render and compute pipelines that support
+indirect command buffers to the residency set even though the Metal driver does
+not currently enforce the requirement. (26.0)

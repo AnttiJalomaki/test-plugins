@@ -1,20 +1,12 @@
 # Forms, Validation, and Persistence
 
-## Contents
+Use this reference for Blazor validation, Minimal API form values, prerendered state, enhanced
+navigation, and circuit restoration.
 
-- [Recursive source-generated validation](#recursive-source-generated-validation)
-- [Blazor form validation](#blazor-form-validation)
-- [Minimal API validation and form binding](#minimal-api-validation-and-form-binding)
-- [Localized labels and errors](#localized-labels-and-errors)
-- [Persistent component state](#persistent-component-state)
-- [TempData during server-side rendering](#tempdata-during-server-side-rendering)
-- [Session-backed parameters](#session-backed-parameters)
+## Recursive source-generated Blazor validation
 
-## Recursive source-generated validation
-
-Call `AddValidation`, declare the model in a C# file rather than a Razor file,
-and apply `[ValidatableType]` to the root to validate nested objects and
-collections without reflection (10.0).
+Recursive validation is available in batch `10.0`. Register it with `AddValidation`, define the
+model in a C# file rather than a Razor file, and annotate the root type with `[ValidatableType]`.
 
 ```csharp
 builder.Services.AddValidation();
@@ -24,179 +16,61 @@ public sealed class Order
 {
     [Required]
     public string? Number { get; set; }
+
+    public ShippingAddress? Address { get; set; }
+
+    public List<OrderLine> Lines { get; set; } = [];
 }
 ```
 
-Apply `[SkipValidation]` to a property or type to stop recursive validation.
-For a model defined in another assembly, both the model assembly and the
-application must call `AddValidation`.
+The generated validator traverses nested objects and collections without reflection.
 
-## Blazor form validation
+- Put `[SkipValidation]` on a property or type that must not be traversed.
+- If a model lives in another assembly, that assembly and the application must both call
+  `AddValidation` so the generated registrations are available.
+- Keep the root model discoverable by the source generator; a type declared only inside a Razor
+  file does not meet this requirement.
 
-### Client-side validation during static SSR
+## Nullable values in Minimal API form models
 
-A static SSR form containing `DataAnnotationsValidator` validates immediately
-in Blazor's client code without a server round trip (11.0-preview.5). The
-behavior is enabled by default for enhanced and non-enhanced forms, and .NET
-data annotations remain the source of validation rules.
+For a complex `[FromForm]` parameter, an empty string posted to a nullable value-type property
+binds to `null` instead of producing a parse failure (batch `10.0`). Do not preserve validation
+workarounds that translate empty strings solely to avoid the earlier binder failure. Continue to
+validate `null` when the domain requires a value.
 
-```razor
-<EditForm Model="Model" FormName="registration">
-    <DataAnnotationsValidator />
-</EditForm>
-```
+## Declarative prerendered-state persistence
 
-### Asynchronous validators
-
-`EditForm` awaits asynchronous validators in every render mode
-(11.0-preview.5). Interactive validators register field tasks with
-`EditContext.AddValidationTask`; a superseded task is canceled.
-`IsValidationPending` and `IsValidationFaulted` expose state, and
-`ValidateAsync` awaits completion.
+The migration guidance in batch `10.0-migration` adds `[PersistentState]` as the concise option
+for components and services that need to persist state across prerendering. Use it in place of
+the imperative `PersistentComponentState` callback pattern when declarative persistence is
+sufficient.
 
 ```csharp
-var cts = new CancellationTokenSource();
-editContext.AddValidationTask(
-    field,
-    CheckAsync(field, value, cts.Token),
-    cts);
-await editContext.ValidateAsync();
+[PersistentState]
+public WeatherForecast[]? Forecasts { get; set; }
 ```
 
-Built-in asynchronous DataAnnotations validation was not included with this
-Blazor preview, so register custom asynchronous work explicitly.
+The imperative service remains appropriate when persistence timing or selection requires custom
+control.
 
-## Minimal API validation and form binding
+## Persistence controls
 
-### Nullable form properties
+Batch `10.0` adds controls for serialization, enhanced navigation, and restoration:
 
-For a complex `[FromForm]` parameter, an empty string posted to a nullable
-value-type property binds as `null` rather than causing a parse failure
-(10.0).
+- Register `PersistentComponentStateSerializer<T>` to replace JSON persistence for a type.
+- Set `[PersistentState(AllowUpdates = true)]` when state should update during an
+  enhanced-navigation refresh.
+- Use `RestoreBehavior.SkipInitialValue` to avoid restoring the initial prerendered value.
+- Use `RestoreBehavior.SkipLastSnapshot` to avoid restoring the last reconnect snapshot.
+- Call `RegisterOnRestoring` for imperative restoration logic.
 
-### Asynchronous DataAnnotations
+Choose the restoration behavior according to the transition being handled. Prerender-to-
+interactive hydration, enhanced navigation, and circuit reconnection are distinct transitions;
+a value appropriate for one may be stale in another.
 
-After `AddValidation()`, Minimal API validation executes
-`AsyncValidationAttribute` and `IAsyncValidatableObject`
-(11.0-preview.6). The latter returns
-`IAsyncEnumerable<ValidationResult>`. An async-only implementation must still
-implement the corresponding synchronous member; throw from that member so a
-synchronous validation path cannot silently skip the rule.
+## Server circuit resumption
 
-### Custom resolver migration
-
-Custom validation resolvers must replace `IValidatableInfo` with the
-specialized type-, parameter-, and property-specific interfaces and report
-errors through `ValidateContext.AddValidationError`
-(11.0-preview.6). Ordinary `[ValidatableType]` plus `AddValidation()` usage
-does not require this migration.
-
-## Localized labels and errors
-
-### Metadata-aware labels
-
-The `Label` component obtains text from `[Display]`, then `[DisplayName]`, and
-finally the property name (11.0-preview.1). It can wrap the control or remain
-separate. In the separate form, built-in inputs automatically generate a
-matching `id`.
-
-```razor
-<Label For="() => model.Name" />
-<InputText @bind-Value="model.Name" />
-```
-
-### Display names outside labels
-
-`DisplayName` renders localized property metadata outside a label. It checks
-`[Display]` before `[DisplayName]`, then falls back to the property name
-(11.0-preview.1).
-
-```razor
-<DisplayName For="() => product.Price" />
-```
-
-### Resource-based error and display names
-
-Blazor and Minimal APIs can localize validation errors and display names from
-assembly RESX resources (11.0-preview.5). Attribute `ErrorMessage` and
-`Display.Name` values act as lookup keys. Supply a custom
-`IStringLocalizerFactory` or `ErrorMessageKeyProvider` for another lookup
-strategy.
-
-```csharp
-builder.Services.AddValidation()
-    .AddValidationLocalization<ValidationMessages>();
-```
-
-## Persistent component state
-
-### Declarative persistence
-
-Apply `[PersistentState]` to component or service state that must survive
-prerendering instead of manually coordinating the full
-`PersistentComponentState` service pattern (10.0-migration).
-
-### Serialization and restore controls
-
-Register `PersistentComponentStateSerializer<T>` to replace JSON
-serialization for a type (10.0). `[PersistentState]` also supports:
-
-- `AllowUpdates = true` to accept state updates on enhanced-navigation
-  refreshes.
-- `RestoreBehavior.SkipInitialValue` to suppress restoration during
-  prerendering.
-- `RestoreBehavior.SkipLastSnapshot` to suppress restoration during
-  reconnection.
-- `RegisterOnRestoring` for imperative restoration control.
-
-## TempData during server-side rendering
-
-### Cascaded `ITempData`
-
-`AddRazorComponents()` registers TempData and cascades `ITempData` during
-server-side rendering (11.0-preview.2). The default cookie provider uses Data
-Protection. `SessionStorageTempDataProvider` is available when session-backed
-storage is preferable.
-
-`Get` consumes a one-time value; use `Peek` to inspect without consuming and
-`Keep` to retain a value after reading.
-
-```razor
-@code {
-    [CascadingParameter]
-    public ITempData? TempData { get; set; }
-
-    private void Save() => TempData!["Message"] = "Saved";
-    private string? Read() => TempData?.Get("Message") as string;
-}
-```
-
-### Parameters supplied from TempData
-
-Apply `[SupplyParameterFromTempData]` to a Blazor SSR component property
-(11.0-preview.4). Reading consumes the TempData value; assigning the property
-writes the value back for the next request. Set `Name` when the property and
-TempData keys differ.
-
-```csharp
-[SupplyParameterFromTempData(Name = "Status")]
-public string? StatusMessage { get; set; }
-```
-
-## Session-backed parameters
-
-`[SupplyParameterFromSession]` reads and writes Blazor SSR component
-properties through HTTP session, using `System.Text.Json`
-(11.0-preview.5). Changes are saved before the response is sent. Set `Name` to
-use a key other than the property name.
-
-Configure session and its backing cache normally:
-
-```csharp
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession();
-builder.Services.AddRazorComponents();
-
-var app = builder.Build();
-app.UseSession();
-```
+Server-side Blazor circuit state can survive an extended connection loss or a proactive pause
+and resume without discarding unsaved state. A full-page refresh is the boundary: it creates a
+new page and does not resume the old circuit. Do not promise persistence across refresh unless
+the state is also stored outside the circuit.

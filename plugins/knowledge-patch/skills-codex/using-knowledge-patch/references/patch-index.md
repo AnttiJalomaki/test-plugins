@@ -1,6 +1,6 @@
 # Patch Index
 
-Generated at `2026-07-30T11:33:32Z`.
+Generated at `2026-07-31T12:55:14Z`.
 
 | Patch | Covers | Languages | Tags |
 | --- | --- | --- | --- |
@@ -18,7 +18,7 @@ Generated at `2026-07-30T11:33:32Z`.
 | Apollo GraphQL (`apollo-graphql-knowledge-patch`) | current compatibility guidance | typescript, javascript, graphql, yaml, rust | graphql, api, client, server, federation, routing, typescript |
 | Arch Linux (`arch-knowledge-patch`) | rolling coverage | bash | linux, rolling-release, packages, system-administration, pacman |
 | Argo CD (`argo-cd-knowledge-patch`) | 3.0.0–3.2.0 | yaml | kubernetes, gitops, deployment, continuous-delivery, operations |
-| ASP.NET Core (`aspnet-core-knowledge-patch`) | 11.0 Preview 6 | csharp, razor, json, yaml | web-framework, dotnet, minimal-api, mvc, razor, dependency-injection, csharp |
+| ASP.NET Core (`aspnet-core-knowledge-patch`) | 10.0 | csharp, razor, json, yaml | web-framework, dotnet, minimal-api, mvc, razor, dependency-injection, csharp |
 | Astro (`astro-knowledge-patch`) | 7.0.0 | typescript, jsx, css | static-sites, frontend, islands, ssr, content-collections |
 | Auth.js (`authjs-knowledge-patch`) | 5.0.0 | typescript, javascript | authentication, oauth, sessions, adapters, nextjs |
 | AWS CDK (`aws-cdk-knowledge-patch`) | 2.262.1 | typescript, python, java, csharp, go | infrastructure-as-code, aws, cloudformation, cloud, automation, typescript, python |
@@ -50,7 +50,7 @@ Generated at `2026-07-30T11:33:32Z`.
 | Debian (`debian-knowledge-patch`) | 13.0 | bash | linux, packages, apt, system-administration, security |
 | Deno (`deno-knowledge-patch`) | 2.9.0 | typescript, javascript, json | runtime, permissions, typescript, javascript, tooling |
 | Dev Containers (`devcontainers-knowledge-patch`) | current compatibility guidance | json, jsonc, dockerfile, yaml, shell, typescript | development-environments, containers, specification, cli, configuration, tooling |
-| Dioxus (`dioxus-knowledge-patch`) | 0.7.9 | rust | ui, reactivity, fullstack, routing, hot-reload, desktop, mobile |
+| Dioxus (`dioxus-knowledge-patch`) | 0.8.0-alpha.1 | rust | ui, reactivity, fullstack, routing, hot-reload, desktop, mobile |
 | Django (`django-knowledge-patch`) | 6.0.8 | python | web-framework, orm, migrations, templates, async |
 | DNF5 (`dnf5-security-updates-knowledge-patch`) | 5.4.1 | bash | linux, packages, security, updates, rpm |
 | Docker (`docker-knowledge-patch`) | 25.0.0–29.3 | bash, yaml | containers, images, compose, buildkit, networking |
@@ -98,7 +98,7 @@ Generated at `2026-07-30T11:33:32Z`.
 | Hono (`hono-knowledge-patch`) | 4.8.0–4.12.0 | typescript, javascript | web-framework, routing, middleware, edge-runtime, rpc |
 | htmx (`htmx-knowledge-patch`) | 4.0.0 | html, javascript | hypermedia, html, ajax, frontend, sse |
 | Hugging Face Hub (`huggingface-hub-knowledge-patch`) | rolling coverage | python, bash, yaml | model-hub, datasets, machine-learning, models, inference, storage, huggingface |
-| iOS SDK (`ios-sdk-knowledge-patch`) | iOS 27 beta 4 / Xcode 27 beta 4 | swift, objective-c, cpp, plist | apple, mobile, ios, xcode, sdk, swift, objective-c |
+| iOS SDK (`ios-sdk-knowledge-patch`) | iOS 26 / Xcode 26 | swift, objective-c, cpp, plist | apple, mobile, ios, xcode, sdk, swift, objective-c |
 | Istio (`istio-knowledge-patch`) | 1.30.0 | yaml, bash | service-mesh, kubernetes, envoy, istio, yaml, bash |
 | Jaeger (`jaeger-knowledge-patch`) | 2.20.0 | go, yaml | tracing, observability, opentelemetry, jaeger, go, yaml |
 | Java (`java-knowledge-patch`) | 26 | java | jvm, language, jdk, java |
@@ -122,7 +122,7 @@ Generated at `2026-07-30T11:33:32Z`.
 | MapLibre GL JS (`maplibre-gl-js-knowledge-patch`) | 6.0.0 | typescript, javascript, html, css, json | maps, webgl, geospatial, vector-tiles, rendering, frontend, typescript |
 | MapLibre Native (`maplibre-native-knowledge-patch`) | current compatibility guidance | cpp, kotlin, java, swift, objective-c, javascript, typescript, qml, cmake, json | maps, geospatial, vector-tiles, rendering, mobile, android, ios |
 | Matter (IoT) (`matter-iot-knowledge-patch`) | Matter 1.4.1–Matter 1.6 | cpp, python, kotlin, java | iot, smart-home, connectivity, standards, security, commissioning, protocol |
-| Model Context Protocol (MCP) (`model-context-protocol-knowledge-patch`) | 2025-03-26–2026-07-28 RC | typescript, javascript, python, json | ai, tools, protocol, mcp, agents, client, server |
+| Model Context Protocol (MCP) (`model-context-protocol-knowledge-patch`) | 2025-03-26–2025-11-25 | typescript, javascript, python, json | ai, tools, protocol, mcp, agents, client, server |
 | MongoDB (`mongodb-knowledge-patch`) | 8.2 | javascript, json | database, document-store, aggregation, replication, sharding |
 | MoveIt 2 (`moveit2-knowledge-patch`) | 2.14.3 | cpp, python, cmake, yaml, xml | robotics, motion-planning, manipulation, ros2, kinematics, control, cpp |
 | MQTT (`mqtt-knowledge-patch`) | MQTT 5.0–MQTT-SN 2.0 CSD01 | c, cpp, python, javascript | messaging, iot, protocol, pubsub, realtime, networking, security |
@@ -163,14 +163,14 @@ Generated at `2026-07-30T11:33:32Z`.
 | Prisma (`prisma-knowledge-patch`) | 7.8.0 | typescript | orm, schema, migrations, database, client |
 | PROJ (`proj-knowledge-patch`) | 9.8.1 | cpp, c, cmake, sql | geospatial, coordinate-systems, projections, proj, cpp, c, cmake, sql |
 | Prometheus (`prometheus-knowledge-patch`) | 3.13.0 | go, yaml, promql | monitoring, metrics, promql, prometheus, go, yaml |
-| Protocol Buffers (`protobuf-knowledge-patch`) | 36.0-rc1 | protobuf, cpp, java, python, csharp, php, ruby, rust | serialization, schema, editions, protocol, code-generation, rpc, types |
+| Protocol Buffers (`protobuf-knowledge-patch`) | 35.0 | protobuf, cpp, java, python, csharp, php, ruby, rust | serialization, schema, editions, protocol, code-generation, rpc, types |
 | Pulumi (`pulumi-knowledge-patch`) | 3.254.0 | typescript, python, go, csharp, java, yaml, json | infrastructure-as-code, cloud, automation, deployment, providers, state |
 | pytest (`pytest-knowledge-patch`) | 9.1.0 | python, toml, ini | testing, python, fixtures, pytest, toml, ini |
 | Python (`python-knowledge-patch`) | 3.14 | python | language, packaging, typing, async, runtime |
 | PyTorch (`pytorch-knowledge-patch`) | 2.11.0 | python | machine-learning, tensors, autograd, training, gpu |
 | Qdrant (`qdrant-knowledge-patch`) | 1.18.0 | rust, json, yaml, python | vector-database, search, embeddings, qdrant, rust, json, yaml, python |
 | QGIS (`qgis-knowledge-patch`) | 4.2 | cpp, python, xml | gis, geospatial, plugins, qgis, cpp, python, xml |
-| Qwik (`qwik-knowledge-patch`) | 2.0.0-beta.38 | typescript, javascript, tsx, jsx, html | web-framework, resumability, frontend, ssr, components, routing, typescript |
+| Qwik (`qwik-knowledge-patch`) | 1.19.0 | typescript, javascript, tsx, jsx, html | web-framework, resumability, frontend, ssr, components, routing, typescript |
 | R / CRAN (`r-cran-knowledge-patch`) | current compatibility guidance | r | r, cran, statistics, packages, scientific-computing |
 | RabbitMQ (`rabbitmq-knowledge-patch`) | 4.3.0 | erlang, elixir, json | messaging, amqp, queues, rabbitmq, erlang, elixir, json |
 | Ruby on Rails (`rails-knowledge-patch`) | 8.1 | ruby | web-framework, orm, mvc, jobs, hotwire |
@@ -180,7 +180,6 @@ Generated at `2026-07-30T11:33:32Z`.
 | React Native (`react-native-knowledge-patch`) | 0.77–0.86.0 | javascript, typescript, tsx | mobile, react, ios, android, javascript |
 | React Router (`react-router-knowledge-patch`) | 8.2.0 | typescript, javascript, tsx, jsx | routing, react, loaders, actions, framework |
 | Redis (`redis-knowledge-patch`) | 8.0–8.8.1 | bash | database, cache, key-value, streams, operations |
-| Remix (`remix-knowledge-patch`) | 3.0.0-beta.5 | typescript, javascript, tsx, jsx, html, css | web-framework, react, fullstack, routing, middleware, frontend, typescript |
 | RHEL (`rhel-knowledge-patch`) | 10.2 | bash | linux, enterprise-linux, packages, system-administration, selinux |
 | ROS 2 (`ros2-knowledge-patch`) | Kilted Kaiju | cpp, python, cmake, xml, yaml | robotics, middleware, dds, messaging, realtime, cpp, python |
 | Nav2 (`ros2-navigation-nav2-knowledge-patch`) | 1.3.12 | cpp, python, yaml, xml | robotics, navigation, ros2, behavior-trees, motion-planning, localization, collision-avoidance |

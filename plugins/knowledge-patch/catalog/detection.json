@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-30T11:33:32Z",
+  "generated_at": "2026-07-31T12:55:14Z",
   "rules": [
     {
       "id": "agopengps-knowledge-patch",
@@ -669,8 +669,8 @@
       "id": "aspnet-core-knowledge-patch",
       "short_label": "ASP.NET Core",
       "coverage_kind": "versioned",
-      "covered_through": "11.0 Preview 6",
-      "coverage_label": "11.0 Preview 6",
+      "covered_through": "10.0",
+      "coverage_label": "10.0",
       "aliases": [
         "asp net core",
         "aspnet",
@@ -2115,8 +2115,8 @@
       "id": "dioxus-knowledge-patch",
       "short_label": "Dioxus",
       "coverage_kind": "versioned",
-      "covered_through": "0.7.9",
-      "coverage_label": "0.7.9",
+      "covered_through": "0.8.0-alpha.1",
+      "coverage_label": "0.8.0-alpha.1",
       "aliases": [
         "dioxus",
         "dioxus knowledge patch",
@@ -4276,8 +4276,8 @@
       "id": "ios-sdk-knowledge-patch",
       "short_label": "iOS SDK",
       "coverage_kind": "versioned",
-      "covered_through": "iOS 27 beta 4 / Xcode 27 beta 4",
-      "coverage_label": "iOS 27 beta 4 / Xcode 27 beta 4",
+      "covered_through": "iOS 26 / Xcode 26",
+      "coverage_label": "iOS 26 / Xcode 26",
       "aliases": [
         "apple ios sdk",
         "ios",
@@ -5381,8 +5381,8 @@
       "id": "model-context-protocol-knowledge-patch",
       "short_label": "Model Context Protocol (MCP)",
       "coverage_kind": "range",
-      "covered_through": "2026-07-28 RC",
-      "coverage_label": "2025-03-26–2026-07-28 RC",
+      "covered_through": "2025-11-25",
+      "coverage_label": "2025-03-26–2025-11-25",
       "aliases": [
         "mcp",
         "model context protocol",
@@ -7252,8 +7252,8 @@
       "id": "protobuf-knowledge-patch",
       "short_label": "Protocol Buffers",
       "coverage_kind": "versioned",
-      "covered_through": "36.0-rc1",
-      "coverage_label": "36.0-rc1",
+      "covered_through": "35.0",
+      "coverage_label": "35.0",
       "aliases": [
         "proto",
         "protobuf",
@@ -7577,8 +7577,8 @@
       "id": "qwik-knowledge-patch",
       "short_label": "Qwik",
       "coverage_kind": "versioned",
-      "covered_through": "2.0.0-beta.38",
-      "coverage_label": "2.0.0-beta.38",
+      "covered_through": "1.19.0",
+      "coverage_label": "1.19.0",
       "aliases": [
         "qwik",
         "qwik framework",
@@ -8014,56 +8014,6 @@
         ]
       },
       "covered_from": "8.0"
-    },
-    {
-      "id": "remix-knowledge-patch",
-      "short_label": "Remix",
-      "coverage_kind": "versioned",
-      "covered_through": "3.0.0-beta.5",
-      "coverage_label": "3.0.0-beta.5",
-      "aliases": [
-        "remix",
-        "remix framework",
-        "remix knowledge patch",
-        "remix run"
-      ],
-      "languages": [
-        "typescript",
-        "javascript",
-        "tsx",
-        "jsx",
-        "html",
-        "css"
-      ],
-      "tags": [
-        "web-framework",
-        "react",
-        "fullstack",
-        "routing",
-        "middleware",
-        "frontend",
-        "typescript"
-      ],
-      "paths": {
-        "claude": "skills-claude/remix-knowledge-patch",
-        "codex": "skills-codex/remix-knowledge-patch"
-      },
-      "coverage_paths": {
-        "claude": "skills-claude/remix-knowledge-patch/coverage.json",
-        "codex": "skills-codex/remix-knowledge-patch/coverage.json"
-      },
-      "signals": {
-        "terms": [
-          "useLoaderData",
-          "<Outlet"
-        ],
-        "files": [
-          "package.json::\"@remix-run/",
-          "vite.config.*::remix(",
-          "app/root.tsx",
-          "react-router.config.*"
-        ]
-      }
     },
     {
       "id": "rhel-knowledge-patch",

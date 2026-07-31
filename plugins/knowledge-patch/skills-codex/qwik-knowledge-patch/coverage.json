@@ -2,7 +2,7 @@
   "patch": "qwik-knowledge-patch",
   "target": "codex",
   "source": "codex",
-  "built_at": "2026-07-29T13:32:37Z",
+  "built_at": "2026-07-31T12:27:37Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -18,29 +18,29 @@
       "build": "included"
     },
     "v2-alpha-beta-1-9": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "v2-beta-10-19": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "v2-beta-20-29": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "v2-beta-30-38": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "migration-v1-v2": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     }
   },
   "retire_candidates": []

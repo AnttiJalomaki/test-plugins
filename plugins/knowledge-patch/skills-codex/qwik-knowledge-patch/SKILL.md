@@ -1,208 +1,249 @@
 ---
 name: qwik-knowledge-patch
 description: Qwik
-version: 2.0.0-beta.38
+version: 1.19.0
 license: MIT
 metadata:
   author: Nevaberry
 ---
 
 
-# Qwik
 
-Use this skill when maintaining, migrating, building, deploying, or testing Qwik
-applications and libraries. Start with the breaking-change checks below, then
-open the topic reference that matches the work.
+# Qwik Knowledge Patch
+
+Use this skill when maintaining Qwik applications, Qwik City routing, Qwik
+libraries, SSR integrations, or their Vite build configuration. Start with the
+quick references below, then open the topic file that matches the task.
+
+## When to load this skill
+
+Load it when:
+
+- upgrading an existing Qwik application or library;
+- diagnosing optimizer, Vite, preload, manifest, or asset-output changes;
+- updating reactive state, tasks, computed values, or store access;
+- changing Qwik City routing, navigation, request handling, or caching;
+- working with MDX, error boundaries, events, or route-data tests; or
+- reviewing deprecated APIs before a later migration.
+
+Prefer the project manifest, lockfile, configuration, code, and tests when they
+show behavior that differs from this guidance.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [migration-and-packaging.md](references/migration-and-packaging.md) | V2 migration, package renames, ESM, third-party libraries, types, router roots, serialized state |
-| [build-and-deployment.md](references/build-and-deployment.md) | Optimizer and Vite configuration, assets, manifests, preload behavior, HMR, adapters, SSG |
-| [async-reactivity-and-state.md](references/async-reactivity-and-state.md) | Async computation, signals, task cleanup, stores, serialization, `Show`, Suspense |
-| [components-and-events.md](references/components-and-events.md) | MDX, JSX attributes and events, bindings, error boundaries, loader events, testing |
-| [router-and-navigation.md](references/router-and-navigation.md) | Router setup, navigation, rewrites, layouts, document head, error routes, middleware |
-| [server-and-route-data.md](references/server-and-route-data.md) | Server functions, request events, loaders, caching, ETags, SSR and request origins |
+| [Async reactivity and state](references/async-reactivity-and-state.md) | Async computation, tasks, stores, tracking, and notification behavior |
+| [Build and deployment](references/build-and-deployment.md) | Optimizer, Vite, assets, preload, manifests, service workers, CLI, and integrations |
+| [Components and events](references/components-and-events.md) | MDX, error boundaries, view-transition events, and route-data testing |
+| [Migration and packaging](references/migration-and-packaging.md) | Library publishing, mixed-generation consumers, dependency placement, and exports |
+| [Router and navigation](references/router-and-navigation.md) | SPA prevention, previous URLs, rewrites, redirects, and cache behavior |
+| [Server and route data](references/server-and-route-data.md) | Server-function errors, request events, origins, redirect responses, and rewrites |
 
-## Breaking changes and migration checks
+## Breaking-change triage
 
-### Run the migration before hand-editing
+### Update asset paths and cache rules
 
-```sh
-pnpm qwik migrate-v2
-```
+Default build assets use `assets/hash-name.ext`. Replace deployment rules,
+CDN patterns, or CSP generation that assumes an older location. Apply
+long-lived immutable caching only to content-hashed files under `build/` and
+`assets/`, unless Rollup output names were customized.
 
-The migration rewrites package names, renamed identifiers, Qwik and Vite
-configuration, and dependencies. After it runs, verify the changes that require
-project-specific judgment:
+See [Build and deployment](references/build-and-deployment.md#asset-paths-and-cache-headers).
 
-- Use `@qwik.dev/core`, `@qwik.dev/router`, and `@qwik.dev/react` in place of
-  their V1 packages.
-- Use `@qwik.dev/core/jsx-runtime` for the JSX runtime.
-- Replace `@qwik-city-plan` with `@qwik-router-config` where applicable.
-- Set TypeScript `moduleResolution` to `Bundler` and `jsxImportSource` to
-  `@qwik.dev/core`.
-- Make the package ESM with `"type": "module"`.
-- Keep `@qwik.dev/*` packages in `devDependencies`.
+### Keep library QRL files in the transform
 
-Core and Router are ESM-only. Update CommonJS consumers and build tools instead
-of expecting CJS or UMD artifacts.
+A custom `qwikVite()` `fileFilter` cannot exclude `*.qwik.js`,
+`*.qwik.mjs`, or `*.qwik.cjs`. These library QRL files are always processed.
+Do not use the filter as a way to suppress their Qwik transform.
 
-### Prevent duplicate runtimes from legacy libraries
+See [Build and deployment](references/build-and-deployment.md#library-qrl-file-filtering).
 
-Third-party libraries that still depend on V1 package names can install a
-second runtime. Override those names to V2, bundle the library in SSR with
-`ssr.noExternal`, and exclude it from `optimizeDeps`. See
-[migration-and-packaging.md](references/migration-and-packaging.md) for the
-complete configuration.
+### Make Vite an application dependency
 
-V1-era library publishers should publish a fresh library build and extend the
-accepted Qwik range to include V2. During a staged consumer migration, both
-runtime generations can be installed intentionally, but a V2 page containing
-V1 containers must load both generations of the qwikloader.
+Vite is a peer dependency of Qwik, Qwik City, Qwik React, and Qwik Labs.
+Declare Vite directly in the application so package resolution does not create
+duplicate Vite imports. Qwik core and Qwik City projects using the newer
+toolchain must use Vite 7.
 
-### Use the current async-computation API
+See [Migration and packaging](references/migration-and-packaging.md#vite-dependency-placement)
+and [Build and deployment](references/build-and-deployment.md#vite-7).
 
-Use async `useComputed$()` for new V2 code. `useAsync$()`, `createAsync$()`,
-and `AsyncSignal` are deprecated. Read failures from `.error`; reading `.value`
-after a failure rethrows. Use the compute context's `track()` for dependencies
-first read after an `await`, and use its `abortSignal` for cancellation.
+### Rework library publishing
 
-When migrating `useResource$()` or `<Resource />`, account for these differences:
+Qwik library builds no longer run the Qwik transform. Publish a fresh library
+build and expand the accepted Qwik range when the package must support both
+generations. A later-generation project can retain a first-generation library
+by installing both runtimes as described in the packaging reference.
 
-- `.value` is `T`, not `Promise<T>`; unresolved reads throw.
-- `.pending` reports unresolved state and `.error` reports failure.
-- `initial`, `previous`, `expires`, and `poll` cover initialization and refresh.
-- `concurrency: 0` preserves unlimited resource-style parallelism.
-- A legacy `useAsync$().promise()` returns `Promise<void>`, not the result.
+See [Migration and packaging](references/migration-and-packaging.md#library-builds-and-mixed-generation-consumers).
 
-Do not use an async `useComputed$()` callback in a V1 application: only signal
-reads before its first `await` are tracked there. Use `useTask$()` or
-`useResource$()` until the application migrates.
+### Migrate built-in service-worker prefetching
 
-### Remove retired and renamed options
+Qwik now preloads bundles with `modulepreload` links and a bundle graph.
+Built-in service-worker components are deprecated. For an uncustomized worker,
+remove `service-worker.ts` but temporarily keep `ServiceWorkerRegister` so
+deployed workers and caches are removed. Preserve the integration when custom
+worker logic prevents automatic unregistration.
 
-- Remove `useVisibleTask$({ eagerness: ... })` in V2.
-- Do not add new uses of `useTask$`'s deprecated `eagerness` option.
-- Replace `Link`'s `prefetchBundle` with `prefetchBundles`.
-- Replace legacy `useAsync$` option `interval` with `expires`; use `poll` to
-  schedule reruns after expiration.
-- Remove `renderToStream` preload probability and debug options that V2 no
-  longer accepts.
-- Remove the deprecated service-worker `prefetchStrategy`.
-- Do not configure removed `qwikVite()` options such as `symbolMapper` or
-  deprecated `srcInput`.
+See [Build and deployment](references/build-and-deployment.md#automatic-preloading-and-service-worker-migration).
 
-### Move optimizer and asset configuration
+## Deprecation quick reference
 
-Import optimizer bindings from `@qwik.dev/optimizer`; the compatibility export
-at `@qwik.dev/core/optimizer` remains available, while the Vite plugin stays in
-core. Configure built-asset placement with Rollup `output.assetFileNames`.
-Qwik no longer owns `build.assetsDir`, and default hashed assets use the
-`assets/hash-name.ext` form.
+### Do not use async callbacks in `useComputed$`
 
-## Build and deployment quick reference
+Async `useComputed$` callbacks fail to track signals first read after an
+`await`, and an initial promise restarts rendering. Move asynchronous work to
+`useTask$` or `useResource$`.
 
-### Match the Vite integration to the build
+See [Async reactivity and state](references/async-reactivity-and-state.md#async-computed-functions).
 
-Applications must depend on Vite directly because it is a peer dependency.
-Modern V2 application builds can use Vite's Environment API:
+### Remove task eagerness
 
-```sh
-vite build --app
-```
+The `eagerness` option of `useTask$` is deprecated and should not be used in
+new code.
 
-Router adapters remain a separate-build exception. For programmatic SSG, call
-`createBuilder().buildApp()`; a direct `build()` call skips prerendering. Use
-`client.outDir`, `ssr.outDir`, or Vite `build.outDir` for output placement;
-Vite `base` does not relocate the client output.
+See [Async reactivity and state](references/async-reactivity-and-state.md#usetask-eagerness).
 
-If automatic SSR manifest discovery cannot find a custom client manifest, set:
+### Replace `preloadProbability`
+
+`preloadProbability` is deprecated. Use the supported preload controls,
+including `maxIdlePreloads` for concurrent idle-preload limits.
+
+See [Build and deployment](references/build-and-deployment.md#ssr-preload-configuration).
+
+## Configuration quick reference
+
+### Gate experimental features explicitly
+
+Pass experimental feature names through the `qwikVite()` `experimental`
+array:
 
 ```ts
 qwikVite({
-  ssr: { manifestInputPath: 'dist/client/q-manifest.json' },
+  experimental: ['noSPA', 'valibot', 'preventNavigate'],
 });
 ```
 
-### Treat preloading and the service worker separately
+Use `noSPA` only for MPA-only applications that do not use `Link`,
+`valibot` for `valibot$` validation, and `preventNavigate` for
+`usePreventNavigate`.
 
-Bundle preloading uses `modulepreload`, a generated bundle graph, and built-in
-server manifest support. The old built-in prefetch service-worker components
-are deprecated. For an uncustomized worker, remove `service-worker.ts` but keep
-`ServiceWorkerRegister` temporarily so deployed workers and caches are removed.
-Add the service-worker integration only for genuinely custom worker logic.
+### Tune SSR preloading
 
-Serve content-hashed files under `build/` and `assets/` with long-lived
-immutable caching unless output names are customized. Follow explicit cache
-headers for route data instead of assuming it must always be fresh.
+```ts
+renderToStream(<Root />, {
+  ...opts,
+  preload: {
+    debug: true,
+    maxIdlePreloads: 5,
+  },
+});
+```
 
-### Keep server-only code out of the client graph
+`maxIdlePreloads` is the stable concurrent idle-preload limit. Prefetch
+strategies can also set `linkFetchPriority` for generated `modulepreload`
+links.
 
-Client builds reject server-only imports. If a server module is legitimately
-needed in server output, configure `ssr.noExternal`; the build reports missing
-externalization configuration rather than scanning every module up front.
+### Inline the Qwikloader only when necessary
+
+SSR normally loads the Qwikloader from a separate bundle. Tests and unusual
+network setups can opt back into embedding it:
+
+```ts
+renderToStream(<Root />, {
+  ...opts,
+  qwikLoader: 'inline',
+});
+```
+
+## Runtime and reactivity quick reference
+
+### Extract raw store data for platform APIs
+
+Use `unwrapStore()` before passing store content to structured cloning or
+IndexedDB:
+
+```ts
+const copy = structuredClone(unwrapStore(store));
+```
+
+### Account for membership tracking
+
+`"prop" in store` creates a reactive subscription. Consumers that execute
+membership checks rerun when the property's presence changes.
+
+### Read without tracking
+
+`untrack()` accepts signals and stores directly. Its callback form accepts
+arguments:
+
+```ts
+const value = untrack(signal);
+const result = untrack((a, b) => a + b, 1, 2);
+```
+
+Computed signals notify listeners only when the computed result changes, not
+merely when a dependency changes.
 
 ## Router and server quick reference
 
-### Use current navigation semantics
+### Block navigation with the matching experiment
 
-SPA view transitions are opt-in on `QwikRouterProvider`. `usePreventNavigate$`
-and `request.rewrite()` are stable without experimental flags. Returning
-`redirect()`, `error()`, or `rewrite()` from loaders, actions, handlers, and
-server functions has the same control-flow effect as throwing it.
+`usePreventNavigate` asynchronously blocks SPA navigation. Other unsaved-state
+navigation falls back to browser dialogs. Enable `preventNavigate` before
+using it.
 
-On the initial render, the previous URL is `undefined`. For internal rewrites,
-the visible URL is preserved; invalid absolute rewrite URLs produce `400`.
-Multiple rewrite routes may target the same destination.
+### Throw rewrites from request handlers
 
-### Declare loader inputs and cache behavior
+`RequestEvent.rewrite()` performs an internal redirect while preserving the
+browser-visible URL:
 
-Strict loaders are enabled by default. Declare query keys with `search`; without
-it, the loader receives no query parameters and does not rerun for query-string
-changes. A loader cannot read action state, so read that signal in the component
-or put relevant state in the URL.
+```ts
+export const onRequest: RequestHandler = async ({ rewrite }) => {
+  throw rewrite('/articles/42');
+};
+```
 
-Route-loader failures appear in `.error`, and `.value` rethrows; `fail()` instead
-stores `{ failed }`. Configure `expires`, `poll`, `allowStale`, `eTag`, and
-`cacheKey` deliberately. The transport uses manifest-versioned loader JSON and
-defaults expiry to two minutes. Treat private or user-specific results as
-short-lived and validate them with ETags.
+Multiple rewrite routes may target the same destination. On the first render,
+the router's previous URL is `undefined`, so consumers must handle its
+absence.
 
-### Configure error routes and layouts
+### Catch server-function failures in middleware
 
-Use `404.tsx` for misses and `error.tsx` for other status codes. Both render in
-the layout selected by `@layout` and `!` modifiers; rename the not-found route
-to `404!.tsx` when it must bypass layouts. The nearest not-found route wins.
+Errors are standardized across `server$` functions and route loaders.
+`@plugin` middleware can catch `server$` failures. Client calls throw for 4xx
+statuses and statuses above 500, while 499 is accepted.
 
-## Reactivity and event quick reference
+See [Server and route data](references/server-and-route-data.md#server-function-error-flow).
 
-Use `signal.untrackedValue` for reads or writes that must not subscribe, then
-call `signal.trigger()` after an in-place mutation or untracked write when
-subscribers need to run. `untrack()` also accepts a signal, a store, or a
-callback plus arguments.
+## Components, CLI, and testing quick reference
 
-Event names without a leading dash are lowercased; a leading dash preserves
-case, while later dashes remain dashes. Custom-event segments in
-`preventdefault:event` and `stoppropagation:event` must be kebab-case. Passive
-and capture markers pair with handlers, such as `passive:touchmove` with
-`onTouchMove$`.
+Imported MDX accepts a `components` prop, can use props in JavaScript
+expressions, and honors default-exported layout components. Use
+`ErrorBoundary` for component error handling; corrected
+`useErrorBoundary` behavior is also available.
 
-`useTask$()` and `useVisibleTask$()` await a returned cleanup promise before
-their next invocation. Do not return that promise when overlap is intentional.
-Rendering does not wait for visible-task callbacks, which run as post-flush
-effects.
+Qwik emits `qviewTransition` when a view transition starts. Listen for that
+`CustomEvent` when application code needs transition lifecycle behavior.
+
+For monorepos, target a package with:
+
+```sh
+qwik add --projectDir=packages/my-package
+```
+
+Use `QwikCityMockProvider` to mock route loaders and actions. Run
+`qwik check-client` when validating that a client bundle is fresh.
 
 ## Verification checklist
 
-Before finalizing a change:
+Before completing a change:
 
-1. Confirm package names, ESM mode, TypeScript settings, and dependency section.
-2. Check that only one intended Qwik runtime reaches each page.
-3. Verify client and server output directories and manifest discovery.
-4. Exercise async pending, failure, cancellation, and concurrency paths.
-5. Test strict-loader query keys, expiry, ETags, and user-specific caching.
-6. Test `404.tsx` and `error.tsx` inside the intended layout hierarchy.
-7. Confirm event-name casing and passive/default-prevention combinations.
-8. Run SSG through the app builder and verify immutable asset cache headers.
+- inspect `package.json` and the lockfile for direct Vite ownership;
+- verify generated asset, manifest, loader, and preloader paths;
+- test navigation with an absent initial previous URL and with redirects;
+- exercise client-visible server failures and middleware interception;
+- check reactive consumers after changing `untrack()` or store membership;
+- test deployed service-worker cleanup before removing registration; and
+- confirm cache headers distinguish hashed assets, route data, and redirects.

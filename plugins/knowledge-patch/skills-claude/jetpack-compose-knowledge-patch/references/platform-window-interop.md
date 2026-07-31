@@ -1,87 +1,90 @@
 # Platform, Window, and Interop
 
-## Pass window insets through embedded Compose
+## Window size and geometry
 
-`AbstractComposeView.consumeWindowInsets` defaults to `false`. Compose adjusts
-insets for the view's size and position so child views continue to receive
-updates. Set it to `true` to retain consuming behavior (1.9.0).
+### Content-container size (1.8.0)
 
-## Recalculate descendant insets
+Read the current content-container size from
+`LocalWindowInfo.current.containerSize`. Do not derive window size from
+configuration screen dimensions; lint warns about that pattern.
 
-Use `Modifier.recalculateWindowInsets()` when an ancestor positions content
-without calling `consumeWindowInsets()` and descendants must apply
-`insetsPadding` against recalculated values (1.8.0).
-
-## Use window-inset rulers
-
-The common `WindowInsetsRulers` API replaces `InsetsRulers`. Combine rulers
-with `innermostOf()`, replace `rulersIgnoringVisibility` with `maximum`, and
-read animation information through `WindowInsetsAnimation` and
-`getAnimation()` (1.9.0).
-
-The global `ComposeUiFlags.areWindowInsetsRulersEnabled` switch was replaced
-by the per-view `ComposeView.disableWindowInsetsRulers()` API (1.11.0).
-
-## Read container and window geometry
-
-Use `LocalWindowInfo.current.containerSize` for the current content-container
-size rather than deriving window size from configuration screen dimensions
-(1.8.0).
+### Window geometry (1.10.0)
 
 `WindowInfo` exposes window size in dp. `WindowInsets.cutoutPath` exposes the
-actual display-cutout outline for layouts that need its shape (1.10.0).
+actual display-cutout outline for layouts that need its shape rather than only
+its insets.
 
-Inset-aware Material 2 and Material 3 components include `displayCutout` in
-their default insets. Override the component inset when that automatic
-avoidance is undesirable (`material3-1.4.0`).
+## Window insets and rulers
 
-## Provide host-default composition locals
+### Recalculation after ancestor alignment (1.8.0)
 
-`compositionLocalWithHostDefaultOf` defines a composition local whose fallback
-comes from the hosting environment, such as an Android `View` tag.
-`HostDefaultKey` is an interface. Public `HostDefaultProvider` and
-`LocalHostDefaultProvider` allow a custom host to supply platform-specific
-local values (1.11.0).
+Apply `Modifier.recalculateWindowInsets()` when descendants need to use
+`insetsPadding` after an ancestor aligned them without calling
+`consumeWindowInsets()`.
 
-## Compose before a view is attached
+### ComposeView pass-through (1.9.0)
+
+`AbstractComposeView.consumeWindowInsets` defaults to `false`. Compose
+adjusts insets for its view's size and position while allowing child views to
+receive updates. Set the property to `true` to retain consuming behavior.
+
+### Common ruler API (1.9.0)
+
+`WindowInsetsRulers` replaces `InsetsRulers`. Merge rulers with
+`innermostOf()`, rename `rulersIgnoringVisibility` to `maximum`, and use
+`WindowInsetsAnimation` with `getAnimation()` for animation data.
+
+### Per-view ruler control (1.11.0)
+
+Replace the `ComposeUiFlags.areWindowInsetsRulersEnabled` flag with
+`ComposeView.disableWindowInsetsRulers()` when a particular view must opt out.
+
+## Resources and fonts
+
+### Configuration-aware resources (1.9.0)
+
+Use `LocalResources.current` for Android resource access that must react to
+configuration changes. The read invalidates composition so later lookups see
+the new configuration.
+
+### Resource-font failures (1.8.0)
+
+A resource font that cannot load falls back silently to the default font
+instead of throwing during measurement.
+
+## Clipboard and tooltips
+
+### Common APIs (1.8.0)
+
+Foundation and UI provide a common `Clipboard` interface and its composition
+local. `BasicTooltip` is available to common Foundation source sets.
+
+## Android hosting
+
+### Unattached ComposeView composition (1.11.0)
 
 `ComposeViewContext` lets a `ComposeView` compose before attachment to a view
 hierarchy. Start it with
-`AbstractComposeView.createComposition(composeViewContext)` (1.11.0).
+`AbstractComposeView.createComposition(composeViewContext)`.
 
-## Select dialog and popup host windows
+### Dialog and popup windows (1.11.0)
 
-Android Compose dialogs accept a custom `windowToken`. Popups accept custom
-`windowToken` and `windowType` values. `DialogProperties.windowType` also lets
-a service show a Compose dialog in an overlay window (1.11.0).
+Android Compose dialogs accept a custom `windowToken`; popups accept custom
+`windowToken` and `windowType`. `DialogProperties.windowType` also lets a
+service display a Compose dialog in an overlay window.
 
-## Interoperate with Android paint
+## Android interop
+
+### Paint (1.11.0)
 
 The `androidx.compose.ui.graphics.NativePaint` typealias is deprecated. Use
 `android.graphics.Paint` directly. Replace `Paint.asFrameworkPaint()` with
 the `Paint.nativePaint` extension so common code does not expose an Android
-platform type through a typealias (1.11.0).
+platform type through a typealias.
 
-## Convert packed colors explicitly
+### Android constants and parsing (1.10.0)
 
-Compose packed colors are not directly comparable with Android `ColorLong`
-values. Convert using `toColorLong()` and `fromColorLong()` (1.9.0).
-
-## Use renamed Android constants
-
-The Android-derived `UiModes` constants object is named `AndroidUiModes` from
-1.10.0.
-
-## Customize Android semantics extras
-
-An Android-specific `SemanticsPropertyKey` factory can expose custom semantics
-values through `AccessibilityNodeInfo.getExtras` (1.9.0).
-
-## Know the multiplatform boundary
-
-`androidx.compose.runtime:runtime` publishes desktop, iOS, and native support
-through Google Maven. This does not make the rest of AndroidX Compose
-multiplatform by implication (1.9.0).
-
-The `runtime-rxjava2` and `runtime-rxjava3` artifacts are multiplatform and
-include JVM support (1.10.0).
+Rename the Android-derived `UiModes` constants object to `AndroidUiModes`.
+`TextDirection`, `TextAlign`, `Hyphens`, and `FontSynthesis` `valueOf`
+functions throw `IllegalArgumentException` for unknown values; validate or
+handle invalid external strings rather than expecting a fallback.

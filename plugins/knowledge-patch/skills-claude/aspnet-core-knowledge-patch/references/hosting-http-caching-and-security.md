@@ -1,134 +1,99 @@
 # Hosting, HTTP, Caching, and Security
 
-## Contents
+Use this reference for browser HTTP behavior, server diagnostics, development hosts, request
+parsing, pooled memory, and HTTP.sys request queues. These changes are from batch `10.0`.
 
-- [Development hosts and certificates](#development-hosts-and-certificates)
-- [Cross-origin CSRF protection](#cross-origin-csrf-protection)
-- [Compression and cache variance](#compression-and-cache-variance)
-- [Dynamic output-cache policies](#dynamic-output-cache-policies)
-- [Kestrel protocol behavior](#kestrel-protocol-behavior)
-- [TLS handshake hooks](#tls-handshake-hooks)
-- [HTTP.sys queue security](#httpsys-queue-security)
-- [Evicting memory pools](#evicting-memory-pools)
+## Streaming `HttpClient` responses in Blazor WebAssembly
 
-## Development hosts and certificates
+Response streaming is enabled by default. `ReadAsStreamAsync` returns a
+`BrowserHttpReadStream`, not a buffered `MemoryStream`, and the browser stream does not support
+synchronous reads. Keep downstream deserialization and copying asynchronous.
 
-### `.localhost` domains
+Disable streaming per request when a dependency requires a seekable or synchronously readable
+buffer:
 
-Kestrel treats configured `*.localhost` hosts as loopback bindings rather than
-wildcard external bindings (10.0). The `web` and `blazor` templates accept
-`--localhost-tld` to produce names such as `<project>.dev.localhost`.
+```csharp
+requestMessage.SetBrowserResponseStreamingEnabled(false);
+```
 
-The development certificate includes `*.dev.localhost`; trust it again after
-moving to that certificate:
+Temporary global opt-outs are available through either control:
+
+```xml
+<WasmEnableStreamingResponse>false</WasmEnableStreamingResponse>
+```
+
+```text
+DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0
+```
+
+Prefer the per-request control when only one integration is incompatible.
+
+## Exception-handler diagnostic suppression
+
+An exception handled by `IExceptionHandler` no longer emits logs and other diagnostics by
+default. Use `ExceptionHandlerOptions.SuppressDiagnosticsCallback` to decide which handled
+exceptions remain observable.
+
+```csharp
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    SuppressDiagnosticsCallback = context => false
+});
+```
+
+Returning `false` restores diagnostics for the matching exception. Align this callback with
+logging and tracing policy so expected business errors remain quiet while operational failures
+remain visible.
+
+## `.localhost` development domains
+
+Kestrel treats configured `*.localhost` hosts as loopback bindings rather than wildcard external
+bindings. The `web` and `blazor` templates accept `--localhost-tld` and can use a domain such as
+`<project>.dev.localhost`.
+
+The ASP.NET Core 10 development certificate covers `*.dev.localhost`, but the updated certificate
+must be trusted again:
 
 ```bash
 dotnet dev-certs https --trust
 ```
 
-### WSL trust
+Recheck launch URLs and callback URLs after changing the template domain.
 
-In WSL, `dotnet dev-certs https --trust` installs and trusts the development
-certificate in both WSL and Windows (11.0-preview.1).
+## `PipeReader`-based JSON deserialization
 
-## Cross-origin CSRF protection
-
-Applications created with `WebApplication.CreateBuilder` automatically reject
-unsafe cross-origin browser requests that consume forms
-(11.0-preview.6). The default trust decision uses `Sec-Fetch-Site` and
-`Origin`. Same-origin requests, user navigations, and non-browser clients
-remain allowed.
-
-Available opt-outs are:
-
-- `.DisableAntiforgery()` on an endpoint.
-- `[IgnoreAntiforgeryToken]`.
-- The application-wide `DisableCsrfProtection` setting.
-
-Implement `ICsrfProtection` to replace the trust policy. Blazor Web Apps no
-longer need to call `UseAntiforgery()`.
-
-## Compression and cache variance
-
-### Zstandard
-
-Response-compression and request-decompression middleware support zstd and
-enable it by default (11.0-preview.3). Quality ranges from 1 through 22;
-higher values improve compression at the cost of speed.
+MVC, Minimal APIs, and `ReadFromJsonAsync` deserialize JSON through `PipeReader`. A custom
+converter cannot assume `Utf8JsonReader.ValueSpan` contains the complete token because
+`HasValueSequence` may be `true`.
 
 ```csharp
-builder.Services.AddResponseCompression();
-builder.Services.AddRequestDecompression();
-builder.Services.Configure<ZstandardCompressionProviderOptions>(options =>
-{
-    options.CompressionOptions = new ZstandardCompressionOptions
-    {
-        Quality = 6
-    };
-});
+var span = reader.HasValueSequence
+    ? reader.ValueSequence.ToArray()
+    : reader.ValueSpan;
 ```
 
-### Shared-cache variants
+Audit converters that read raw token bytes, especially converters tested only with small,
+single-segment payloads. The following AppContext switch temporarily restores stream-based
+parsing during migration:
 
-When response compression is enabled, the middleware emits
-`Vary: Accept-Encoding` even for responses it does not compress
-(11.0-preview.4). Preserve that header so shared caches do not mix compressed
-and uncompressed representations.
-
-## Dynamic output-cache policies
-
-Custom `IOutputCachePolicyProvider` implementations can provide default base
-policies and resolve named policies dynamically, including policies from
-tenant-specific or external configuration (11.0-preview.1).
-
-```csharp
-public interface IOutputCachePolicyProvider
-{
-    IReadOnlyList<IOutputCachePolicy> GetBasePolicies();
-    ValueTask<IOutputCachePolicy?> GetPolicyAsync(string policyName);
-}
+```text
+Microsoft.AspNetCore.UseStreamBasedJsonParsing
 ```
 
-## Kestrel protocol behavior
+Set it to `true`; do not treat the switch as a substitute for sequence-safe converter code.
 
-### Encoded slashes
+## Evicting memory pools from dependency injection
 
-For absolute-form HTTP/1.1 request targets, Kestrel preserves `%2F` in the path
-as it does for origin-form targets (11.0-preview.4). For example,
-`GET http://host/a%2Fb` resolves to `/a%2Fb`, not `/a/b`. Update routing or
-middleware that relied on decoding the encoded segment.
+ASP.NET Core registers `IMemoryPoolFactory<byte>`. Its `Create` method returns memory pools that
+automatically evict idle blocks. Resolve the factory when framework-aligned eviction is desired.
 
-### Trailer header timeout
+A custom `IMemoryPoolFactory<byte>` registration does not gain idle-block eviction merely by
+implementing the interface. Its implementation must supply equivalent eviction behavior.
 
-`KestrelServerLimits.RequestHeadersTimeout` applies to incomplete, fragmented
-HTTP/2 and HTTP/3 trailer header blocks (11.0-preview.5). Do not add a separate
-unbounded trailer path that defeats this connection-lifetime protection.
+## HTTP.sys request-queue security descriptors
 
-## TLS handshake hooks
-
-After connection middleware continues from a failed TLS handshake,
-`ITlsHandshakeFeature.Exception` exposes the original exception
-(11.0-preview.4).
-
-`HttpsConnectionAdapterOptions.TlsClientHelloBytesCallback` is obsolete.
-Register `UseTlsClientHelloListener` before `UseHttps`:
-
-```csharp
-listenOptions.UseTlsClientHelloListener(
-    (connection, clientHelloBytes) => { });
-listenOptions.UseHttps();
-```
-
-## HTTP.sys queue security
-
-Set `HttpSysOptions.RequestQueueSecurityDescriptor` to a
-`GenericSecurityDescriptor` to grant or deny request-queue access for users
-and groups (10.0). It applies only when HTTP.sys creates a new request queue;
-it cannot change an existing queue.
-
-## Evicting memory pools
-
-ASP.NET Core registers an `IMemoryPoolFactory<byte>` whose `Create` method
-returns pools with automatic eviction of idle blocks (10.0). A custom
-registered factory does not inherit eviction behavior; it must implement that
-behavior itself.
+Set `HttpSysOptions.RequestQueueSecurityDescriptor` to a `GenericSecurityDescriptor` to grant or
+deny request-queue access for users and groups. The descriptor is applied only when HTTP.sys
+creates a new request queue; it cannot modify an existing queue. Verify queue lifecycle before
+relying on an ACL change, and recreate the queue through an appropriate operational procedure
+when a changed descriptor must take effect.

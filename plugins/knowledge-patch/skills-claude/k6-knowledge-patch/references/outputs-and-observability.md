@@ -1,43 +1,23 @@
 # Outputs and Observability
 
-## End-of-test summary contracts
-
-The redesigned human summary in `1.0.0-rc1` defaults to `compact`; `full`
-includes detailed metrics and per-group and per-scenario results, while
-`legacy` reproduced the older display. That release did not change the
-`handleSummary` input or `--summary-export` data structure.
-
-Threshold values became visible in the end-of-test output in `1.0.0-rc2` even
-when they are absent from `summaryTrendStats`.
-
-`1.5.0` introduced an opt-in structured summary shared by
-`--summary-export` and `handleSummary()`:
-
-```sh
-k6 run script.js --new-machine-readable-summary \
-  --summary-export=summary.json
-```
-
-Enable it with `--new-machine-readable-summary` or
-`K6_NEW_MACHINE_READABLE_SUMMARY`. It was announced as the intended v2
-default, but consumers should inspect the actual selected format rather than
-assuming the transition occurred.
-
 ## OpenTelemetry output
 
-The OpenTelemetry output stabilized as `opentelemetry` in `1.4.0`:
+### Use the stable output name (since 1.4.0)
+
+Select the stable OpenTelemetry output as `opentelemetry`. The old
+`experimental-opentelemetry` name remains accepted but is deprecated.
+`K6_OTEL_EXPORTER_TYPE` is also deprecated; use
+`K6_OTEL_EXPORTER_PROTOCOL`.
 
 ```sh
 k6 run --out opentelemetry script.js
 ```
 
-The old `experimental-opentelemetry` alias still works but is deprecated.
-`K6_OTEL_EXPORTER_TYPE` is also deprecated; use
-`K6_OTEL_EXPORTER_PROTOCOL`.
+### Configure HTTP Basic Auth (since 2.1.0)
 
-The HTTP exporter gained Basic Auth in `2.1.0`. Configure credentials with
-`K6_OTEL_HTTP_EXPORTER_USERNAME` and `K6_OTEL_HTTP_EXPORTER_PASSWORD`, or with
-the `username` and `password` output-config keys:
+The OpenTelemetry HTTP exporter accepts Basic Auth credentials through
+`K6_OTEL_HTTP_EXPORTER_USERNAME` and `K6_OTEL_HTTP_EXPORTER_PASSWORD`, or the
+`username` and `password` output-config keys.
 
 ```sh
 K6_OTEL_HTTP_EXPORTER_USERNAME=user \
@@ -45,14 +25,18 @@ K6_OTEL_HTTP_EXPORTER_PASSWORD=secret \
 k6 run --out opentelemetry script.js
 ```
 
-## TLS behavior for metric outputs
+## TLS for metric outputs
 
-The experimental OpenTelemetry and Prometheus outputs began defaulting to TLS
-1.3 in `1.2.0`. This was a minor-release breaking change because the outputs
-were experimental.
+### Account for the TLS 1.3 default (since 1.2.0)
 
-The experimental Prometheus remote-write output gained
-`K6_PROMETHEUS_RW_TLS_MIN_VERSION` in `1.6.0`; its default remains TLS 1.3:
+The experimental OpenTelemetry and Prometheus outputs changed their default to
+TLS 1.3. Because these outputs were experimental, this was a breaking change
+in a minor release.
+
+### Configure Prometheus remote-write minimum TLS (since 1.6.0)
+
+The experimental Prometheus remote-write output accepts
+`K6_PROMETHEUS_RW_TLS_MIN_VERSION`. Its default remains TLS 1.3.
 
 ```sh
 K6_PROMETHEUS_RW_TLS_MIN_VERSION=1.3 \
@@ -61,15 +45,61 @@ k6 run script.js -o experimental-prometheus-rw
 
 ## Rate metric representation
 
-Exported Rate metrics changed in `1.3.0` to one counter with a label whose
-values are `zero` and `nonzero`. Update queries and downstream consumers for
-the labeled shape.
+### Consume the labeled counter shape (since 1.3.0)
 
-`K6_OTEL_SINGLE_COUNTER_FOR_RATE`, which had allowed postponing this migration,
-was removed in `2.0.0`. Delete the variable from deployment configuration.
+An exported Rate is represented by one counter with a label whose values are
+`zero` and `nonzero`. Downstream queries and integrations must consume that
+labeled shape.
 
-## Cloud metric corrections
+### Remove the fallback switch in v2 (since 2.0.0)
 
-Cloud output v2 corrected Gauge extrema in `1.8.0`: `min` and `max` now occupy
-their proper fields. Queries no longer report the peak as the floor or the
-floor as the peak.
+`K6_OTEL_SINGLE_COUNTER_FOR_RATE` was removed. Delete it from environments and
+deployment configuration; the single-counter migration cannot be postponed.
+
+## Machine-readable summaries
+
+### Opt in to the structured shape (since 1.5.0)
+
+A structured summary representation is available to both `--summary-export`
+and `handleSummary()`. Opt in with `--new-machine-readable-summary` or
+`K6_NEW_MACHINE_READABLE_SUMMARY`. It was planned to become the default in v2.
+
+```sh
+k6 run script.js \
+  --new-machine-readable-summary \
+  --summary-export=summary.json
+```
+
+## Cloud output correctness
+
+### Read Gauge extrema from the corrected fields (since 1.8.0)
+
+Cloud output v2 reports Gauge `min` and `max` in their correct fields. Cloud
+test-result queries no longer return the peak as the floor or the floor as the
+peak.
+
+## Native histograms
+
+### Enable experimental Trend storage (since 2.1.0)
+
+The `native-histograms` feature makes Trend metrics use experimental native
+histograms. Enable it through feature flags and remember that enabled features
+are included in metric tags and preserved in archives and Cloud workers.
+
+```sh
+k6 run --features native-histograms script.js
+```
+
+Inspect the feature and its lifecycle with `k6 features` or
+`k6 features --json`.
+
+## Web dashboard
+
+### Use the built-in output (since 2.0.0)
+
+The web dashboard is built into the k6 binary. A separate xk6-dashboard
+extension is no longer required.
+
+```sh
+k6 run --out=web-dashboard script.js
+```

@@ -1,75 +1,89 @@
 # Commerce, Distribution, and Platform Services
 
-## StoreKit purchases and entitlements
+Use this reference for advertising attribution, StoreKit purchases and
+entitlements, background platform capabilities, managed distribution, and
+submission requirements.
 
-StoreKit supports Advanced Commerce API purchases and adds the purchase option `introductoryOfferEligibility(compactJWS:)`. The server-signed compact JWS can request an introductory offer for an otherwise ineligible customer or block redemption (18.4).
+## AdAttributionKit Re-engagement Conversions
 
-New metadata includes `appTransactionID`, `originalPlatform`, and `period` across `AppTransaction`, `Transaction`, `Transaction.Offer`, and `Product.SubscriptionInfo.RenewalInfo`. The type used by `originalPlatform` moved to `AppStore.Platform`; its `watchOS` case was removed and combined with `iOS` (18.4).
+On iOS 18.4 (`18.4`), AdAttributionKit supports multiple simultaneous
+re-engagement conversions. Read the conversion tag from the re-engagement URL
+parameter and pass it to `updateConversionValue` so the update reaches the
+intended conversion rather than another active conversion.
 
-`Transaction.currentEntitlement(for:)` is deprecated. Use `Transaction.currentEntitlements(for:)` so family-shared transactions are not omitted. `isEligibleForIntroOffer(for:)` returns `false` when no App Store account is signed in, so require a signed-in account before interpreting that result as actual ineligibility (18.4).
+An advertised app built by Xcode can create and interact with development
+postbacks without a publisher app and without having previously been distributed
+through the store. Enable and inspect them under **Settings > Developer > Ad
+Attribution Testing**.
 
-## Advertising attribution
+## Advanced Commerce and Introductory Offers
 
-AdAttributionKit supports overlapping re-engagement conversions. Extract the conversion tag from the re-engagement URL parameter and pass it to `updateConversionValue` so the intended conversion is updated (18.4).
+StoreKit in iOS 18.4 (`18.4`) adds purchase support for the Advanced Commerce
+API and the `introductoryOfferEligibility(compactJWS:)` purchase option. The
+server-signed compact JWS can request either of two outcomes:
 
-An advertised app built by Xcode can create and interact with development postbacks under Settings > Developer > Ad Attribution Testing without a publisher app or prior store distribution (18.4).
+- Apply an introductory offer even if StoreKit would otherwise consider the
+  customer ineligible.
+- Prevent introductory-offer redemption.
 
-Postbacks include a country code when crowd-anonymity thresholds are met (26.6-rc).
+Treat the JWS as server-issued purchase policy, not merely a local eligibility
+hint.
 
-## Distribution and extensions
+## StoreKit Transaction Metadata
 
-Broadcast Extensions have a higher per-process memory limit on iOS and iPadOS 18.5, allowing higher-quality capture and streaming when resources permit (18.5).
+The iOS 18.4 SDK (`18.4`) adds metadata named `appTransactionID`,
+`originalPlatform`, and `period` across `AppTransaction`, `Transaction`,
+`Transaction.Offer`, and `Product.SubscriptionInfo.RenewalInfo`.
 
-iOS and iPadOS 18.5 resolve an iOS 18-era failure that prevented some enterprise apps from launching. An affected device still requires all enterprise apps to be uninstalled and reinstalled (18.5).
+The platform type used by `originalPlatform` is now `AppStore.Platform`. Its
+former `watchOS` case was removed and folded into `iOS`; do not write exhaustive
+logic that still expects a distinct watchOS case.
 
-An in-development browser tested on a device that is ineligible for alternate app distribution cannot install web-distributed apps. Installation begins but fails before completion (26.6-rc).
+## Entitlements and Signed-In Account State
 
-## Nearby Interaction and live activities
+In iOS 18.4 (`18.4`), `Transaction.currentEntitlement(for:)` is deprecated.
+Use `Transaction.currentEntitlements(for:)`; the singular API can omit
+family-shared transactions.
 
-An app with an active Live Activity can perform Ultra Wideband ranging through Nearby Interaction while in the background (18.4).
+`isEligibleForIntroOffer(for:)` returns `false` when no App Store account is
+signed in. Establish signed-in account state before treating `false` as the
+customer's actual eligibility.
 
-## Authentication services
+## Background Nearby Interaction
 
-`ASAuthorizationControllerRequestOptions.preferImmediatelyAvailableCredentials` applies to passkey registration. It presents UI only if the device can immediately create a passkey; otherwise it presents no UI (26.6-rc).
+An app with an active Live Activity can perform Ultra Wideband ranging through
+Nearby Interaction while running in the background on iOS 18.4 (`18.4`). Tie
+the background ranging experience to the Live Activity lifecycle.
 
-## App Intents and AssistantSchemas
+## Broadcast Extension Memory
 
-The `notes.createNote` and `notes.updateNote` schemas accept `AttributedString` for their `name` parameter. `calendar.deleteEvents` is renamed to singular `calendar.deleteEvent` (27.0-beta4).
+iOS and iPadOS 18.5 (`18.5`) raise the per-process memory limit for Broadcast
+Extensions. Use the additional headroom for higher-quality capture and streaming
+only when system resources permit; it is not an unconditional memory guarantee.
 
-Email code adopting the `createDraft`, `updateDraft`, `replyMail`, `forwardMail`, `message`, or `draft` AssistantSchemas can fail to compile because their parameter types changed; update call sites against the new signatures (26.6-rc).
+## Enterprise App Launch Recovery
 
-In the current beta, schema defaults might not apply to Set-valued parameters. Supply an explicit `@Parameter` default, such as an empty set. Non-SF Symbol entity images might not appear in Siri, and workout-audio entities registered through `RelevantEntities` might not appear in the Fitness media picker (27.0-beta4).
+iOS and iPadOS 18.5 (`18.5`) fix an iOS 18-era failure that could prevent some
+enterprise apps from launching. A device that already encountered the failure
+must uninstall and reinstall all enterprise apps to recover; updating in place
+is insufficient.
 
-A shortcut whose app intent uses `Duration` or `LPLinkMetadata` can fail to edit through the “Describe a change” feature in the current beta (27.0-beta4).
+## Push to Talk Migration
 
-## Health, journaling, and intelligence APIs
+Apps built with the iOS 26 SDK (`26.0`) can no longer use the legacy
+`com.apple.developer.pushkit.unrestricted-voip.ptt` entitlement. Migrate Push to
+Talk behavior to the Push to Talk framework introduced in iOS 16.
 
-`HKWorkoutSession` and `HKLiveWorkoutBuilder` are available on iOS and iPadOS for workout tracking (26.6-rc).
+## App Store SDK Requirement
 
-Journaling Suggestions created on iPhone can sync securely through iCloud to adopting iPad apps. The API adds smart notifications based on routine and location, scene classifications, holiday and celebration inferences, and new pattern-based groupings (26.6-rc).
+The App Store submission rule tracked as `app-store-sdk-requirements` has applied
+since April 28, 2026. Uploads to App Store Connect must be built with Xcode 26 or
+later and use a version 26 SDK for the submitted platform:
 
-The `.contentTagging` use case accepts non-English prompts and emits tags in the prompt language. Query the exact supported set from `SystemLanguageModel(useCase: .contentTagging).supportedLanguages` (26.6-rc).
+- iOS 26
+- iPadOS 26
+- tvOS 26
+- visionOS 26
+- watchOS 26
 
-## Graphics, charts, and media limitations
-
-`Chart3D` uses RealityKit to visualize data and mathematical surfaces in 3D on iOS 26, macOS 26, and visionOS 26 (26.6-rc).
-
-The `realitykit_hair_surfaceshader` ShaderGraph node does not support `DiffuseLightProbeGroupComponent`; affected hair materials might not respond to diffuse light-probe-group lighting in the current beta (27.0-beta4).
-
-SensorKit's PPG reader can return no samples in the current beta (27.0-beta4).
-
-USDKit cannot currently read or modify some USD attribute types, and it cannot author array, vector, matrix, or quaternion values (27.0-beta4).
-
-When using Metal 4 command encoders, add render and compute pipelines that support indirect command buffers to the residency set even though the driver does not currently enforce the requirement (26.0).
-
-## Metrics, alerts, and content delivery
-
-For new adoption, use `MetricManager` rather than the original `MXMetricManager`, `MXMetricManagerSubscriber`, `MXMetricPayload`, and `MXDiagnosticPayload` APIs (27.0-beta4).
-
-On Demand Resources and `NSBundleResourceRequest` are deprecated. Move downloadable app content to Background Assets (27.0-beta4).
-
-In the current beta, critical alerts are enabled automatically for every app that requests notification permission. A user who does not want them must disable Critical Alerts for the app in notification settings (27.0-beta4).
-
-## Legacy Push to Talk
-
-Apps built with the iOS 26 SDK or later cannot use `com.apple.developer.pushkit.unrestricted-voip.ptt`. Migrate to the Push to Talk framework introduced in iOS 16 (26.0).
+The archive's build tool and SDK must satisfy this upload gate.

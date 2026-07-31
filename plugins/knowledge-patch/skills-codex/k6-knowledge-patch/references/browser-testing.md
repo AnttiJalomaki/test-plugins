@@ -1,78 +1,50 @@
-# Browser testing
+# Browser Testing
 
-## Network observation and lifecycle
+## Module stability and scenario setup
 
-Since 1.0.0-rc1, pages emit `request` and `response`:
-
-```javascript
-page.on('request', request => console.log(request.url()));
-page.on('response', response => console.log(response.url()));
-```
-
-Since 1.6.0, `requestfailed` reports unsuccessful requests and
-`requestfinished` reports completed requests. Since 1.7.0, `response` and
-`requestfinished` handlers receive every request in a redirect chain.
-
-Since 2.1.0, browser API failures delivered to Grafana Cloud Logs carry
-`module=browser`, enabling browser-only filters.
-
-## Waiting without races
-
-`page.waitForResponse()` accepts an exact URL or regular expression since
-1.3.0. `page.waitForRequest()` supports the same matcher forms since 1.4.0.
-Start either wait together with the triggering action:
+`k6/browser` is a stable, production-ready module (1.0.0). Configure a browser
+scenario and create pages through the module:
 
 ```javascript
-const [response] = await Promise.all([
-  page.waitForResponse(/\/api\/.*\.json$/),
-  page.click('#load-data'),
-]);
+import { browser } from 'k6/browser';
+
+export const options = {
+  scenarios: {
+    ui: {
+      executor: 'shared-iterations',
+      options: { browser: { type: 'chromium' } },
+    },
+  },
+};
 ```
 
-Since 1.5.0, `page.waitForEvent()` accepts either a predicate directly or an
-options object with a predicate and timeout. Arm the promise before the action:
+## Selecting locator matches
+
+### Count without visibility waiting
+
+`Locator.count()` returns the number of matching elements immediately; it does
+not wait for them to become visible (since 1.1.0):
 
 ```javascript
-const responsePromise = page.waitForEvent('response', {
-  predicate: response => response.url().includes('/api/data'),
-  timeout: 5000,
-});
-await page.click('#fetch-data');
-const response = await responsePromise;
+const inputs = page.locator('input');
+expect(await inputs.count()).toEqual(3);
 ```
 
-## Request interception
+### Select by position
 
-Since 1.2.0, `page.route()` intercepts a request before sending it. A handler
-can abort it, continue it with changes, or fulfill it with a mock:
+Use `first()`, `nth(index)`, and `last()` to select one result from a locator
+that matches multiple elements (since 1.1.0):
 
 ```javascript
-await page.route('**/api/users', route => route.fulfill({
-  status: 200,
-  contentType: 'application/json',
-  body: JSON.stringify([{ id: 1, name: 'Mock User' }]),
-}));
+const paragraphs = page.locator('p');
+await expect(await paragraphs.first()).toContainText('QuickPizza');
+await expect(await paragraphs.nth(4)).toContainText('QuickPizza Labs.');
+await expect(await paragraphs.last()).toContainText('Contribute');
 ```
 
-Since 1.4.0, `page.unroute(url)` removes routes registered with exactly the
-same matcher and `page.unrouteAll()` removes all routes:
+### Filter by text and retry hidden targets
 
-```javascript
-const matcher = /.*\/api\/pizza/;
-await page.route(matcher, route => route.continue());
-await page.unroute(matcher);
-```
-
-## Locator sets and filtering
-
-Since 1.1.0:
-
-- `Locator.count()` returns the current match count without waiting for
-  visibility.
-- `first()`, `nth(index)`, and `last()` select positions from a multi-match
-  locator.
-
-Since 1.3.0, `locator.filter()` accepts `hasText` and `hasNotText`. The same
+`locator.filter()` accepts `hasText` and `hasNotText` (since 1.3.0). The same
 options work when creating locators from a page, frame, locator, or
 `FrameLocator`:
 
@@ -81,60 +53,156 @@ const product = page.locator('li').filter({ hasText: 'Product 2' });
 const others = page.locator('li').filter({ hasNotText: /Product 2/ });
 ```
 
-Locator actionability APIs also retry when their target is temporarily hidden
-since 1.3.0. Browser `QueryAll` results are in DOM order since 1.4.0.
+Locator actionability APIs retry when the target is not visible (1.3.0), so a
+temporarily hidden element can become actionable instead of failing
+immediately.
 
-## Frames
+### Select options by label
 
-Since 1.3.0, `locator.contentFrame()` returns a `FrameLocator` while retaining
-locator auto-retry:
+`locator.selectOption()` accepts string labels directly (since 1.2.0). Pass the
+visible label where label-based selection is more stable than an option value.
+
+### Evaluate in the page context
+
+`locator.evaluate()` executes with the matched element and an optional
+argument; `evaluateHandle()` returns a `JSHandle` (since 1.4.0):
 
 ```javascript
-const frame = page.locator('iframe[name="payment"]').contentFrame();
-await frame.locator('input[name="card-number"]').fill('4111111111111111');
+const text = await page.locator('#pizza-name')
+  .evaluate((element, suffix) => element.textContent + suffix, '!');
+const handle = await page.locator('#pizza-name')
+  .evaluateHandle(element => element);
 ```
 
-Since 1.6.0, `frameLocator()` is available on pages, frames, locators, and
-frame locators. Chain it for nested iframes:
+Browser `QueryAll` methods return results in DOM order (1.4.0). Code selecting
+from those arrays can rely on document ordering.
+
+## Frames and nested documents
+
+### Convert an iframe locator
+
+`locator.contentFrame()` returns a `FrameLocator` while retaining locator
+auto-retry behavior (since 1.3.0):
+
+```javascript
+const payment = page.locator('iframe[name="payment-form"]').contentFrame();
+await payment.locator('input[name="card-number"]').fill('4111111111111111');
+await payment.locator('button[type="submit"]').click();
+```
+
+### Chain frame locators
+
+`frameLocator()` is available on pages, frames, locators, and frame locators
+(since 1.6.0). Chain it for nested iframes without manually switching context:
 
 ```javascript
 const frame = page.frameLocator('#payment-iframe');
+await frame.locator('#card-number').fill('4242424242424242');
 await frame.frameLocator('#nested-frame').locator('#submit').click();
 ```
 
-## Input, selection, and evaluation
+## Request interception and routing
 
-- Since 1.2.0, `locator.selectOption()` accepts string labels.
-- Since 1.4.0, `locator.evaluate()` runs page-context code with the element and
-  an optional argument; `evaluateHandle()` returns a `JSHandle`.
-- Since 1.5.0, `locator.pressSequentially()` enters text character by
-  character and fires `keydown`, `keypress`, and `keyup` for each one. Its
-  `delay` supports autocomplete and per-character validation. `fill()` is
-  simple filling; `type()` is gradual input without the full event sequence.
+`page.route()` intercepts requests before they are sent. Its handler can abort,
+continue with changes, or fulfill with a mock response (since 1.2.0):
 
 ```javascript
-await page.locator('#search').pressSequentially('test query', { delay: 100 });
+await page.route('**/api/users', async route => {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 1, name: 'Mock User' }]),
+  });
+});
 ```
 
-## Browser metrics and redirects
-
-In 1.3.0, First Input Delay was scheduled to warn in the 1.4.x line and be
-removed in 2.0.0. Replace `browser_web_vital_fid` thresholds and integrations
-with Interaction to Next Paint:
+Remove one registration with `page.unroute(url)` using exactly the same URL
+matcher used for `route()`; use `page.unrouteAll()` to remove every route
+(since 1.4.0):
 
 ```javascript
-export const options = {
-  thresholds: { browser_web_vital_inp: ['p(95)<200'] },
-};
+const matcher = /.*\/api\/pizza/;
+await page.route(matcher, route => route.continue());
+await page.unroute(matcher);
 ```
 
-Since 1.8.0, redirects emit request metrics only for the applicable redirect,
-not duplicate samples for every earlier redirect in the chain.
+## Waiting without races
 
-## Per-context proxy
+Start a wait before, or concurrently with, the action that emits the matching
+traffic.
 
-Since 2.1.0, `browser.newContext()` accepts a `proxy`. `proxy.server` is
-required; `proxy.bypass` excludes destinations:
+### Wait for a response
+
+`page.waitForResponse()` accepts an exact URL string or a regular expression
+(since 1.3.0):
+
+```javascript
+await Promise.all([
+  page.waitForResponse(/\/api\/.*\.json$/),
+  page.click('button[data-testid="load-data"]'),
+]);
+```
+
+### Wait for a request
+
+`page.waitForRequest()` accepts an exact URL string or regular expression
+(since 1.4.0):
+
+```javascript
+const [request] = await Promise.all([
+  page.waitForRequest(/\/api\/.*\.json$/),
+  page.click('button[data-testid="load-data"]'),
+]);
+```
+
+### Wait for a named page event
+
+`page.waitForEvent()` accepts either a predicate directly or an options object
+with `predicate` and `timeout` (since 1.5.0):
+
+```javascript
+const responsePromise = page.waitForEvent('response', {
+  predicate: response => response.url().includes('/api/data'),
+  timeout: 5000,
+});
+await page.click('button#fetch-data');
+const response = await responsePromise;
+```
+
+## Observing request lifecycles
+
+Listen for unsuccessful and completed requests with `requestfailed` and
+`requestfinished` (since 1.6.0):
+
+```javascript
+page.on('requestfailed', request => console.log('failed', request.url()));
+page.on('requestfinished', request => console.log('finished', request.url()));
+```
+
+From 1.7.0, `response` and `requestfinished` handlers cover every request in a
+redirect chain. From 1.8.0, redirects emit request metrics only for the
+applicable redirect rather than re-emitting samples for all earlier redirects.
+When upgrading, remove workarounds for missing redirect events or duplicated
+redirect metrics.
+
+## Typing-sensitive controls
+
+`locator.pressSequentially()` types one character at a time and fires
+`keydown`, `keypress`, and `keyup` for every character (since 1.5.0):
+
+```javascript
+const input = page.locator('#search');
+await input.pressSequentially('test query', { delay: 100 });
+```
+
+Use it for autocomplete or per-character validation. `fill()` performs simple
+form filling, while `type()` types gradually without the full per-character
+keyboard-event sequence.
+
+## Per-context proxies
+
+`browser.newContext()` accepts a `proxy` option (since 2.1.0). `proxy.server`
+is required, and `proxy.bypass` excludes destinations:
 
 ```javascript
 const context = await browser.newContext({
@@ -144,3 +212,19 @@ const context = await browser.newContext({
   },
 });
 ```
+
+## Browser measurements and Cloud diagnostics
+
+First Input Delay is being removed. Replace `browser_web_vital_fid`
+thresholds and integrations with Interaction to Next Paint (1.3.0):
+
+```javascript
+export const options = {
+  thresholds: {
+    browser_web_vital_inp: ['p(95)<200'],
+  },
+};
+```
+
+Browser API failures in Grafana Cloud Logs carry `module=browser` (2.1.0), so
+filter on that field to isolate browser failures from other log sources.

@@ -2,7 +2,7 @@
   "patch": "ios-sdk-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T08:15:40Z",
+  "built_at": "2026-07-31T10:35:03Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -22,20 +22,20 @@
       "codex": "gaps",
       "build": "included"
     },
-    "26.6-rc": {
-      "kind": "versioned",
-      "codex": "gaps",
-      "build": "included"
-    },
-    "27.0-beta4": {
-      "kind": "versioned",
-      "codex": "gaps",
-      "build": "included"
-    },
     "app-store-sdk-requirements": {
       "kind": "unversioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "26.6-rc": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "retired"
+    },
+    "27.0-beta4": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "retired"
     }
   },
   "retire_candidates": []

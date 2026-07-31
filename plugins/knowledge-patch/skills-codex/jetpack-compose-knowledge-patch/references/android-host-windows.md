@@ -1,98 +1,116 @@
 # Android Hosts, Windows, and Insets
 
-## Observe layout and window size
+## Host services and common APIs
 
-`Modifier.onLayoutRectChanged` in 1.8.0 reports root-, window-, or
-screen-relative bounds with debounce and throttle controls. Prefer it over
-`onGloballyPositioned` when repeated rectangle observation needs lower
-overhead.
+### Expanded haptic feedback (1.8.0)
 
-Read the current content-container size through
-`LocalWindowInfo.current.containerSize`. Compose lint warns against deriving
-window size from configuration screen dimensions.
+`LocalHapticFeedback` supplies a default Android implementation when the device
+vibrator reports support. Available feedback types include `Confirm`,
+`ContextClick`, `GestureEnd`, `GestureThresholdActivate`, `Reject`,
+`SegmentFrequentTick`, `SegmentTick`, `ToggleOn`, `ToggleOff`, and `VirtualKey`.
 
-`WindowInfo` exposes window size in dp as of 1.10.0.
+### Common clipboard and tooltip APIs (1.8.0)
 
-## Recalculate descendant insets
+Foundation and UI expose a common `Clipboard` interface through a composition
+local. `BasicTooltip` is also available from common Foundation code, so shared
+code need not reach through an Android-only clipboard or tooltip facade.
 
-`Modifier.recalculateWindowInsets()` in 1.8.0 lets descendants use
-`insetsPadding` when an ancestor aligned them without calling
-`consumeWindowInsets()`.
+### Configuration-aware resources (1.9.0)
 
-## ComposeView inset pass-through
+Read Android resources that must change with configuration from
+`LocalResources.current`. Reading the local invalidates composition when the
+configuration changes, so later lookups see the new resource configuration.
 
-`AbstractComposeView.consumeWindowInsets` defaults to `false` in 1.9.0. The
-view automatically adjusts insets for its own size and position, allowing
-child views to continue receiving updates. Set the property to `true` only to
-retain the older consuming behavior.
+### Host-default composition locals (1.11.0)
 
-## Window-inset rulers
-
-The common `WindowInsetsRulers` API in 1.9.0 replaces `InsetsRulers`:
-
-- Merge rulers with `innermostOf()`.
-- Replace `rulersIgnoringVisibility` with `maximum`.
-- Use `WindowInsetsAnimation` and `getAnimation()` for animation data.
-
-In 1.11.0, the global `ComposeUiFlags.areWindowInsetsRulersEnabled` flag is
-replaced by the per-view `ComposeView.disableWindowInsetsRulers()` API. Apply
-the opt-out to the specific host view rather than setting a process-wide flag.
-
-## Display cutout geometry
-
-`WindowInsets.cutoutPath` in 1.10.0 exposes the display-cutout outline when a
-layout needs the actual shape rather than rectangular inset distances.
-
-Material 2 and Material 3 inset-aware components include `displayCutout` in
-their default insets as of material3-1.4.0. Override the relevant component's
-inset parameter if content should intentionally extend through the cutout
-region.
-
-## Configuration-aware Android resources
-
-Use `LocalResources.current` for Android resources whose value must update
-when configuration changes (since 1.9.0). Reading it invalidates composition,
-so later resource lookups observe the new configuration.
-
-## Host-default composition locals
-
-`compositionLocalWithHostDefaultOf` in 1.11.0 defines a composition local whose
-fallback can come from the host environment, such as a tag on an Android
-`View`. `HostDefaultKey` is an interface. Custom hosts can provide platform
-values through the public `HostDefaultProvider` and
+`compositionLocalWithHostDefaultOf` defines a local whose fallback comes from
+the host, such as an Android `View` tag. `HostDefaultKey` is an interface.
+Custom hosts can supply values through the public `HostDefaultProvider` and
 `LocalHostDefaultProvider` APIs.
 
-## Compose before view attachment
+## Compose views and attachment
 
-`ComposeViewContext` allows a `ComposeView` to compose before it is attached
-to a view hierarchy (since 1.11.0). Start it explicitly:
+### Window-size and layout-rectangle observation (1.8.0)
+
+`Modifier.onLayoutRectChanged` observes bounds relative to the root, window, or
+screen, with debounce and throttle controls. It is lower overhead than
+`onGloballyPositioned` for this job. Read the current content-container size from
+`LocalWindowInfo.current.containerSize`; lint warns against deriving window
+size from configuration screen dimensions.
+
+### Inset pass-through for `AbstractComposeView` (1.9.0)
+
+`AbstractComposeView.consumeWindowInsets` defaults to `false`. Insets are
+adjusted for the Compose view's size and position and passed to child views.
+Set the property to `true` only to preserve the older consuming behavior.
+
+### Window geometry (1.10.0)
+
+`WindowInfo` exposes the window size in dp. `WindowInsets.cutoutPath` exposes
+the actual display-cutout outline for layouts that need more than edge inset
+distances.
+
+### Unattached Android composition (1.11.0)
+
+`ComposeViewContext` lets a `ComposeView` compose before attachment to a view
+hierarchy. Start it explicitly:
 
 ```kotlin
 composeView.createComposition(composeViewContext)
 ```
 
-The declaring API is `AbstractComposeView.createComposition(composeViewContext)`.
+The method is declared on `AbstractComposeView`.
 
-## Dialog and popup window configuration
+## Insets and rulers
 
-Android Compose dialogs in 1.11.0 accept a custom `windowToken`. Popups accept
-custom `windowToken` and `windowType` values. `DialogProperties.windowType`
-also allows a service to display a Compose dialog in an overlay window. Use
-tokens and types that the hosting Android context is authorized to attach.
+### Recalculate descendant insets (1.8.0)
 
-## Pointer-driven host focus
+Apply `Modifier.recalculateWindowInsets()` when an ancestor changes alignment
+without calling `consumeWindowInsets()` and descendants use `insetsPadding`.
+This recalculates the values at the new location.
 
-Mouse or touchpad presses outside the focused node clear focus by default in
-1.10.0. Set
-`AbstractComposeView.isClearFocusOnPointerDownEnabled = false` on a host that
-must preserve the prior behavior.
+### Common rulers and inset animations (1.9.0)
+
+Use common `WindowInsetsRulers` instead of `InsetsRulers`. Combine rulers with
+`innermostOf()`. The former `rulersIgnoringVisibility` name is now `maximum`.
+Read animation information through `WindowInsetsAnimation` and
+`getAnimation()`.
+
+### Per-view ruler control (1.11.0)
+
+The global `ComposeUiFlags.areWindowInsetsRulersEnabled` flag was replaced by
+`ComposeView.disableWindowInsetsRulers()`. Disable rulers on the specific view
+whose host integration requires it.
+
+## Windows, dialogs, and popups
+
+### Dialog and popup window control (1.11.0)
+
+Android Compose dialogs accept a custom `windowToken`. Popups accept custom
+`windowToken` and `windowType` values. `DialogProperties.windowType` allows a
+service to display a Compose dialog in an overlay window.
 
 ## Android graphics and constants
 
-The `androidx.compose.ui.graphics.NativePaint` typealias is deprecated in
-1.11.0. Use `android.graphics.Paint` directly. Replace
-`Paint.asFrameworkPaint()` with the `Paint.nativePaint` extension so common
-code does not publicly expose an Android type through a typealias.
+### Parsing and UI-mode constants (1.10.0)
 
-The Android-derived `UiModes` constants object is renamed to `AndroidUiModes`
-in 1.10.0.
+`TextDirection.valueOf`, `TextAlign.valueOf`, `Hyphens.valueOf`, and
+`FontSynthesis.valueOf` throw `IllegalArgumentException` for unknown values;
+validate external strings or handle that exception. The Android-derived
+`UiModes` object is renamed to `AndroidUiModes`.
+
+### Paint interop (1.11.0)
+
+The `androidx.compose.ui.graphics.NativePaint` typealias is deprecated. Use
+`android.graphics.Paint` directly on Android. Replace `Paint.asFrameworkPaint()`
+with `Paint.nativePaint`, avoiding an Android platform typealias in common code.
+
+## Host integration checklist
+
+- Test inset propagation when Compose and Views are nested in either direction.
+- Distinguish content-container size, full window size, and screen coordinates.
+- Re-test cutouts and safe areas after edge-to-edge layout changes.
+- Scope ruler disabling to the affected `ComposeView`.
+- Verify overlay window tokens, types, and permissions on the actual host.
+- Use configuration-aware resource reads for locale, density, theme, and other
+  changing resource qualifiers.

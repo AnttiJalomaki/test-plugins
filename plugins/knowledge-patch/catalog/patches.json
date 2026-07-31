@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-07-30T11:33:32Z",
+  "generated_at": "2026-07-31T12:55:14Z",
   "patches": [
     {
       "id": "agopengps-knowledge-patch",
@@ -35,10 +35,10 @@
         "claude": "sha256:d7973551ad10ba8b9ae50dc16b71cbad1a07974f8f169c1cb6fdddd2515956d9",
         "codex": "sha256:1766ab5421f9e28393e09df617cf77192cc4410c47f59335b66641f666f99b16"
       },
-      "generated_at": "2026-07-29T01:54:55Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T01:54:55Z",
-        "codex": "2026-07-29T01:54:55Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/agopengps-knowledge-patch/coverage.json",
@@ -75,10 +75,10 @@
         "claude": "sha256:bfb757016ba1b5d4f1d71b9fa6022941563c35bd310a5941a68d98aede139c48",
         "codex": "sha256:497796861bc563d5985c89df6b3c393e76e19182a44f395b9e875246dd7bb3f5"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/airflow-knowledge-patch/coverage.json",
@@ -112,10 +112,10 @@
         "claude": "sha256:0527c11bdda095865af2f42f9c1aca82a5277aca9e0f0be4cdffb61198f5b662",
         "codex": "sha256:eb6a7b1924cfb15eb8878b71df1c07b81a44968681a4f7999fb92a43aaeb18dd"
       },
-      "generated_at": "2026-07-29T01:54:55Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T01:54:55Z",
-        "codex": "2026-07-29T01:54:55Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/alembic-knowledge-patch/coverage.json",
@@ -152,10 +152,10 @@
         "claude": "sha256:46a84c7c6fbbd51ec9af840205009da4953e9f2b74a863bd25364f54a990d71d",
         "codex": "sha256:d7ecdf51bc93b73574b1631d329088674c06eea178bb19c3c4483be64893e451"
       },
-      "generated_at": "2026-07-29T01:54:55Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T01:54:55Z",
-        "codex": "2026-07-29T01:54:55Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/android-sdk-knowledge-patch/coverage.json",
@@ -189,10 +189,10 @@
         "claude": "sha256:ce44a75f5d12a5ee9cff8193c8a94c4b3c4727ffd331af66efaf95734b87ee9c",
         "codex": "sha256:ce44a75f5d12a5ee9cff8193c8a94c4b3c4727ffd331af66efaf95734b87ee9c"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/angular-knowledge-patch/coverage.json",
@@ -226,10 +226,10 @@
         "claude": "sha256:4d72b63f7b3d1e493f7bdc57e048d4cba3ee1394cb810329bf748f5c665574f0",
         "codex": "sha256:4d72b63f7b3d1e493f7bdc57e048d4cba3ee1394cb810329bf748f5c665574f0"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ansible-knowledge-patch/coverage.json",
@@ -271,10 +271,10 @@
         "claude": "sha256:63cbd8140f82f133c0f14c28fc236f4f65005a942dd61a9c563a05de55a79ebb",
         "codex": "sha256:843fe6d70fd577c389d07854cbe7c96a08823f740ba80d27e62b6f7fcdd12d39"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/anthropic-api-knowledge-patch/coverage.json",
@@ -313,10 +313,10 @@
         "claude": "sha256:0f75d2509f9575a0d3182474738bf54f8d2faf6ae19d5cb74410d60f71f4137b",
         "codex": "sha256:fa6f50b8a9853defc2f24b4acc869c5129a3ecf8a804e40fb32d7765d0fa2d3c"
       },
-      "generated_at": "2026-07-29T01:54:55Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T01:54:55Z",
-        "codex": "2026-07-29T01:54:55Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/apache-flink-knowledge-patch/coverage.json",
@@ -354,10 +354,10 @@
         "claude": "sha256:f9c2feb55fb0295dad9295ea6b1b33ab9cc2aaa095c9acaa08848a562cf6112b",
         "codex": "sha256:4711ed4a53f0462ee43f2f549249f668e9b791f1797ae3ddccc425a302b7803f"
       },
-      "generated_at": "2026-07-29T01:54:55Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T01:54:55Z",
-        "codex": "2026-07-29T01:54:55Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/apache-iceberg-knowledge-patch/coverage.json",
@@ -395,10 +395,10 @@
         "claude": "sha256:43fa21c746cf3f3adc88f82ac9b03135ccaeee88e2b360fbed43c5374325c7a2",
         "codex": "sha256:14c7c8938e81f5e3c2067249c40769ec9163ecdd51663ebb29099f675a7431c4"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/apache-kafka-knowledge-patch/coverage.json",
@@ -437,10 +437,10 @@
         "claude": "sha256:fb3f2241156cb62f6f3f059f31757b933d7286f5cdab300e634b37313a15be29",
         "codex": "sha256:ed8a506419aa27dd5e368174ef4b6bffb3e9451612171f25acc8eae276b36a68"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/apache-spark-knowledge-patch/coverage.json",
@@ -479,10 +479,10 @@
         "claude": "sha256:ab48b3482e9e08821173c6371806b0b7f935d2178b998ac1c74886edcfa5491e",
         "codex": "sha256:077bd617d564b08ecb16a8134dcf53517df1a6894cb329e9f419b0a80a20ffc1"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/apollo-graphql-knowledge-patch/coverage.json",
@@ -515,10 +515,10 @@
         "claude": "sha256:ae43edc06d74a9870779e4d88e5161dabe63709f92794296e6b7926c33ec16fd",
         "codex": "sha256:ae43edc06d74a9870779e4d88e5161dabe63709f92794296e6b7926c33ec16fd"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/arch-knowledge-patch/coverage.json",
@@ -551,10 +551,10 @@
         "claude": "sha256:93bda670ed4b4c04f1ea5e82999db9ce7d3f2a24ec80ec4dbc41dc2f154b8c62",
         "codex": "sha256:93bda670ed4b4c04f1ea5e82999db9ce7d3f2a24ec80ec4dbc41dc2f154b8c62"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/argo-cd-knowledge-patch/coverage.json",
@@ -568,8 +568,8 @@
       "short_label": "ASP.NET Core",
       "description": "ASP.NET Core",
       "coverage_kind": "versioned",
-      "covered_through": "11.0 Preview 6",
-      "coverage_label": "11.0 Preview 6",
+      "covered_through": "10.0",
+      "coverage_label": "10.0",
       "paths": {
         "claude": "skills-claude/aspnet-core-knowledge-patch",
         "codex": "skills-codex/aspnet-core-knowledge-patch"
@@ -590,13 +590,13 @@
         "csharp"
       ],
       "content_hashes": {
-        "claude": "sha256:b7a0b987781dcff9c07ebb27081d85d96f5ee850e7979c411f3ec9f6783cc688",
-        "codex": "sha256:967d47aaaa2d69eae32bb3da5365eb22d0d0fe59f7f81526a3d3e6604dd39571"
+        "claude": "sha256:7dcacc04ab93c8cc78b5a56946b7b79d5a60b35f8916572f8916a5a1466d4338",
+        "codex": "sha256:6a39f4f76421f87e6e6ccb0173cdfb446ed866393fc49b06f2db33d937c8cf6b"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T10:06:34Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T10:06:34Z",
+        "codex": "2026-07-31T09:56:05Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/aspnet-core-knowledge-patch/coverage.json",
@@ -631,10 +631,10 @@
         "claude": "sha256:b7c5304e9b66f14abfb9ea856b85e3e75603a3f65bfc7e31c204b839ed5c53e3",
         "codex": "sha256:b7c5304e9b66f14abfb9ea856b85e3e75603a3f65bfc7e31c204b839ed5c53e3"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/astro-knowledge-patch/coverage.json",
@@ -668,10 +668,10 @@
         "claude": "sha256:7e45bf8bbc615d9113e41a22d807a3ad52c23b8deb4611bbd7e0ffb43e6714f9",
         "codex": "sha256:7e45bf8bbc615d9113e41a22d807a3ad52c23b8deb4611bbd7e0ffb43e6714f9"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/authjs-knowledge-patch/coverage.json",
@@ -710,10 +710,10 @@
         "claude": "sha256:8d2bf37f9b77a5cf40a124254b90c0f1ec7f517dd7b86d48e776f29178e8cdcf",
         "codex": "sha256:8674925ab5c6c2a31d3de2e2d912d147bc9d6b5b61e1c6df55b6603bb0cf594d"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/aws-cdk-knowledge-patch/coverage.json",
@@ -754,10 +754,10 @@
         "claude": "sha256:26d7f57abea6e176b9f3310a479d2758e3c8e73d275bfdcf99a69098df21de40",
         "codex": "sha256:26d7f57abea6e176b9f3310a479d2758e3c8e73d275bfdcf99a69098df21de40"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/aws-sdk-knowledge-patch/coverage.json",
@@ -791,10 +791,10 @@
         "claude": "sha256:2b1f7b15d0081fb06b0c7513c5d86b3200cc957ac380aa28aef5876aad55b4a2",
         "codex": "sha256:2b1f7b15d0081fb06b0c7513c5d86b3200cc957ac380aa28aef5876aad55b4a2"
       },
-      "generated_at": "2026-07-28T23:31:57Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:31:57Z",
-        "codex": "2026-07-28T23:31:57Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/axum-knowledge-patch/coverage.json",
@@ -839,10 +839,10 @@
         "claude": "sha256:0894b0834de1391af794383e837d2a2339656f61aa264c24fe3ac0fb9af4de3d",
         "codex": "sha256:a5d1477110e57326f9c8ef2bc2e3f05f403461d7dc89168b29659d28cb813d09"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/azure-knowledge-patch/coverage.json",
@@ -876,10 +876,10 @@
         "claude": "sha256:c62ea074c6e7e7938d405f18f0de63684ad7db9edd60d435c1fdf13e0e38170a",
         "codex": "sha256:c62ea074c6e7e7938d405f18f0de63684ad7db9edd60d435c1fdf13e0e38170a"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/better-auth-knowledge-patch/coverage.json",
@@ -915,10 +915,10 @@
         "claude": "sha256:cbd66ab739385e8f53f8511f566b79a4eb659a1c5c1898c0819fe89099318412",
         "codex": "sha256:cbd66ab739385e8f53f8511f566b79a4eb659a1c5c1898c0819fe89099318412"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/biome-knowledge-patch/coverage.json",
@@ -953,10 +953,10 @@
         "claude": "sha256:50599cd1e7508d7218bc82b1c0b1529ca85bc03eac676eba4c6fce2d4fca6d12",
         "codex": "sha256:50599cd1e7508d7218bc82b1c0b1529ca85bc03eac676eba4c6fce2d4fca6d12"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/bun-knowledge-patch/coverage.json",
@@ -992,10 +992,10 @@
         "claude": "sha256:ed24609c1c30cedebcc8c8d59da344eb56ab1bff96841379a305d44ed80484b3",
         "codex": "sha256:e30115063c3a00f27c8de78b831bad8e505aa9279d027bbc442d87a6a1391c8a"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/c-cpp-knowledge-patch/coverage.json",
@@ -1029,10 +1029,10 @@
         "claude": "sha256:8e494da885b00453da0f31a689c78c0723667f97af0fe919cb2fc850eb6d6e46",
         "codex": "sha256:8e494da885b00453da0f31a689c78c0723667f97af0fe919cb2fc850eb6d6e46"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/caddy-knowledge-patch/coverage.json",
@@ -1066,10 +1066,10 @@
         "claude": "sha256:aa409e836bb6483b36aab34d3b517b2bfb6f85cb6ede07f7a77c1a94fc2298f5",
         "codex": "sha256:46ec6fffd0c19be4ce3ccf0bce8d898362c008ddba41520de34248c9c0125994"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cargo-knowledge-patch/coverage.json",
@@ -1107,10 +1107,10 @@
         "claude": "sha256:4995761478152028752ac0971648fa38923762c1e210f11d8d4e55bde25afad8",
         "codex": "sha256:5b56ae661b589c1ded76e9daf5006de33410fb7882880e11427180192961b39d"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cassandra-knowledge-patch/coverage.json",
@@ -1146,10 +1146,10 @@
         "claude": "sha256:aaf2af8d4d40f95daf6ec53a025d25a20c6845e760846c459a75167457fa1b0e",
         "codex": "sha256:eccf48b9535376aae71217d0770a32a9f505ec0c583546773c7056ed1b6f73b9"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/celery-knowledge-patch/coverage.json",
@@ -1182,10 +1182,10 @@
         "claude": "sha256:d5355eeb5751bccc630f2e4d4f5f5a0911e1cf9e27c8c8890ad4457867c4ddf2",
         "codex": "sha256:d5355eeb5751bccc630f2e4d4f5f5a0911e1cf9e27c8c8890ad4457867c4ddf2"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/centos-stream-knowledge-patch/coverage.json",
@@ -1222,10 +1222,10 @@
         "claude": "sha256:187ec929c3cfea307a57bfafd57fd8ecd293a1050136216da4b3ca0c526d10b5",
         "codex": "sha256:e045e214712d4d561935e780c8c275fd8c251eb5cbed7cb33a90b3d981b44da0"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cert-manager-knowledge-patch/coverage.json",
@@ -1259,10 +1259,10 @@
         "claude": "sha256:90fa7501b4640ba48395d12b3480fdef629671ac88bbfdda08e67e6f9c204475",
         "codex": "sha256:90fa7501b4640ba48395d12b3480fdef629671ac88bbfdda08e67e6f9c204475"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/chrony-knowledge-patch/coverage.json",
@@ -1300,10 +1300,10 @@
         "claude": "sha256:1bf6bc1d61610243c0df3e886d9e32f6de106f7b18e75065ea73e16acf6c3b13",
         "codex": "sha256:1bf6bc1d61610243c0df3e886d9e32f6de106f7b18e75065ea73e16acf6c3b13"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/clerk-knowledge-patch/coverage.json",
@@ -1336,10 +1336,10 @@
         "claude": "sha256:2af0418142829aa1d4bde514c301ed91fc2d1360bac985386ba75189894cd876",
         "codex": "sha256:2af0418142829aa1d4bde514c301ed91fc2d1360bac985386ba75189894cd876"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/clickhouse-knowledge-patch/coverage.json",
@@ -1374,10 +1374,10 @@
         "claude": "sha256:08cdb6b88f5df54730bb165031b422ac4346113e3f1c13821dcc3e2c036a7f12",
         "codex": "sha256:08cdb6b88f5df54730bb165031b422ac4346113e3f1c13821dcc3e2c036a7f12"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cloud-init-knowledge-patch/coverage.json",
@@ -1416,10 +1416,10 @@
         "claude": "sha256:6bfc1fa6063d1808cc65b483960abb0c81f49085629d79eaaac4606308582458",
         "codex": "sha256:de67a2ed347a10d5166dfd2fb0ff74fbca00afc50498be138bc0ce3e60eda610"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cloudflare-d1-knowledge-patch/coverage.json",
@@ -1458,10 +1458,10 @@
         "claude": "sha256:857a4f53d807aa2be6f4c7ef9a27bee1619d36ac0f14ae105bc16e770113e2ee",
         "codex": "sha256:6044f14728f3db2083519315e0875b92fd8853c5db5af10cc9736ac96158a246"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cloudflare-durable-objects-knowledge-patch/coverage.json",
@@ -1500,10 +1500,10 @@
         "claude": "sha256:36f96f991222468e2f1cd86ff04d751b7b8548b0f4b2ab94eafe71833d632285",
         "codex": "sha256:69da1d3a804e5013302fe41ede682d248a38a1028321cd85faf01405eee993e1"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/cloudflare-workers-knowledge-patch/coverage.json",
@@ -1538,10 +1538,10 @@
         "claude": "sha256:256c8b6dc1b99ba146da739dd34220c04f7a738fc0815d1ffca3dc21fe0b13ef",
         "codex": "sha256:256c8b6dc1b99ba146da739dd34220c04f7a738fc0815d1ffca3dc21fe0b13ef"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/codex-knowledge-patch/coverage.json",
@@ -1580,10 +1580,10 @@
         "claude": "sha256:af7dfb943be6c53a0ed4262947ab8ec84c5d490884b5b65a96649a339d486a47",
         "codex": "sha256:94527ae7c8c213a183131d3357c0a618e9819f3285941a8bf643abf013f41095"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/consul-knowledge-patch/coverage.json",
@@ -1618,10 +1618,10 @@
         "claude": "sha256:9633ade1d2a99ea7e393f8834f8ab407afb70cb7888e71c59c976673c5b49b40",
         "codex": "sha256:a55d35692e47bf54978e6a1909c7b66795709d77fb7b11e22afb290397edd4fc"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/dagster-knowledge-patch/coverage.json",
@@ -1657,10 +1657,10 @@
         "claude": "sha256:7730f2c8f415f907c4157bf5daf0fd9a746df30ecdb34c143b550069ba2a294b",
         "codex": "sha256:39bfa8249c846a20e687020c3841eeadaad5ec6cb02b3709c6c043e1ac500153"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/dbt-knowledge-patch/coverage.json",
@@ -1700,10 +1700,10 @@
         "claude": "sha256:ef175ddfff2dec0e5dfc8d8271c6f8859da1fdc04cfecbad7e80e49d1641324d",
         "codex": "sha256:6cb237de73b600419cb73353d08dc8911159675624f529be06185f32fa3fbd23"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/dds-knowledge-patch/coverage.json",
@@ -1737,10 +1737,10 @@
         "claude": "sha256:f3c07607922655ab26d1821e6371f031dc485d56a5c914d383993ad967a26d9e",
         "codex": "sha256:f3c07607922655ab26d1821e6371f031dc485d56a5c914d383993ad967a26d9e"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/debian-knowledge-patch/coverage.json",
@@ -1775,10 +1775,10 @@
         "claude": "sha256:9772f21765e25981cf831ca9732dd2022149a2aad4fdfc0c42620b13ced2d025",
         "codex": "sha256:9772f21765e25981cf831ca9732dd2022149a2aad4fdfc0c42620b13ced2d025"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/deno-knowledge-patch/coverage.json",
@@ -1817,10 +1817,10 @@
         "claude": "sha256:6ead85250bd23985f0acc10f5b486525e419305e0661e4071ab7ff9b824ffd14",
         "codex": "sha256:98746f710b813808ecc4a7b0bf33e7b41fab96e6848e35df0367607e31ae33e5"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/devcontainers-knowledge-patch/coverage.json",
@@ -1833,8 +1833,8 @@
       "short_label": "Dioxus",
       "description": "Dioxus",
       "coverage_kind": "versioned",
-      "covered_through": "0.7.9",
-      "coverage_label": "0.7.9",
+      "covered_through": "0.8.0-alpha.1",
+      "coverage_label": "0.8.0-alpha.1",
       "paths": {
         "claude": "skills-claude/dioxus-knowledge-patch",
         "codex": "skills-codex/dioxus-knowledge-patch"
@@ -1852,13 +1852,13 @@
         "mobile"
       ],
       "content_hashes": {
-        "claude": "sha256:1f463a31c220e0f8fba3132102779702fd7aef295c06b70700ed61f13b5e8d4f",
-        "codex": "sha256:1f463a31c220e0f8fba3132102779702fd7aef295c06b70700ed61f13b5e8d4f"
+        "claude": "sha256:3838a104d5b00ac04cc101ba720e5e52048695a5436aba1ac206878ca0ac7fc3",
+        "codex": "sha256:826e0d7e502fd6d1faed3172870475811f78539e7ecf4753ad69fac292a81267"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:44:26Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:44:26Z",
+        "codex": "2026-07-31T09:18:31Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/dioxus-knowledge-patch/coverage.json",
@@ -1891,10 +1891,10 @@
         "claude": "sha256:d755f7b85e27fd533d3df55997ee5df0ef64925c45215ad79d01a26b941023d3",
         "codex": "sha256:d755f7b85e27fd533d3df55997ee5df0ef64925c45215ad79d01a26b941023d3"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/django-knowledge-patch/coverage.json",
@@ -1927,10 +1927,10 @@
         "claude": "sha256:0c9ebc0130895270d94f37d20c9bdafcc3f75ea05b032d8e631d1d53fe5ed86a",
         "codex": "sha256:0c9ebc0130895270d94f37d20c9bdafcc3f75ea05b032d8e631d1d53fe5ed86a"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/dnf5-security-updates-knowledge-patch/coverage.json",
@@ -1964,10 +1964,10 @@
         "claude": "sha256:f845764773fff03823210152f795efc843b0cabf0242035db7e8c5d73fe34293",
         "codex": "sha256:f845764773fff03823210152f795efc843b0cabf0242035db7e8c5d73fe34293"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/docker-knowledge-patch/coverage.json",
@@ -1998,13 +1998,13 @@
         "dotnet-csharp"
       ],
       "content_hashes": {
-        "claude": "sha256:95a1331d8b9fa6a670d5a6e8837d5ac34d27c4e34c7557bcd056a81459772e3d",
-        "codex": "sha256:49b29a601a499aba86ecbf223113c43303b9bb7dd301b16f1ecf928747ef263a"
+        "claude": "sha256:282577166f728fd365f66ad0d43c96974886118c8247984e9d4eedae8a8b21bd",
+        "codex": "sha256:26044e6f436fd2459bd1e8c6147e2802bf4a3fa2f0053e389ba5385c5f968f10"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T10:22:04Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T10:22:04Z",
+        "codex": "2026-07-31T10:15:10Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/dotnet-csharp-knowledge-patch/coverage.json",
@@ -2037,10 +2037,10 @@
         "claude": "sha256:7c783dd7a97ec5240272fd8fc003b7d50e5ef7faaf1a64fe4bd5e01b7dcce898",
         "codex": "sha256:7c783dd7a97ec5240272fd8fc003b7d50e5ef7faaf1a64fe4bd5e01b7dcce898"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/drizzle-knowledge-patch/coverage.json",
@@ -2074,10 +2074,10 @@
         "claude": "sha256:20d345d9f4a0b34ec8c57a681b70464aff6aac973b9f5a415c7e3a0e26099109",
         "codex": "sha256:20d345d9f4a0b34ec8c57a681b70464aff6aac973b9f5a415c7e3a0e26099109"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/duckdb-knowledge-patch/coverage.json",
@@ -2117,10 +2117,10 @@
         "claude": "sha256:e47733d6c44f30d74b5d7417a4e2292e27d236ca783673dd4e285a6b2d67b959",
         "codex": "sha256:ccdb49897cc3bd06b893c6110bda0886b787ae7dbd7f99ca63595267b1ba5089"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/elasticsearch-knowledge-patch/coverage.json",
@@ -2159,10 +2159,10 @@
         "claude": "sha256:bc14ddc113eda1234dcd29114fba5e945938cbae18a201c8712acd0b4fc2f7b5",
         "codex": "sha256:1e07b7a219aaf0a63cefdf0f962c959bfc2924ff0234863e038397561a27be84"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/electron-knowledge-patch/coverage.json",
@@ -2195,10 +2195,10 @@
         "claude": "sha256:733b0cfd97278893f8af6b231794136ccdbcaa56f3f28c0f47efa359bc4d4eca",
         "codex": "sha256:733b0cfd97278893f8af6b231794136ccdbcaa56f3f28c0f47efa359bc4d4eca"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/elixir-knowledge-patch/coverage.json",
@@ -2237,10 +2237,10 @@
         "claude": "sha256:472375e146dc055b5b35d2ff80bb0d18ef3a71c135c4d25425851798dac570f5",
         "codex": "sha256:7c628476c2ddb751c18fa95d158d09cbcb36956c8442fbad61c10e5705fc65b4"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/envoy-knowledge-patch/coverage.json",
@@ -2275,10 +2275,10 @@
         "claude": "sha256:ebf7ec9098f327b18fbab97f3bcba6b62b6e8ea03cb22f4a31647d4215180e5b",
         "codex": "sha256:1d37006440b6953c5bc3445bc910c1e5b51228b12405e26e923e0ec5e27e912a"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/erlang-otp-knowledge-patch/coverage.json",
@@ -2313,10 +2313,10 @@
         "claude": "sha256:3ae4cccaca254e1a60a22cb5bf851c2146134ef1a14fad189336894f07775ee0",
         "codex": "sha256:3ae4cccaca254e1a60a22cb5bf851c2146134ef1a14fad189336894f07775ee0"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/eslint-knowledge-patch/coverage.json",
@@ -2354,10 +2354,10 @@
         "claude": "sha256:148f37e6cb2ba1f823d93d58ab050cbd0a8ce6b58f239bd5870beb040f2e7317",
         "codex": "sha256:bde36acaafcc38b6fef9afdfa31b76534643ecdab54405fe78831d5de105dd1e"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/esp-idf-knowledge-patch/coverage.json",
@@ -2393,10 +2393,10 @@
         "claude": "sha256:f397e39bc1250b2dcb730ed6c23efda76ec65544f7179b14460e27d62115e225",
         "codex": "sha256:f397e39bc1250b2dcb730ed6c23efda76ec65544f7179b14460e27d62115e225"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/expo-knowledge-patch/coverage.json",
@@ -2432,10 +2432,10 @@
         "claude": "sha256:beb58c62bd77ddcbbbc65649717be58c0c054bffc4e88d1763551b34472ff3da",
         "codex": "sha256:dab1b120dd3db703f271457ef8e5607073b94ca964eae6c0dac82dca1b777f78"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/express-knowledge-patch/coverage.json",
@@ -2472,10 +2472,10 @@
         "claude": "sha256:050edb328c826a6aadea147aa47d1420480c0f55ebc0f7aa983c5aa4ec69be9b",
         "codex": "sha256:71fc9235032092dc7c0299f7424d5066b33bcdcb785500722321aee44a3f4b5f"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/external-secrets-knowledge-patch/coverage.json",
@@ -2508,10 +2508,10 @@
         "claude": "sha256:7752ce1d6c6beb8216859cf98de9fd81aff7f83cea953d4f883a0252429b76db",
         "codex": "sha256:7752ce1d6c6beb8216859cf98de9fd81aff7f83cea953d4f883a0252429b76db"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/fastapi-knowledge-patch/coverage.json",
@@ -2544,10 +2544,10 @@
         "claude": "sha256:273c96e9621e0ef0297ebbd2cf180fec8f55ffe8bc1c9e72d458ddbc4f478066",
         "codex": "sha256:273c96e9621e0ef0297ebbd2cf180fec8f55ffe8bc1c9e72d458ddbc4f478066"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/fedora-knowledge-patch/coverage.json",
@@ -2583,10 +2583,10 @@
         "claude": "sha256:83da2d128cd16ce85faf44a9ca90313229f26e7a5bffcd741b8fe15c3b0f5507",
         "codex": "sha256:5bc5a82d9dd7d9158158dac934ff6fb6ce34fb25e8efdc4e0748b05998ff7a91"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/fluent-bit-knowledge-patch/coverage.json",
@@ -2619,10 +2619,10 @@
         "claude": "sha256:ee5f7b12c3d3b4f54b9c4951e4aa8ad633aafd89f8b2675405eaacdf77281b60",
         "codex": "sha256:ee5f7b12c3d3b4f54b9c4951e4aa8ad633aafd89f8b2675405eaacdf77281b60"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/flutter-knowledge-patch/coverage.json",
@@ -2659,10 +2659,10 @@
         "claude": "sha256:15d4b91afcba742a7cf5aa69123413d1a0c6b2a8c308681124f42ef1d371f33b",
         "codex": "sha256:17dd4b373541e6574996387090602cdd6dc1e7de95dbf602384fa5ceef06736e"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/flux-cd-knowledge-patch/coverage.json",
@@ -2701,10 +2701,10 @@
         "claude": "sha256:2d9699448b74c3857d911165e12660e24da1637dea2b70d365f77d526846b3ee",
         "codex": "sha256:4c3227b65e04e514dc6a5c471254c877fac5719f21288cd3c920b2f63cc9a38d"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gazebo-sim-knowledge-patch/coverage.json",
@@ -2740,10 +2740,10 @@
         "claude": "sha256:d2850d0cda536aed1580597b0eb8a912173224da3487ccf2c208632b061fe575",
         "codex": "sha256:d2850d0cda536aed1580597b0eb8a912173224da3487ccf2c208632b061fe575"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gcp-knowledge-patch/coverage.json",
@@ -2781,10 +2781,10 @@
         "claude": "sha256:8095a8e65d68fc3c9d8bbc83f3fb4140b65753e055994297de6045f0350d2d96",
         "codex": "sha256:d6afb101de0f9409ad8e1252f6edb5a73af1758213db3a2cca6185798d62524b"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gdal-knowledge-patch/coverage.json",
@@ -2818,10 +2818,10 @@
         "claude": "sha256:5f8d5105bf0cb32bb3ddad468bd322da16710737f70c94c82ec8dc9f1e663ebc",
         "codex": "sha256:5f8d5105bf0cb32bb3ddad468bd322da16710737f70c94c82ec8dc9f1e663ebc"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/geodesy-wgs84-knowledge-patch/coverage.json",
@@ -2857,10 +2857,10 @@
         "claude": "sha256:0bdfd452ffc7af5353bd0bd6ef7f6221f987479173756f88574ae9fbaa17a305",
         "codex": "sha256:cbb4be572cf8c7024da79fdebe72f265ed2589ca8fec5828dfa9d41ef824924d"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/geojson-ogc-knowledge-patch/coverage.json",
@@ -2894,10 +2894,10 @@
         "claude": "sha256:3a8d70270ea1ef83c36c7e3f988a6235dff8e6f1987a6a148abdc3b135cc33f7",
         "codex": "sha256:b3f86ea2d64be783b356bdc93a4dc211cce9b65ccae9c0b7bdb251cfba969214"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/geopandas-knowledge-patch/coverage.json",
@@ -2931,10 +2931,10 @@
         "claude": "sha256:806638a16be9b74a5c7635376442f1d97d5c45666a82ee0deab2bb05faf650e1",
         "codex": "sha256:806638a16be9b74a5c7635376442f1d97d5c45666a82ee0deab2bb05faf650e1"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/github-actions-knowledge-patch/coverage.json",
@@ -2970,10 +2970,10 @@
         "claude": "sha256:539d9232dfd43564932dcd34d1bc514c9ec0ae5f899b5b45cb8d9bb771ce6588",
         "codex": "sha256:8df26b4ffba98b722ccfcb9b73dd42876443060317d8dca7e2c6c9bf93913098"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gitlab-ci-knowledge-patch/coverage.json",
@@ -3006,10 +3006,10 @@
         "claude": "sha256:546b2af96336345639478f5de53f5e819b216f5fc25ba71c5ffcfb9726877da9",
         "codex": "sha256:546b2af96336345639478f5de53f5e819b216f5fc25ba71c5ffcfb9726877da9"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gleam-knowledge-patch/coverage.json",
@@ -3044,10 +3044,10 @@
         "claude": "sha256:686c4424a8f39f3b05bc1656e02eb6d1b1dde1159496d15eb04bfddc07dbbccf",
         "codex": "sha256:686c4424a8f39f3b05bc1656e02eb6d1b1dde1159496d15eb04bfddc07dbbccf"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gnss-navigation-knowledge-patch/coverage.json",
@@ -3080,10 +3080,10 @@
         "claude": "sha256:d33cc8aa4002567cbfb90f49451136b4f980d3cde4d220d8deffe82485d8c4c2",
         "codex": "sha256:d33cc8aa4002567cbfb90f49451136b4f980d3cde4d220d8deffe82485d8c4c2"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/go-knowledge-patch/coverage.json",
@@ -3124,10 +3124,10 @@
         "claude": "sha256:6d06f6c4739d7d2bcbffd4a4cf897d22e1ff2e7f90388f1f581b8f5431068927",
         "codex": "sha256:4e8ec665718c53bc76ef477aa5bfaed2b8f37dc994d3ceed784fe006590b1cc6"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/google-gemini-api-knowledge-patch/coverage.json",
@@ -3162,10 +3162,10 @@
         "claude": "sha256:d7bd215ac8eee0fdf55d8885827fa5c0ddef429d453866689cfbda6d74728dac",
         "codex": "sha256:d7bd215ac8eee0fdf55d8885827fa5c0ddef429d453866689cfbda6d74728dac"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gpsd-knowledge-patch/coverage.json",
@@ -3202,10 +3202,10 @@
         "claude": "sha256:b6f522d5b8cd3e6953716d1cc3558f2e5fe644ba7459971b4328d312a33a80e7",
         "codex": "sha256:ecbface6bdff80caeaa59128b96330f798ad0cce5cf74655190ef0b1678a8bb3"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/gradle-knowledge-patch/coverage.json",
@@ -3244,10 +3244,10 @@
         "claude": "sha256:4320ddd3f135800855bd45f2e7cbcac709a4e7271f638f1c20eb0811fd523cee",
         "codex": "sha256:907c74907dd3a148c65ec139f21c7f6b4151da517727f74c87f4ddef424e3ec4"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/grafana-knowledge-patch/coverage.json",
@@ -3285,10 +3285,10 @@
         "claude": "sha256:87663bc9d9e581759f8a5484a37a7db848d78b42a826faed99ef5616f6f7d70f",
         "codex": "sha256:4465a7cc735eef2f870144f95dc4bc49c333264a0036d6bd92c21415a17d5288"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/grafana-loki-knowledge-patch/coverage.json",
@@ -3327,10 +3327,10 @@
         "claude": "sha256:850ed0010f85f4898f3b8d87a8f9e4a13a241cf8dcf6bfd345b650d1841fa484",
         "codex": "sha256:84241c9c326582436d53e624ae36b4e7ff8ca74abdc344c476f39ab5a42d3c12"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/graphql-knowledge-patch/coverage.json",
@@ -3367,10 +3367,10 @@
         "claude": "sha256:81e40a1df7c5564e3a5bd19428451c5996630b9fc0162eccf021a3fdca391b0d",
         "codex": "sha256:81e40a1df7c5564e3a5bd19428451c5996630b9fc0162eccf021a3fdca391b0d"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/grpc-knowledge-patch/coverage.json",
@@ -3411,10 +3411,10 @@
         "claude": "sha256:e39dd2633f0f0bf2dea83d6d8ae67fb69718f6c3ce4ded97f1b772d60db8dd91",
         "codex": "sha256:2a668cae762b8677df8dccd8f798e85433d5b2bb912edba6882ffc917b40f16d"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/h3-geospatial-knowledge-patch/coverage.json",
@@ -3450,10 +3450,10 @@
         "claude": "sha256:dbd2216b7b3dad086a021ed3887b9d93a0a985019074c6ff6b045dcd9345d17e",
         "codex": "sha256:8c032cbdc6e4ad8fd47985c219335836d45c232b556b68514611efea428917a6"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/haproxy-knowledge-patch/coverage.json",
@@ -3492,10 +3492,10 @@
         "claude": "sha256:90b92992f21c88f2cc8be056b505024fdfb1ad76d4dcf0b992f40d7b709e9f5e",
         "codex": "sha256:a29d924d9e88f4282e4a4c4bdacf57dc2cc1a5eb37aae7684e0fe4185a642459"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/hashicorp-vault-knowledge-patch/coverage.json",
@@ -3529,10 +3529,10 @@
         "claude": "sha256:b4ae1c40d403312c26d5222e99a0620d6c891530f4d24bd4f34d728ebc91e37a",
         "codex": "sha256:b4ae1c40d403312c26d5222e99a0620d6c891530f4d24bd4f34d728ebc91e37a"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/helm-knowledge-patch/coverage.json",
@@ -3569,10 +3569,10 @@
         "claude": "sha256:c3e3f1adf9a35db27222894da344fd40101227cc1cbf997cdd998794ba2e2b35",
         "codex": "sha256:5a00f981c37abfd8c4951509ed7b0d2272babcbb71c97cc7b7efef052adc719c"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/home-assistant-knowledge-patch/coverage.json",
@@ -3606,10 +3606,10 @@
         "claude": "sha256:243c24b3ed584b43619690cd1ae43673a98c08f81a2a7423c19be7e6d3cc54f9",
         "codex": "sha256:243c24b3ed584b43619690cd1ae43673a98c08f81a2a7423c19be7e6d3cc54f9"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/hono-knowledge-patch/coverage.json",
@@ -3644,10 +3644,10 @@
         "claude": "sha256:ca2e9e7d936c50260a764cd989130f0f037197515b80de149c60a2f7cbb120fb",
         "codex": "sha256:ca2e9e7d936c50260a764cd989130f0f037197515b80de149c60a2f7cbb120fb"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/htmx-knowledge-patch/coverage.json",
@@ -3684,10 +3684,10 @@
         "claude": "sha256:fecb08d5e701565e436df397fb74c1c86033fc231b7242cea637ffe50c13d6ea",
         "codex": "sha256:147513e40cfd8c3c07120a04fa0e28a7232ceab4037dac07a07a545a2b4ff60f"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/huggingface-hub-knowledge-patch/coverage.json",
@@ -3700,8 +3700,8 @@
       "short_label": "iOS SDK",
       "description": "iOS SDK",
       "coverage_kind": "versioned",
-      "covered_through": "iOS 27 beta 4 / Xcode 27 beta 4",
-      "coverage_label": "iOS 27 beta 4 / Xcode 27 beta 4",
+      "covered_through": "iOS 26 / Xcode 26",
+      "coverage_label": "iOS 26 / Xcode 26",
       "paths": {
         "claude": "skills-claude/ios-sdk-knowledge-patch",
         "codex": "skills-codex/ios-sdk-knowledge-patch"
@@ -3722,13 +3722,13 @@
         "objective-c"
       ],
       "content_hashes": {
-        "claude": "sha256:0374646eaaf02676f49d0c415de49c4c862ca0774d6277ec60dd029e969ee8dd",
-        "codex": "sha256:1509534a30667455264461cffbb60d553207614380c894542fdc953b44e361c6"
+        "claude": "sha256:a09b7da802d802ef69db9c708e76d9fbd56d9fbf74e55c0a396d550e26884655",
+        "codex": "sha256:08bc1f58f638ebf72f583a16741a7ea33066eb33df904892e6177216408f6b82"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T12:55:14Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T10:46:11Z",
+        "codex": "2026-07-31T12:55:14Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ios-sdk-knowledge-patch/coverage.json",
@@ -3763,10 +3763,10 @@
         "claude": "sha256:267bd344c1ae7f69056fd3be1217efb7686473b5b4c600f39e06e508d0d86fb5",
         "codex": "sha256:717d1e50ffa9a4a4741c3fd41418019791ae892893a5d4ddc66821c15787ba5f"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/istio-knowledge-patch/coverage.json",
@@ -3801,10 +3801,10 @@
         "claude": "sha256:3d27c9157ab0ff772008a15647e6c5b0e80a0c8e2ed5c9e7b425539c2ba81bab",
         "codex": "sha256:a08d71740a26bd8ffdd2f8b5f236234a8925bce128d56e26749a6c79af34c697"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/jaeger-knowledge-patch/coverage.json",
@@ -3836,10 +3836,10 @@
         "claude": "sha256:5c1c9b7a60e85f9b9796344f264e34aeaa364c9a50457936e26858e193a45b90",
         "codex": "sha256:56010c88725550cbd48ffe3b46aecb714282bb3328fcf7d308657788cc995ec8"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/java-knowledge-patch/coverage.json",
@@ -3875,10 +3875,10 @@
         "claude": "sha256:96495d6962ff644b36682309d3816b1541ab6a5e52cb5bc3117722661f3eba92",
         "codex": "sha256:ac85d5a8493e19f100027b749a9c553ef091748324cbafaff9fb63cccb1be97c"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/jest-knowledge-patch/coverage.json",
@@ -3912,13 +3912,13 @@
         "gradle"
       ],
       "content_hashes": {
-        "claude": "sha256:e2dcab0ab857899c94fe1e4b808361b363acb477103cb7514baff23dc2b14a33",
-        "codex": "sha256:0b8a4185c62f53c1a9be9bacd2c60e9a09c3b2edcd7f5ae8b041a20e5547269e"
+        "claude": "sha256:2ca2d499d57537b21f62789eec0f32c0ed3603ddfc92290236dea23ebe87fd2f",
+        "codex": "sha256:adbcbf3a2e74667102aec77252c7ab64424dace59acacb1c77ea1a61c90daa35"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T11:15:48Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T11:15:48Z",
+        "codex": "2026-07-31T11:05:32Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/jetpack-compose-knowledge-patch/coverage.json",
@@ -3954,13 +3954,13 @@
         "json"
       ],
       "content_hashes": {
-        "claude": "sha256:b1afab97ae64c1ef972d1b27b3985fb5788a5c061874aca24dc7814287c88109",
-        "codex": "sha256:878b7e228d4f358c93af9e7e0b9591fa6e0efa9120862c072cf41f96f0533e4f"
+        "claude": "sha256:37ed635d1b3ec4cc59ebfc4b610acb610f3ddcb533cc96c93df6b87171c237b3",
+        "codex": "sha256:bf80c074fb9a359ac17482b24886208c00a57d64714492d0033597b144a9eb04"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T11:35:23Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T11:35:23Z",
+        "codex": "2026-07-31T11:24:55Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/k6-knowledge-patch/coverage.json",
@@ -3999,10 +3999,10 @@
         "claude": "sha256:29582290be226380c214c1b1605d5fee5186a7ece5df8e6e2e129797a23cdf7e",
         "codex": "sha256:49147a70cff8f3c79d298b7b6993aa7a4f78a4c4b6c25f0c5f7d94f45e1fd17d"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/keycloak-knowledge-patch/coverage.json",
@@ -4035,10 +4035,10 @@
         "claude": "sha256:f103ceacb63ad570952b093e07c613f6a4e7807b426f46442fa93d2b8bb456b0",
         "codex": "sha256:f103ceacb63ad570952b093e07c613f6a4e7807b426f46442fa93d2b8bb456b0"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/kotlin-knowledge-patch/coverage.json",
@@ -4075,10 +4075,10 @@
         "claude": "sha256:9110975e3b11619c30f3556169f354708d93ebe084859fd945ecae6f137b1174",
         "codex": "sha256:da76149aba4e646aed7c406bd1dff941dd2820713feb5132630e28bf761be699"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/kubernetes-gateway-api-knowledge-patch/coverage.json",
@@ -4113,10 +4113,10 @@
         "claude": "sha256:40a4a124ff84f90420a1f7011785d8e0aaa740858f204ecc09e0c0bc98679a88",
         "codex": "sha256:40a4a124ff84f90420a1f7011785d8e0aaa740858f204ecc09e0c0bc98679a88"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/kubernetes-knowledge-patch/coverage.json",
@@ -4151,10 +4151,10 @@
         "claude": "sha256:3b26dbedbd369cc9a3aa9d1a6b9e1852b7db3045b93e930c06922194a90a2151",
         "codex": "sha256:85e6906d7bc177fbba239e2d0a4903c01e2fe81db486d4d5b37419941f339e69"
       },
-      "generated_at": "2026-07-28T23:37:24Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:37:24Z",
-        "codex": "2026-07-28T21:12:10Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/kustomize-knowledge-patch/coverage.json",
@@ -4191,10 +4191,10 @@
         "claude": "sha256:ca2bcb37b7f865197e98e08bf0e0b59695a0651b03202403fc67f49a6c5f9a88",
         "codex": "sha256:4c594bffd971e306df818a595efa8f0329fbb1e87c9d4c1ae4c44e91c1126f08"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/kyverno-knowledge-patch/coverage.json",
@@ -4230,10 +4230,10 @@
         "claude": "sha256:ef2ea9bdc018325525ee0b9a0b19d2249a5134775553fa53e4b6e33a7c44db9f",
         "codex": "sha256:ef2ea9bdc018325525ee0b9a0b19d2249a5134775553fa53e4b6e33a7c44db9f"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/langchain-knowledge-patch/coverage.json",
@@ -4270,10 +4270,10 @@
         "claude": "sha256:17dfd6a16a7cda378c1a0badab3ffb0f2755b8ffbc23c2bffa3b492132a34b23",
         "codex": "sha256:7b90f2ab78816daafec2bb6e6c20887fcf7f148bb574409a4bdda5a71ce7615a"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/langgraph-knowledge-patch/coverage.json",
@@ -4305,10 +4305,10 @@
         "claude": "sha256:86bb9ac277c9fc173e5cd5be91f75df00155d861d178610e73fe0329aec1cfe2",
         "codex": "sha256:c67fd5693ceb31ce64d8d8968005212f8d720b5fca50431b526dca43ef709171"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/laravel-knowledge-patch/coverage.json",
@@ -4341,10 +4341,10 @@
         "claude": "sha256:635a30e0d191f1ed7a6f7742b5450818a5231d0cd7fdb32c961caf5e4de0c33f",
         "codex": "sha256:635a30e0d191f1ed7a6f7742b5450818a5231d0cd7fdb32c961caf5e4de0c33f"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/lavaan-cfa-knowledge-patch/coverage.json",
@@ -4377,10 +4377,10 @@
         "claude": "sha256:38051c144cd008e11fbeb34c39132d01fcba5cb12ff6dc3a6cab83241544deb4",
         "codex": "sha256:38051c144cd008e11fbeb34c39132d01fcba5cb12ff6dc3a6cab83241544deb4"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/leptos-knowledge-patch/coverage.json",
@@ -4418,10 +4418,10 @@
         "claude": "sha256:8a04b3c135ea40dc6963d7d775803d07c98e6ab45d39d99041903125ca33df65",
         "codex": "sha256:63380e12bd0fe8e9ead4d95fd7c836a29236290a502c502ea9925d88fee79291"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/lit-knowledge-patch/coverage.json",
@@ -4459,10 +4459,10 @@
         "claude": "sha256:e9453e961226849a1ad5bb62980e046144050953abbed7c99b5c6fbd0cb3dfb7",
         "codex": "sha256:77200d21ac8db2f7b9b009f35c626299c17e46999369623307f3add84ab3bdea"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/litellm-knowledge-patch/coverage.json",
@@ -4497,10 +4497,10 @@
         "claude": "sha256:5f6482de968981a96b95d0c335fccb0a657969e8db04f8af990b50a818ce5c62",
         "codex": "sha256:fb51e7b319bc6eca489ee1a361a25d1020263befcc5ed63e7d9ba83593207464"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/llamaindex-knowledge-patch/coverage.json",
@@ -4539,10 +4539,10 @@
         "claude": "sha256:378c4412c639b505565f1dc7a86411e8f0ef8fd12bedcbac94821d9577fec5c1",
         "codex": "sha256:206bfe429040bda79e3be100d3e5c13434e1306c0b1afafba55d2f15126ce65a"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/maplibre-gl-js-knowledge-patch/coverage.json",
@@ -4586,10 +4586,10 @@
         "claude": "sha256:11b2dc3083fc14a902e7100cc1df15dbadb55b2dc0f14c2a8e301ada2180ce10",
         "codex": "sha256:a54fada0be4c74ef64e80782a3603e8a9ce9358d773026dd5df024412574d1fd"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/maplibre-native-knowledge-patch/coverage.json",
@@ -4627,10 +4627,10 @@
         "claude": "sha256:108a435f6d03b2b5b5a8c2a5feb2e280c687001d0e4a4c89e6d798aa345291bb",
         "codex": "sha256:44f42fd73f9477be8389471306ad8adbc09054ae2a3a584301aad3c5e02eb187"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/matter-iot-knowledge-patch/coverage.json",
@@ -4644,8 +4644,8 @@
       "short_label": "Model Context Protocol (MCP)",
       "description": "Model Context Protocol (MCP)",
       "coverage_kind": "range",
-      "covered_through": "2026-07-28 RC",
-      "coverage_label": "2025-03-26–2026-07-28 RC",
+      "covered_through": "2025-11-25",
+      "coverage_label": "2025-03-26–2025-11-25",
       "paths": {
         "claude": "skills-claude/model-context-protocol-knowledge-patch",
         "codex": "skills-codex/model-context-protocol-knowledge-patch"
@@ -4666,13 +4666,13 @@
         "server"
       ],
       "content_hashes": {
-        "claude": "sha256:e5e500bbebae993f2649dec435000457905d9e124ea6a98e535c579370f0b7bc",
-        "codex": "sha256:e58ff6eac32e49e560be1adbe6e45609ece08a85c61b57d7f00d1f0fa2a9d01e"
+        "claude": "sha256:c4d841e53e70f1b986d3e70eb1f90aaa1c93aae983ab3e14571775e5fb3c665a",
+        "codex": "sha256:785b5b36fdb45dd6a725b56bdccbe4eaf604673308278b87722cfb346ecf0014"
       },
-      "generated_at": "2026-07-30T11:33:32Z",
+      "generated_at": "2026-07-31T11:59:58Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T11:33:32Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T11:59:58Z",
+        "codex": "2026-07-31T11:47:54Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/model-context-protocol-knowledge-patch/coverage.json",
@@ -4707,10 +4707,10 @@
         "claude": "sha256:c19a5bc8ef4ba1a04db581800ee0841f9cc78ef1c8a7056356817df46a70c18a",
         "codex": "sha256:c19a5bc8ef4ba1a04db581800ee0841f9cc78ef1c8a7056356817df46a70c18a"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/mongodb-knowledge-patch/coverage.json",
@@ -4749,10 +4749,10 @@
         "claude": "sha256:964c1e18d7a8bde8cdeeb83d553e924b0087743abef31c68a8b25875e629a970",
         "codex": "sha256:584ee106dd520f76a7a18da72037178bcdeaa602ce061eafb8a4ce4fd1d30ab1"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/moveit2-knowledge-patch/coverage.json",
@@ -4790,10 +4790,10 @@
         "claude": "sha256:4b0c7d0b1759ed2f2cd960555d68ac4bd29285dbc8247e7c43201bd28d69a146",
         "codex": "sha256:1bbe8ba768f3ec31668f63de5d5fd482a3086ec85cfe254c11ba5d7fc4e42117"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/mqtt-knowledge-patch/coverage.json",
@@ -4827,10 +4827,10 @@
         "claude": "sha256:832f679352b65a01ed4b4dc85caee9d3d1391427dc0781ac1031327def8d7ead",
         "codex": "sha256:832f679352b65a01ed4b4dc85caee9d3d1391427dc0781ac1031327def8d7ead"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/mysql-knowledge-patch/coverage.json",
@@ -4866,10 +4866,10 @@
         "claude": "sha256:a3472c91fc84a53a936717324016dbd10fbeb53f28c6d34c5b8f04a45e423c67",
         "codex": "sha256:f9f242cce23a77c5cfb7c58bb1b68e095b2221a63dcbf3e13e624a8181da4f2b"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nats-knowledge-patch/coverage.json",
@@ -4907,10 +4907,10 @@
         "claude": "sha256:ec853250b2f25342ab5d17ff9fbc6e3bd46ba9539b8811bc7ced662ff07616a5",
         "codex": "sha256:346d227080f7159ee9a9fdbea0f966c1c2313b41aabc219f79a04ddd42996e5f"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/neo4j-knowledge-patch/coverage.json",
@@ -4945,10 +4945,10 @@
         "claude": "sha256:50d9fdbdc4387e16eb2ac04ab7179162307b6d602a2f8ada8e17e7fe96327197",
         "codex": "sha256:6c271525f36dd4381475b184cca93b735bbd1b5b775a9f1ce6fdffda906e7293"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nestjs-knowledge-patch/coverage.json",
@@ -4984,10 +4984,10 @@
         "claude": "sha256:09e2028b132dce333cd90469b1285925b85e50e5c9a063b653c6cc03d315e24a",
         "codex": "sha256:09e2028b132dce333cd90469b1285925b85e50e5c9a063b653c6cc03d315e24a"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nextjs-knowledge-patch/coverage.json",
@@ -5024,10 +5024,10 @@
         "claude": "sha256:c8a567582b1ec7ef9ab228f13fa6d58e7402d94b07403bbb79df56b2e295cd62",
         "codex": "sha256:4055a94c40baee7ef3b666c151e7c832d09e09610ed26ffb5cc8fb238a7ad5e6"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nftables-knowledge-patch/coverage.json",
@@ -5061,10 +5061,10 @@
         "claude": "sha256:041779dccca48f029acba50a0af55c4e50f98fb20faef17844ec9498b1ce8c77",
         "codex": "sha256:041779dccca48f029acba50a0af55c4e50f98fb20faef17844ec9498b1ce8c77"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nginx-knowledge-patch/coverage.json",
@@ -5103,10 +5103,10 @@
         "claude": "sha256:6fa3d5f1aa5914dcb1f261ef8e023fe9186d0551142e098b646c4b9b85f1ee43",
         "codex": "sha256:047824cf5c18d10de2f61edb95b30b52e2d78bc13bc4f605ab983cc25a377110"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nix-knowledge-patch/coverage.json",
@@ -5141,10 +5141,10 @@
         "claude": "sha256:4fe842f3696cffc24c721eca14f208a98175976b0c827ab4627a08e2da68b31d",
         "codex": "sha256:4fe842f3696cffc24c721eca14f208a98175976b0c827ab4627a08e2da68b31d"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nmea0183-knowledge-patch/coverage.json",
@@ -5178,10 +5178,10 @@
         "claude": "sha256:aac7e90e074fd4af44b9ecf2566f65748a0421561d2849bf4adae6cbe537beca",
         "codex": "sha256:aac7e90e074fd4af44b9ecf2566f65748a0421561d2849bf4adae6cbe537beca"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nodejs-knowledge-patch/coverage.json",
@@ -5221,10 +5221,10 @@
         "claude": "sha256:a89781ae616e50502221b6bfab9730f291fff2a3c91db9bab6e0f492871f7a28",
         "codex": "sha256:3c500f86c44dfb3c192c88f8602333eb682d6d31593047506c5ff8aabb7dbeab"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nomad-knowledge-patch/coverage.json",
@@ -5259,10 +5259,10 @@
         "claude": "sha256:0407d2deceef3398c4e91c5ed44e96cab15d8bfd19fccaa0129ce232c08ebc85",
         "codex": "sha256:0407d2deceef3398c4e91c5ed44e96cab15d8bfd19fccaa0129ce232c08ebc85"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ntrip-rtklib-knowledge-patch/coverage.json",
@@ -5296,10 +5296,10 @@
         "claude": "sha256:5bd342734aa381a8e2cb0b87ee127870c801ec515ad2bc73b97be7bc1c651ccc",
         "codex": "sha256:5bd342734aa381a8e2cb0b87ee127870c801ec515ad2bc73b97be7bc1c651ccc"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nuxt-knowledge-patch/coverage.json",
@@ -5337,10 +5337,10 @@
         "claude": "sha256:bf4a253dacfd0e04efb6eebe97f7faf5e8fcdad1dba5ccf6fd1d2e0025c839b0",
         "codex": "sha256:14cd2f66cf4a7b907632d2a842959254ecc551332c6df1d82367f1bbd19b3485"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nvidia-isaac-ros-knowledge-patch/coverage.json",
@@ -5379,10 +5379,10 @@
         "claude": "sha256:09472ff67204a3fcf933948c7103af93cbcea5527ed515eea29edd0e045dd448",
         "codex": "sha256:8fee85a2acd02d8beaa0314069e49715ca763d520662844c57fff60e70967173"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/nvidia-isaac-sim-knowledge-patch/coverage.json",
@@ -5417,10 +5417,10 @@
         "claude": "sha256:62e3c7e91a1f798b41084dd6fed34154d74f04a22cc472837ca9ad6240ac9c76",
         "codex": "sha256:62e3c7e91a1f798b41084dd6fed34154d74f04a22cc472837ca9ad6240ac9c76"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/oauth2-oidc-knowledge-patch/coverage.json",
@@ -5459,10 +5459,10 @@
         "claude": "sha256:b6b3f759601e26055405bdd346dbf5c96116b6e0bc60bf2879f94d06d127ca54",
         "codex": "sha256:02ff89c76744c5c85c8ff7fa3ca4558d469c1f6bd03af85c249ae3679ad2c837"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ollama-knowledge-patch/coverage.json",
@@ -5500,10 +5500,10 @@
         "claude": "sha256:440e9a0d05cc1a180dd7b0f7bb6f539e586f2cfce4e565ce3f310a7084584dcc",
         "codex": "sha256:3b5b60df0bfc4e333d0b08bcc77296d2f1bea191497351c1dc139b9800fd8be7"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/opa-knowledge-patch/coverage.json",
@@ -5542,10 +5542,10 @@
         "claude": "sha256:97e3dcc36865b7cbc12fc61112513d32b6f9fe9b4df8a027f8223ed4256cedec",
         "codex": "sha256:8810762ee2cd590f46f7e5af311247bbe1fccfe4042318bf0b4160686146d5af"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/openai-api-knowledge-patch/coverage.json",
@@ -5579,10 +5579,10 @@
         "claude": "sha256:13002e53698b47651b8f2c5a99069b0c5d9d17eab2fdb01195bd9793b93846f9",
         "codex": "sha256:13002e53698b47651b8f2c5a99069b0c5d9d17eab2fdb01195bd9793b93846f9"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/openapi-knowledge-patch/coverage.json",
@@ -5621,10 +5621,10 @@
         "claude": "sha256:848139a1b978d292ebc14016105619543aae89ace460e602f26e265303f4cdae",
         "codex": "sha256:c8aaa215e0aff48410d62c9963cdc2e28863f514fad9bedecfefb3d4fd07b144"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/opensearch-knowledge-patch/coverage.json",
@@ -5657,10 +5657,10 @@
         "claude": "sha256:622f6ac65d478585e196a25913b848a425d063a774b3ab0464b1d16357aa253d",
         "codex": "sha256:622f6ac65d478585e196a25913b848a425d063a774b3ab0464b1d16357aa253d"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/openssh-knowledge-patch/coverage.json",
@@ -5695,10 +5695,10 @@
         "claude": "sha256:68a11d91b76ce75912e90a7d39a7f805ceb9b4cd6bd8b2e83a1fe13ecc5d6b2b",
         "codex": "sha256:68a11d91b76ce75912e90a7d39a7f805ceb9b4cd6bd8b2e83a1fe13ecc5d6b2b"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/openssl-tls-knowledge-patch/coverage.json",
@@ -5736,10 +5736,10 @@
         "claude": "sha256:31882e962ad7e42a7ad412523a45ed0de689d4ff56c14f666674ea98ee395fef",
         "codex": "sha256:31882e962ad7e42a7ad412523a45ed0de689d4ff56c14f666674ea98ee395fef"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/opentelemetry-knowledge-patch/coverage.json",
@@ -5777,10 +5777,10 @@
         "claude": "sha256:03e901989b73538a685b3dfa8a3486f40c1e01f60c5c992676287d575f5c14d4",
         "codex": "sha256:0c6ea90ea3242c72b1605558f29ec9b48effb4fa2b7e8b16e9c00140a1a9d0f7"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/opentofu-knowledge-patch/coverage.json",
@@ -5813,10 +5813,10 @@
         "claude": "sha256:a52aa88c781514e95d38fac4f5b438a89c734e8ca0eee2d230d54c8d274713c5",
         "codex": "sha256:a52aa88c781514e95d38fac4f5b438a89c734e8ca0eee2d230d54c8d274713c5"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/pgvector-knowledge-patch/coverage.json",
@@ -5850,10 +5850,10 @@
         "claude": "sha256:82e9630b63e8879e1439e9bd6f057769b077c95476924cc810032eb927c9f22c",
         "codex": "sha256:38a101a638f3687f60dfe1ba74fdc7a1b126ffe35bfa0423ddf63e4c8bfb669e"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/phoenix-knowledge-patch/coverage.json",
@@ -5885,10 +5885,10 @@
         "claude": "sha256:60d7ee8575de734992fabf13377d9c9a7dbf321fee5d5049d414bfe0bb982b04",
         "codex": "sha256:0f9a14e4e81ea8ef9bcad6d75d42d8e34c5838a94e27213427364ffc9feeedd0"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/php-knowledge-patch/coverage.json",
@@ -5923,10 +5923,10 @@
         "claude": "sha256:09e73cde8a912ec0b8076611c67f5bc8982ac52ef68545cae5c96360712db337",
         "codex": "sha256:09e73cde8a912ec0b8076611c67f5bc8982ac52ef68545cae5c96360712db337"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/playwright-knowledge-patch/coverage.json",
@@ -5964,10 +5964,10 @@
         "claude": "sha256:c5b6a33003e899b39ef466d4291b7aa13f7188709e9ba34d0341552acac9b55b",
         "codex": "sha256:fbded13f17ed0f0214abf5865773a911812dd89fdafaae57b3f411c11bd9b46b"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/pnpm-knowledge-patch/coverage.json",
@@ -6001,10 +6001,10 @@
         "claude": "sha256:f9888249b8724b33dca6010c69ef1c71078a79c0332405cdec6b08c834f7d6ad",
         "codex": "sha256:f9888249b8724b33dca6010c69ef1c71078a79c0332405cdec6b08c834f7d6ad"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/podman-knowledge-patch/coverage.json",
@@ -6041,10 +6041,10 @@
         "claude": "sha256:8344dc39655771618c6bfd52659f271dd141d093d71f88f7f2a42c5c4ae60db9",
         "codex": "sha256:4ee712445ee86bf39683eb832e9e961ab240d14b52e4f567076083de76711a40"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/polars-knowledge-patch/coverage.json",
@@ -6077,10 +6077,10 @@
         "claude": "sha256:a8890b7a986936f5bb5038fb6765c2634dd090f9d2d4b44c1a54d053c0ae715b",
         "codex": "sha256:a8890b7a986936f5bb5038fb6765c2634dd090f9d2d4b44c1a54d053c0ae715b"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/postgis-knowledge-patch/coverage.json",
@@ -6113,10 +6113,10 @@
         "claude": "sha256:12d3c412ee24241da88ab9c5e487b0086ec3884ac68e2e7d8a539d2f5afbc34f",
         "codex": "sha256:12d3c412ee24241da88ab9c5e487b0086ec3884ac68e2e7d8a539d2f5afbc34f"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/postgresql-knowledge-patch/coverage.json",
@@ -6149,10 +6149,10 @@
         "claude": "sha256:d7685caab6243f78514597a0e40cf37b4fc58f86bc0852a6b3272b011a9938cd",
         "codex": "sha256:d7685caab6243f78514597a0e40cf37b4fc58f86bc0852a6b3272b011a9938cd"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/prisma-knowledge-patch/coverage.json",
@@ -6191,10 +6191,10 @@
         "claude": "sha256:edfe3f7e0263b6547ae76b24d1386b67bc07a9f6945856c171891865af5d5441",
         "codex": "sha256:3e5bed119e798323e4bb8fb10b45e724e6fed08452706d0d153266c19a35b5aa"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/proj-knowledge-patch/coverage.json",
@@ -6230,10 +6230,10 @@
         "claude": "sha256:08d49287c75fc10084e5f52c0b533b639cac46a8af5243a37cea0d3d0a424fb0",
         "codex": "sha256:4a599a1c785daa316269d946539e5db42642adc20302e6b944ba57618997feb7"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/prometheus-knowledge-patch/coverage.json",
@@ -6246,8 +6246,8 @@
       "short_label": "Protocol Buffers",
       "description": "Protocol Buffers",
       "coverage_kind": "versioned",
-      "covered_through": "36.0-rc1",
-      "coverage_label": "36.0-rc1",
+      "covered_through": "35.0",
+      "coverage_label": "35.0",
       "paths": {
         "claude": "skills-claude/protobuf-knowledge-patch",
         "codex": "skills-codex/protobuf-knowledge-patch"
@@ -6272,13 +6272,13 @@
         "types"
       ],
       "content_hashes": {
-        "claude": "sha256:5fa6dc008458dd44398b642b442fad1d9a6e3aaf1a33a03041578933ec20e88e",
-        "codex": "sha256:de7f669a9e3f646a9675b5f6bac503b9371cf0e253127bf7af0d6816f990c2ef"
+        "claude": "sha256:3193d617fd556e5f8dc617c4761fdc91df83efee75a8a91c5dc3fdf6dfc23b0d",
+        "codex": "sha256:029af4816e681828edc996790d3ceb42df6b15cd4a533f42a5bef7f4aa4e8092"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T12:55:14Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T12:55:14Z",
+        "codex": "2026-07-31T12:09:17Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/protobuf-knowledge-patch/coverage.json",
@@ -6318,10 +6318,10 @@
         "claude": "sha256:b56c9df0f492f6e0c6347a6c5136db5dda7eed7521ede12e9dff1c6e55053c39",
         "codex": "sha256:d57dde02a0535b828bc62ffcb36b58ec17e3788bb16970cda659d61c3cff7f94"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/pulumi-knowledge-patch/coverage.json",
@@ -6357,10 +6357,10 @@
         "claude": "sha256:0b77b9a298ac34c7c7e779e7564d13b26db1418f1b171f1306805d7cbf9a50cb",
         "codex": "sha256:55974eaff41a3a2a0c87c5caef3bc211c5a94b77a9a5bd4b489932a39610f33c"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/pytest-knowledge-patch/coverage.json",
@@ -6393,10 +6393,10 @@
         "claude": "sha256:08509b625bc197fc15ff246166cc3c175f8ab502857c85d6ae0396d6e4c802c6",
         "codex": "sha256:08509b625bc197fc15ff246166cc3c175f8ab502857c85d6ae0396d6e4c802c6"
       },
-      "generated_at": "2026-07-28T23:31:57Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:31:57Z",
-        "codex": "2026-07-28T23:31:57Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/python-knowledge-patch/coverage.json",
@@ -6429,10 +6429,10 @@
         "claude": "sha256:4bb81fee0467b7b083d71e6124ac15b3db4c13dff94692b239fe813409fcbcfa",
         "codex": "sha256:4bb81fee0467b7b083d71e6124ac15b3db4c13dff94692b239fe813409fcbcfa"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/pytorch-knowledge-patch/coverage.json",
@@ -6471,10 +6471,10 @@
         "claude": "sha256:80bf712a511a03b53d550ee74c457e46e4971b075db261aefaefd751b93aefed",
         "codex": "sha256:45e11059e613d65512c7ffba48e4ca0185bf77f7959765f21b1ec0a71625ed75"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/qdrant-knowledge-patch/coverage.json",
@@ -6511,10 +6511,10 @@
         "claude": "sha256:379ac0b85fb7c7b15a67817b559abada08ab23682949d174fd7becda955edd00",
         "codex": "sha256:226ee2e0b893eb63275cd34f487367aacc0e1e461d398154cd520f4e830a4c38"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/qgis-knowledge-patch/coverage.json",
@@ -6527,8 +6527,8 @@
       "short_label": "Qwik",
       "description": "Qwik",
       "coverage_kind": "versioned",
-      "covered_through": "2.0.0-beta.38",
-      "coverage_label": "2.0.0-beta.38",
+      "covered_through": "1.19.0",
+      "coverage_label": "1.19.0",
       "paths": {
         "claude": "skills-claude/qwik-knowledge-patch",
         "codex": "skills-codex/qwik-knowledge-patch"
@@ -6550,13 +6550,13 @@
         "typescript"
       ],
       "content_hashes": {
-        "claude": "sha256:593e9816b90cd7235fb948e8275b9e76a212986568d2873c5264ed36075a1597",
-        "codex": "sha256:5eb2f6eb88a80ab96f81d66413580a87225cbfde2c882bd4c74c90e5230f4025"
+        "claude": "sha256:36fa2cfb8575c5603d272d6ca7be289738a1d3a13c7724790d513a41962b2487",
+        "codex": "sha256:c101ec1c3bc14ddbfda8411e18cb4adb42fffda39c13e78d324498cb882631a0"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T12:55:14Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T12:55:14Z",
+        "codex": "2026-07-31T12:38:16Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/qwik-knowledge-patch/coverage.json",
@@ -6589,10 +6589,10 @@
         "claude": "sha256:5875ddc107349ae124b7861ec2b26f54e3350f5ff24c93c26547b8b6e9c51717",
         "codex": "sha256:5875ddc107349ae124b7861ec2b26f54e3350f5ff24c93c26547b8b6e9c51717"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/r-cran-knowledge-patch/coverage.json",
@@ -6629,10 +6629,10 @@
         "claude": "sha256:b87387367c4f2cf21b6ef6efdbd93fd28f341839de384bf7ff0569fd72d2cd27",
         "codex": "sha256:d3befa8c176457abc2b85f160b9babe7794dc04f5e43ecf5e34d72b332405d19"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/rabbitmq-knowledge-patch/coverage.json",
@@ -6665,10 +6665,10 @@
         "claude": "sha256:96d7cc4ba063491bb1a7d415c8a66bec0defed8c129f63bc375801d31d7ccb65",
         "codex": "sha256:96d7cc4ba063491bb1a7d415c8a66bec0defed8c129f63bc375801d31d7ccb65"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/rails-knowledge-patch/coverage.json",
@@ -6701,10 +6701,10 @@
         "claude": "sha256:b6f32ec3a261868d50acc58c84e432755e6653fbcaa52c37b438626481799247",
         "codex": "sha256:b6f32ec3a261868d50acc58c84e432755e6653fbcaa52c37b438626481799247"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ratatui-knowledge-patch/coverage.json",
@@ -6743,10 +6743,10 @@
         "claude": "sha256:541c4ec76e2be6c8022e242e188dbfa112c0cc5d3720e6eb3487db669a5818b2",
         "codex": "sha256:9eeed905e53b2ae5f37a297624ea132008af29bd6a34e153d25dc943d36c504f"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ray-knowledge-patch/coverage.json",
@@ -6781,10 +6781,10 @@
         "claude": "sha256:144e4d98e5264007a2d0ac296507e8588850481a7135f5df0cb4625138ae4757",
         "codex": "sha256:144e4d98e5264007a2d0ac296507e8588850481a7135f5df0cb4625138ae4757"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/react-knowledge-patch/coverage.json",
@@ -6819,10 +6819,10 @@
         "claude": "sha256:b24e0744cb264c6407a57a87f782fe9ae180d995eee45a108b7b2455705b8dd6",
         "codex": "sha256:b24e0744cb264c6407a57a87f782fe9ae180d995eee45a108b7b2455705b8dd6"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/react-native-knowledge-patch/coverage.json",
@@ -6859,10 +6859,10 @@
         "claude": "sha256:9daeb897ef4c03fdcc78bda80c9524ad3b56558b074c396ac631b8021e4486ee",
         "codex": "sha256:9daeb897ef4c03fdcc78bda80c9524ad3b56558b074c396ac631b8021e4486ee"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/react-router-knowledge-patch/coverage.json",
@@ -6895,59 +6895,16 @@
         "claude": "sha256:aa91af0480bd375aebc17117fcb0882e0ac2e089924d665e3a1ba5f97a78a000",
         "codex": "sha256:aa91af0480bd375aebc17117fcb0882e0ac2e089924d665e3a1ba5f97a78a000"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/redis-knowledge-patch/coverage.json",
         "codex": "skills-codex/redis-knowledge-patch/coverage.json"
       },
       "covered_from": "8.0"
-    },
-    {
-      "id": "remix-knowledge-patch",
-      "display_name": "Remix",
-      "short_label": "Remix",
-      "description": "Remix",
-      "coverage_kind": "versioned",
-      "covered_through": "3.0.0-beta.5",
-      "coverage_label": "3.0.0-beta.5",
-      "paths": {
-        "claude": "skills-claude/remix-knowledge-patch",
-        "codex": "skills-codex/remix-knowledge-patch"
-      },
-      "languages": [
-        "typescript",
-        "javascript",
-        "tsx",
-        "jsx",
-        "html",
-        "css"
-      ],
-      "tags": [
-        "web-framework",
-        "react",
-        "fullstack",
-        "routing",
-        "middleware",
-        "frontend",
-        "typescript"
-      ],
-      "content_hashes": {
-        "claude": "sha256:cc331482a51cc04ea69e5adbd21c69e60ac2c2709395f0bf4b00b4dd8a207149",
-        "codex": "sha256:3c9637ff39e379a74545e35e0f752549d1f7e88b1d1a3c1c5893d7cd5d03e4c9"
-      },
-      "generated_at": "2026-07-29T18:17:56Z",
-      "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
-      },
-      "coverage_paths": {
-        "claude": "skills-claude/remix-knowledge-patch/coverage.json",
-        "codex": "skills-codex/remix-knowledge-patch/coverage.json"
-      }
     },
     {
       "id": "rhel-knowledge-patch",
@@ -6975,10 +6932,10 @@
         "claude": "sha256:07e852b011e1e8d982bb89f055616538fead5222dea09fac56b760ec620672d3",
         "codex": "sha256:07e852b011e1e8d982bb89f055616538fead5222dea09fac56b760ec620672d3"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/rhel-knowledge-patch/coverage.json",
@@ -7017,10 +6974,10 @@
         "claude": "sha256:340547345eb85f72188b7506bb9ff4712d4e7ad2ea3bba5deedd0c03a0391efe",
         "codex": "sha256:4daac5341e8ec06e62a18c41c14cfed775d37d24700ea67134c5058101661030"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ros2-knowledge-patch/coverage.json",
@@ -7058,10 +7015,10 @@
         "claude": "sha256:ee6d7aec250b46137664aaf606fb502e712aa5f2b943ef6f773fb6338e8cda78",
         "codex": "sha256:74ec43ad47e7a2cd8d136425e823f1aad64940715404f7cbb3d9f7cbf66e6fd7"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ros2-navigation-nav2-knowledge-patch/coverage.json",
@@ -7097,10 +7054,10 @@
         "claude": "sha256:fbd98638b945d3ad87023e8cc2ee6aa615d5a2b9b9312a246b62c4d1bca06883",
         "codex": "sha256:fbd98638b945d3ad87023e8cc2ee6aa615d5a2b9b9312a246b62c4d1bca06883"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/rtcm3-knowledge-patch/coverage.json",
@@ -7134,10 +7091,10 @@
         "claude": "sha256:b09b5847fb4494324f2c6d5154069446c82974ee3894fca3b9cb2855d5f02bb4",
         "codex": "sha256:b09b5847fb4494324f2c6d5154069446c82974ee3894fca3b9cb2855d5f02bb4"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/rtkbase-knowledge-patch/coverage.json",
@@ -7169,10 +7126,10 @@
         "claude": "sha256:638f93c210a7ad050ec6c4c873539bb2f6550127885dac6d3b488671485825c2",
         "codex": "sha256:337011e760092068e61d8ccc90621ff908f903227dadc2670f9def4a661464b6"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ruby-knowledge-patch/coverage.json",
@@ -7208,10 +7165,10 @@
         "claude": "sha256:595ea2f02c2e88cbea9497d5d5e8f05b8bf743f6538cc32e13915e6f603211a0",
         "codex": "sha256:326c99ce3b9052ab8f2602097ee17ca2c0c08a7ebf74ba223942079f826a8129"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ruff-knowledge-patch/coverage.json",
@@ -7245,10 +7202,10 @@
         "claude": "sha256:27491eb11c16ad293f4798de438e959204d2e697f29f5ec5ad5889c708f3ab7e",
         "codex": "sha256:27491eb11c16ad293f4798de438e959204d2e697f29f5ec5ad5889c708f3ab7e"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/rust-knowledge-patch/coverage.json",
@@ -7288,10 +7245,10 @@
         "claude": "sha256:97bc8b34e882662fd3ebb0995a55bfbb7d6ae991f906ff074fc728e1aac0c221",
         "codex": "sha256:bf45884a9336124333130a36db6596436f1927fec06d4457ae36452dc1a024be"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/sbom-spdx-cyclonedx-knowledge-patch/coverage.json",
@@ -7325,10 +7282,10 @@
         "claude": "sha256:00e0c5c1b1203674ac61fdd66ba6e783adb23835814f417fa1acb34b842aa29f",
         "codex": "sha256:00e0c5c1b1203674ac61fdd66ba6e783adb23835814f417fa1acb34b842aa29f"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/selinux-knowledge-patch/coverage.json",
@@ -7362,10 +7319,10 @@
         "claude": "sha256:58203b3143f10d9368490e61c5a0b86a734c8eade2879e6beafd7337c4a016d9",
         "codex": "sha256:da9b4abe5c9763987ca9d71eebaca4da2bf274f4cda750f56cfe326a6d7db7a2"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/sentry-knowledge-patch/coverage.json",
@@ -7398,10 +7355,10 @@
         "claude": "sha256:fe917395158923a2308ee434133c4f19875bd1071c6700f2630166267b0745ec",
         "codex": "sha256:fe917395158923a2308ee434133c4f19875bd1071c6700f2630166267b0745ec"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/serde-knowledge-patch/coverage.json",
@@ -7440,10 +7397,10 @@
         "claude": "sha256:5b06c01b9ecb337abc194655d4fc4198585840dd67be87bd2004cccbe5ff8e9d",
         "codex": "sha256:6448bc32b4de7a4c1d21c5beaaa987440c13ba54f339f3956613207f6d6be218"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/service-workers-pwa-knowledge-patch/coverage.json",
@@ -7483,10 +7440,10 @@
         "claude": "sha256:f596fa088cae40303337f3c958f7ac1ca62eda4b9b05254691196abf58202a34",
         "codex": "sha256:1a34c536403438c1f05e4d330a0429558fd2625457a950386ae35d509f5e8b51"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/shadcn-ui-knowledge-patch/coverage.json",
@@ -7521,10 +7478,10 @@
         "claude": "sha256:876191c2b72d70a49fbfc3a898ac66a1bdfc3f6ea42f0ba8f1b5eb43811694ed",
         "codex": "sha256:876191c2b72d70a49fbfc3a898ac66a1bdfc3f6ea42f0ba8f1b5eb43811694ed"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/sigstore-cosign-knowledge-patch/coverage.json",
@@ -7559,10 +7516,10 @@
         "claude": "sha256:a6feb435cd2fdf57e472413aaf809f1b0f0995872d088d80167f3ff491ccadab",
         "codex": "sha256:a6feb435cd2fdf57e472413aaf809f1b0f0995872d088d80167f3ff491ccadab"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/slsa-knowledge-patch/coverage.json",
@@ -7598,10 +7555,10 @@
         "claude": "sha256:c697017d3f90c9afbda94bc985fb16c1b75493e1c57bafef062a417196c753e0",
         "codex": "sha256:c697017d3f90c9afbda94bc985fb16c1b75493e1c57bafef062a417196c753e0"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/solidjs-knowledge-patch/coverage.json",
@@ -7635,10 +7592,10 @@
         "claude": "sha256:b8892e0b4a9c8ee5b6cebe5e30bf82a1b63c04c2387bb0101e8106d0500a964c",
         "codex": "sha256:b8892e0b4a9c8ee5b6cebe5e30bf82a1b63c04c2387bb0101e8106d0500a964c"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/spring-boot-knowledge-patch/coverage.json",
@@ -7672,10 +7629,10 @@
         "claude": "sha256:4aaf6f94d60639f0ad51c3aeca8e4081daf71c9a036107bd5e6a4eb572cdc8bf",
         "codex": "sha256:4aaf6f94d60639f0ad51c3aeca8e4081daf71c9a036107bd5e6a4eb572cdc8bf"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/sqlalchemy-knowledge-patch/coverage.json",
@@ -7709,10 +7666,10 @@
         "claude": "sha256:67de87712068ed4c655368fbb4e71d1ed8f6a56d3b39ef07093bce21e24d6189",
         "codex": "sha256:67de87712068ed4c655368fbb4e71d1ed8f6a56d3b39ef07093bce21e24d6189"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/sqlite-knowledge-patch/coverage.json",
@@ -7747,10 +7704,10 @@
         "claude": "sha256:0c8ffb60e89cf9a4ac36d29fb173dcd0ff21362e90a84ae05ac321a599f75506",
         "codex": "sha256:0c8ffb60e89cf9a4ac36d29fb173dcd0ff21362e90a84ae05ac321a599f75506"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/sqlx-knowledge-patch/coverage.json",
@@ -7785,10 +7742,10 @@
         "claude": "sha256:02b97330f9ddf02f2d9bfab274b8bd0f4155ca5ff02f770b60db4bf6ae4e2f70",
         "codex": "sha256:02b97330f9ddf02f2d9bfab274b8bd0f4155ca5ff02f770b60db4bf6ae4e2f70"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/storybook-knowledge-patch/coverage.json",
@@ -7828,10 +7785,10 @@
         "claude": "sha256:14b450c487bae21ac6d4826635b6dde88da358869101cb89b51fa09d24e43301",
         "codex": "sha256:14b450c487bae21ac6d4826635b6dde88da358869101cb89b51fa09d24e43301"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/stripe-knowledge-patch/coverage.json",
@@ -7870,10 +7827,10 @@
         "claude": "sha256:0e74f69b03abf78131dfb5437b3f5e9321575c96bc76ce7f066eb93b2d8917eb",
         "codex": "sha256:0e74f69b03abf78131dfb5437b3f5e9321575c96bc76ce7f066eb93b2d8917eb"
       },
-      "generated_at": "2026-07-28T23:31:57Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:31:57Z",
-        "codex": "2026-07-28T23:31:57Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/supabase-knowledge-patch/coverage.json",
@@ -7906,10 +7863,10 @@
         "claude": "sha256:105bd7c06c27dae82e59918ddcf6c56b867296e7588a7e487493c2434cc352d5",
         "codex": "sha256:105bd7c06c27dae82e59918ddcf6c56b867296e7588a7e487493c2434cc352d5"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/suse-knowledge-patch/coverage.json",
@@ -7944,10 +7901,10 @@
         "claude": "sha256:db98f41f3a361809aba53f52404696ca4c47101371757103c3525f2c0bc5590f",
         "codex": "sha256:db98f41f3a361809aba53f52404696ca4c47101371757103c3525f2c0bc5590f"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/svelte-knowledge-patch/coverage.json",
@@ -7980,10 +7937,10 @@
         "claude": "sha256:1c39064cfaaa6a2342a8c783ce70a6e7051d4387d63c8e9cdbdda6a285375e42",
         "codex": "sha256:1c39064cfaaa6a2342a8c783ce70a6e7051d4387d63c8e9cdbdda6a285375e42"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/swift-knowledge-patch/coverage.json",
@@ -8018,10 +7975,10 @@
         "claude": "sha256:6ba7d9a88154c5cb0e56e7d20b84e09041b378373df7aafe699c23fe3241a071",
         "codex": "sha256:8ec6fb6c49e21d4897dea85e46f96644d93e4c76c4e905f0ec0cb090fe61031d"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/swiftui-knowledge-patch/coverage.json",
@@ -8055,10 +8012,10 @@
         "claude": "sha256:485c95ad2d0058f0b6f21b1ec10f41f316f74cea69b49bfad2b94be4fea879e1",
         "codex": "sha256:485c95ad2d0058f0b6f21b1ec10f41f316f74cea69b49bfad2b94be4fea879e1"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/systemd-knowledge-patch/coverage.json",
@@ -8097,10 +8054,10 @@
         "claude": "sha256:1c9684c916b14a5c1fb954d60982013f2e327078bf7fd901070187d29503b8b1",
         "codex": "sha256:06e04f35b5fb180d9b1bcf2dc138908eaaa296a6d975e5e5a0cfe2ceb2535880"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/tailscale-knowledge-patch/coverage.json",
@@ -8135,10 +8092,10 @@
         "claude": "sha256:bc3b1ba29101bb3f861e75c7904a6e928b28888b405cd19b8265fb23b0e1ad26",
         "codex": "sha256:bc3b1ba29101bb3f861e75c7904a6e928b28888b405cd19b8265fb23b0e1ad26"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/tailwind-knowledge-patch/coverage.json",
@@ -8172,10 +8129,10 @@
         "claude": "sha256:40b661f7a101f8a5d1057aed4143a6ae5936dfd22012321d3a09d480de5b587e",
         "codex": "sha256:40b661f7a101f8a5d1057aed4143a6ae5936dfd22012321d3a09d480de5b587e"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/tanstack-query-knowledge-patch/coverage.json",
@@ -8215,10 +8172,10 @@
         "claude": "sha256:053e57cb0d2ecbe2098d9ac7c220a43936b945240dec04dc9cd19b77785cb211",
         "codex": "sha256:791476715828fb488f118ebe00b00f4c97ae60131edee6bac669307908242aae"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/tanstack-router-knowledge-patch/coverage.json",
@@ -8253,10 +8210,10 @@
         "claude": "sha256:90535c7cc8d7341334f1c2a579c04ada24d1e948b005e6ad5ad0e036d968cce1",
         "codex": "sha256:90535c7cc8d7341334f1c2a579c04ada24d1e948b005e6ad5ad0e036d968cce1"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/tauri-knowledge-patch/coverage.json",
@@ -8296,10 +8253,10 @@
         "claude": "sha256:3f5d0c30442db3053b7cb31ee03ea95831a62c729aaa6686e8d5e3f5645710c7",
         "codex": "sha256:2fd3bc636876d69940cdc4c442d336b705d56d3c10dbd2e59a2dd10873d0770b"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/temporal-knowledge-patch/coverage.json",
@@ -8332,10 +8289,10 @@
         "claude": "sha256:c7a7ea97cd075c5454dc8a43501a6d96a4af21494efe586f527c8742a51e4e75",
         "codex": "sha256:c7a7ea97cd075c5454dc8a43501a6d96a4af21494efe586f527c8742a51e4e75"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/terraform-knowledge-patch/coverage.json",
@@ -8374,10 +8331,10 @@
         "claude": "sha256:235c6d473069bda588e001cf242c957747fd4040c229699ef7d112b909fc9a23",
         "codex": "sha256:65432871a0c43c86ba8977c9543a859259216aa400f0b233db8efa3fc9351440"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/threejs-knowledge-patch/coverage.json",
@@ -8414,10 +8371,10 @@
         "claude": "sha256:e3aa86e67ab58cd55923ceb2e7c1d2c183daea61cfe5ba9b2495c1d0f0737c49",
         "codex": "sha256:4909a865cfa61cf596eee854b4eb8d1b0707bc06e1394e283138fea23bce4b8a"
       },
-      "generated_at": "2026-07-30T01:30:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T01:30:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/timescaledb-knowledge-patch/coverage.json",
@@ -8451,10 +8408,10 @@
         "claude": "sha256:b841b5b23e1358f469d52abe0f2508177c8640f8770aa90e7a20bf93e70f37ef",
         "codex": "sha256:b841b5b23e1358f469d52abe0f2508177c8640f8770aa90e7a20bf93e70f37ef"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/tokio-knowledge-patch/coverage.json",
@@ -8491,10 +8448,10 @@
         "claude": "sha256:8f9b7e85c66097b3555d5364c6538d149e352989cf71f5aade2304511370c6fa",
         "codex": "sha256:81d4200cbecfd9c1053a5ca07d9c79ea8d934a53212376aa0b7f1e9ed371def0"
       },
-      "generated_at": "2026-07-28T21:11:49Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T21:11:49Z",
-        "codex": "2026-07-28T21:11:49Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/traefik-knowledge-patch/coverage.json",
@@ -8528,10 +8485,10 @@
         "claude": "sha256:1721d0b817b7062a60acd4cc4c1a95acdd4116cc059e224935548cebf2006ae5",
         "codex": "sha256:ee1c608be84b0fa1d31a882985f5f18968f54647728567cf725e3f2015fa52a8"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/transformers-knowledge-patch/coverage.json",
@@ -8567,10 +8524,10 @@
         "claude": "sha256:e2ebdd1cc243f24debec4af0295fd20730db10e2f8949c0d53c48a747bbf943d",
         "codex": "sha256:80d1594c20e090a9dd5cba2e0900e82f94dc45152b2db56af07bd27a4ace2a4c"
       },
-      "generated_at": "2026-07-30T10:56:48Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-30T01:30:48Z",
-        "codex": "2026-07-30T10:56:48Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/trino-knowledge-patch/coverage.json",
@@ -8608,10 +8565,10 @@
         "claude": "sha256:61600b323aa6df4a3f8cc9f7a112b9ae3d3a0fdd68af12d401d4d5e15a50e0ef",
         "codex": "sha256:274a3da7ebad726072f4bd69b9e588153e5950773d3da8bf08f78113a8b194a5"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/trivy-knowledge-patch/coverage.json",
@@ -8644,10 +8601,10 @@
         "claude": "sha256:cef1966cfa4cce0bd740ccf04ba1091e1a9b3eea5bb2ae8177c43c37859f42a2",
         "codex": "sha256:cef1966cfa4cce0bd740ccf04ba1091e1a9b3eea5bb2ae8177c43c37859f42a2"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/trpc-knowledge-patch/coverage.json",
@@ -8685,10 +8642,10 @@
         "claude": "sha256:2b9f813bf5f9cd92a0dbd9d9033582a3b73dfc7a8cfcf299343f4867ff06bacc",
         "codex": "sha256:2f40a09f6661e92b5af91ae881563d42604c4e49b4b079a1de390234910493e4"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/turborepo-knowledge-patch/coverage.json",
@@ -8721,10 +8678,10 @@
         "claude": "sha256:c18bdde4fda926f8180251145de8827adbc2585e07123ab0e67309462b8ace6b",
         "codex": "sha256:c18bdde4fda926f8180251145de8827adbc2585e07123ab0e67309462b8ace6b"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/typescript-knowledge-patch/coverage.json",
@@ -8757,10 +8714,10 @@
         "claude": "sha256:5d273eea3893f4d343c504b3677db36da8083567c727081a842a377d2405d286",
         "codex": "sha256:5d273eea3893f4d343c504b3677db36da8083567c727081a842a377d2405d286"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/ubuntu-knowledge-patch/coverage.json",
@@ -8795,10 +8752,10 @@
         "claude": "sha256:bb40d8fc39ef48229ab32f6678dc0a5477e3999213a1bccf65a6650aa1a744d6",
         "codex": "sha256:746eaa6195e82ca1b47a595ede75ab6183f30be374772e063010641c209ab6ab"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/unbound-knowledge-patch/coverage.json",
@@ -8833,10 +8790,10 @@
         "claude": "sha256:a9d6549004cdcab2f96a8758174925ce6f37ed46eab829ce108e5d011e0c7e41",
         "codex": "sha256:a9d6549004cdcab2f96a8758174925ce6f37ed46eab829ce108e5d011e0c7e41"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/uv-knowledge-patch/coverage.json",
@@ -8870,10 +8827,10 @@
         "claude": "sha256:92da78520c9cb46f5d3ad4fc25edb97ba04e05a6bc0da57cd38412fd32a1e47f",
         "codex": "sha256:92da78520c9cb46f5d3ad4fc25edb97ba04e05a6bc0da57cd38412fd32a1e47f"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/vercel-ai-sdk-knowledge-patch/coverage.json",
@@ -8908,10 +8865,10 @@
         "claude": "sha256:22610480d5589128ca1185fc7252d653081b969999ba1c07ff8f35c1627c1089",
         "codex": "sha256:22610480d5589128ca1185fc7252d653081b969999ba1c07ff8f35c1627c1089"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/vite-knowledge-patch/coverage.json",
@@ -8945,10 +8902,10 @@
         "claude": "sha256:2f60eb14617c0215daea048ced195752085f52cdcdd07e8700f7e0058db1ba59",
         "codex": "sha256:2f60eb14617c0215daea048ced195752085f52cdcdd07e8700f7e0058db1ba59"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/vitest-knowledge-patch/coverage.json",
@@ -8986,10 +8943,10 @@
         "claude": "sha256:adf8559e63139c0203baa313ddcd61098979545aeb2900a7fbf060fc0696c0e4",
         "codex": "sha256:9ae8b78017a0643e103a3d42b221b576e42750608f4dbbbf8c00af969ac6b368"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/vllm-knowledge-patch/coverage.json",
@@ -9023,10 +8980,10 @@
         "claude": "sha256:9aafe05ac1125d39b757b623c769ff9db44a5a276b0dddb170928f3689e9b0ec",
         "codex": "sha256:9aafe05ac1125d39b757b623c769ff9db44a5a276b0dddb170928f3689e9b0ec"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/vuejs-knowledge-patch/coverage.json",
@@ -9064,10 +9021,10 @@
         "claude": "sha256:befbdf9220fec8dcffe5055e430a1e86e4c712a28bb73950f86ec033bbd89eda",
         "codex": "sha256:f51ed42de59b0a2514d214084d58afb7545c244b8184af1187ece17f75c22b66"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/wasm-wasi-knowledge-patch/coverage.json",
@@ -9103,10 +9060,10 @@
         "claude": "sha256:2b2b2f20aee910f42347e7e67db1e84f062f83f00b0fbb8e3f7abe940cd827bb",
         "codex": "sha256:2b2b2f20aee910f42347e7e67db1e84f062f83f00b0fbb8e3f7abe940cd827bb"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/webauthn-passkeys-knowledge-patch/coverage.json",
@@ -9145,10 +9102,10 @@
         "claude": "sha256:b6c58858767ca9fab4640aaf02f7dacae962c4dd3cfd99c855162c9308b7c1b8",
         "codex": "sha256:27e1ec9dd2431fe7ce24c27fe68b89324506efccb90393fa132423ebb3fb3ce2"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/webgpu-knowledge-patch/coverage.json",
@@ -9187,10 +9144,10 @@
         "claude": "sha256:7aebc94b580b1e05d3be1152ec584f12820d9963b14f651c10682d2e87fc75a6",
         "codex": "sha256:0d5879c75beb3c18f353e7f66c7613dc561cbdf8f000416c1b7442fb62a44b67"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/wireguard-knowledge-patch/coverage.json",
@@ -9228,10 +9185,10 @@
         "claude": "sha256:491fdb28b49de3a50708cb7a3f4cd9edc461cc6e21da36262c4a09c3bc3dfc27",
         "codex": "sha256:491fdb28b49de3a50708cb7a3f4cd9edc461cc6e21da36262c4a09c3bc3dfc27"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/workos-knowledge-patch/coverage.json",
@@ -9269,10 +9226,10 @@
         "claude": "sha256:973edb958a84edeee24300b3a3b701cbe3a1af7587b23d7d1d2415f4144cb585",
         "codex": "sha256:9ef7bec541ecf005ab8d25d21c1a38c84a0ea5b1dab2976998f4c9d7bf4115fc"
       },
-      "generated_at": "2026-07-29T18:17:56Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-29T18:17:56Z",
-        "codex": "2026-07-29T18:17:56Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/zephyr-knowledge-patch/coverage.json",
@@ -9305,10 +9262,10 @@
         "claude": "sha256:6538f8acd47dd533ffe41a9b016a21e0022af430865716b8af800628d77d99bd",
         "codex": "sha256:6538f8acd47dd533ffe41a9b016a21e0022af430865716b8af800628d77d99bd"
       },
-      "generated_at": "2026-07-28T23:25:53Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:25:53Z",
-        "codex": "2026-07-28T23:25:53Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/zig-knowledge-patch/coverage.json",
@@ -9343,10 +9300,10 @@
         "claude": "sha256:a03a2bd05d99aa664636b80d18c0019031f8225288c00ae6f56eadf50d8304dd",
         "codex": "sha256:a03a2bd05d99aa664636b80d18c0019031f8225288c00ae6f56eadf50d8304dd"
       },
-      "generated_at": "2026-07-28T23:17:16Z",
+      "generated_at": "2026-07-31T09:04:39Z",
       "generated_at_by_lane": {
-        "claude": "2026-07-28T23:17:16Z",
-        "codex": "2026-07-28T23:17:16Z"
+        "claude": "2026-07-31T09:04:39Z",
+        "codex": "2026-07-31T09:04:39Z"
       },
       "coverage_paths": {
         "claude": "skills-claude/zitadel-knowledge-patch/coverage.json",

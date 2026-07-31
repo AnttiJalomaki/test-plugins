@@ -1,10 +1,14 @@
-# Components, JSX, events, and testing
+# Components and Events
 
-## MDX components and layouts
+Use this reference for MDX composition, error handling, view-transition
+events, and Qwik City test doubles.
 
-Imported MDX content accepts a `components` prop for replacing element or
-component implementations. JavaScript expressions in the MDX can read props,
-and a default-exported MDX layout component is honored.
+## MDX component injection and layouts
+
+*Batch: `v1.8-1.13`*
+
+Imported Qwik City MDX content accepts a `components` prop. Map names used by
+the document to application components:
 
 ```tsx
 import { component$ } from '@builder.io/qwik';
@@ -16,99 +20,39 @@ export default component$(() => (
 ));
 ```
 
-## Error boundaries
+JavaScript expressions in MDX can use props. A default-exported MDX layout
+component is also honored, so do not wrap the document a second time unless
+the application intentionally needs another layout layer.
 
-Use the `ErrorBoundary` component for rendering failures. The corresponding
-`useErrorBoundary` behavior was corrected in Qwik 1.13, so tests written around
-earlier behavior should be rechecked after upgrading.
+## View-transition event
 
-Router status pages are separate from component error boundaries; see
-[router-and-navigation.md](router-and-navigation.md) for `404.tsx` and
-`error.tsx` layout behavior.
-
-## Promise attributes and spread bindings
-
-JSX attributes may receive promises directly:
-
-```tsx
-const src = Promise.resolve('/logo.svg');
-return <img src={src} />;
-```
-
-Bindings work when passed through spread props, including `bind:checked` and
-`bind:value`:
-
-```tsx
-const value = useSignal('');
-const props = { 'bind:value': value };
-return <input {...props} />;
-```
-
-## Event-name normalization
-
-JSX event names use these matching rules:
-
-| JSX form | Event name |
-| --- | --- |
-| `onCustomEvent$` | `customevent` |
-| `on-CustomEvent$` | `CustomEvent` |
-| `onCustom-Event$` | `custom-event` |
-
-Without a leading `-`, the name is lowercased. A leading `-` preserves the
-remaining case. Later dashes remain literal rather than camel-casing the next
-letter.
-
-Event-handler types are stricter about scope and no longer claim unsupported
-handlers such as `document:OnQVisible$` or `onQIdle$`.
-
-## Event directives
-
-The event segment of `preventdefault:event` and `stoppropagation:event` must be
-kebab-case. This makes custom-event directives unambiguous instead of relying
-on the mostly lowercase names of DOM events.
-
-JSX handlers also support matching passive and capture markers. For example:
-
-```tsx
-<div passive:touchmove onTouchMove$={handler} />
-<button capture:click onClick$={handler}>Save</button>
-```
-
-Do not combine default prevention with a passive listener unless the behavior
-has been deliberately accounted for. Suppress a false-positive optimizer
-diagnostic only for the affected line:
-
-```tsx
-// @qwik-disable-next-line preventdefault-passive-check
-<div passive:touchmove preventdefault:touchmove onTouchMove$={handler} />
-```
-
-## Framework lifecycle events
+*Batch: `v1.8-1.13`*
 
 Qwik emits a `CustomEvent` named `qviewTransition` when a view transition
-starts. It emits `qrender` after every render.
+starts. Use that event for application behavior that must synchronize with the
+start of a transition.
 
-The qwikloader reruns `qidle` and `qinit` handlers on components rerendered with
-those handlers; they are not limited to handlers present during the first page
-load.
+Keep the exact lowercase-leading event name. This is a Qwik lifecycle event,
+not the browser's generic view-transition API.
 
-Containers inserted at runtime are supported. The loader dispatches their
-`qinit`, `qidle`, and `qvisible` events when the corresponding lifecycle state
-applies.
+## Error boundaries
 
-The V2 loader cannot resume V1 containers. If a document deliberately mixes
-generations, load the V1 loader as well.
+*Batch: `v1.8-1.13`*
 
-## Scoped-style selectors
+Use the `ErrorBoundary` component to contain rendering failures. The behavior
+of `useErrorBoundary` was corrected in 1.13, so update tests that encoded an
+older workaround before retaining that workaround.
 
-Generated scoped-style class names changed their prefix from `⭐️` to `⚡️`.
-Update application CSS or tests that directly select generated names such as
-`.⭐️MyComponent` to use `.⚡️MyComponent`.
+Server-function and route-loader failures have a separate transport flow; see
+[Server and route data](server-and-route-data.md#server-function-error-flow).
 
-Prefer selectors that do not depend on generated class names when possible.
+## Route-loader and action mocks
 
-## Router test doubles
+*Batch: `v1.14-1.19`*
 
-`QwikCityMockProvider` can mock route loaders and actions. Use those mocks to
-exercise component loading, success, explicit `fail()`, and thrown-error paths
-without constructing an entire request pipeline.
+`QwikCityMockProvider` can mock route loaders and actions in component and
+integration tests. Supply test values through the provider rather than
+requiring a live Qwik City request pipeline.
+
+Exercise both successful data and failure/action-result paths. Provider-based
+mocks should reflect the signal and result shapes consumed by the component.

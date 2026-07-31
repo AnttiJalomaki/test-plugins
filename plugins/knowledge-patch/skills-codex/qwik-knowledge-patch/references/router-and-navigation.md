@@ -1,97 +1,94 @@
-# Router and navigation
+# Router and Navigation
 
-## Router setup
+Use this reference for SPA prevention, previous-location handling, rewrite
+topology, internal redirects, and redirect caching.
 
-Qwik City is Qwik Router in V2 and uses `@qwik.dev/router`. `useQwikRouter()`
-replaces the early `QwikRouterProvider`-only setup by providing immediate router
-context without a provider component. There is one important root-component
-qualification: the hook runs only once during SSR. A root that reads reactive
-signals should still render `<QwikRouterProvider>`.
+## MPA-only and navigation-prevention experiments
 
-The `qwikRouter` middleware owns its router configuration and no longer needs a
-separate `qwikRouterConfig` value.
+*Batch: `v1.8-1.13`*
 
-Use `createRenderer()` in SSR entry files when a typed Qwik Router wrapper over
-core's `renderToStream()` is needed.
+Enable routing experiments through `qwikVite()`:
 
-## Document head
-
-`DocumentHeadTags` renders tags managed by the router. `head.styles` and
-`head.scripts` use shapes aligned with `head.meta` and `head.links`.
-
-Server render functions can include `documentHead` in `serverData`, making it
-available to `useDocumentHead()`. The router's `documentHead` also carries the
-client manifest hash for cache busting or ETag construction.
-
-When nested routes merge document-head exports:
-
-- an inner plain-object export overrides an outer object;
-- function exports continue to execute inner-first.
-
-## SPA view transitions and links
-
-Qwik Router supports View Transitions during SPA navigation, but current V2
-behavior makes them opt-in:
-
-```tsx
-<QwikRouterProvider viewTransition={true}>
-  <RouterOutlet />
-</QwikRouterProvider>
+```ts
+qwikVite({
+  experimental: ['noSPA', 'preventNavigate'],
+});
 ```
 
-The framework emits `qviewTransition` when a transition starts.
+Use `noSPA` only for an MPA-only application that does not use `Link`. It is
+not a generic optimization flag for applications that retain SPA navigation.
 
-`Link` renames `prefetchBundle` to `prefetchBundles`. Link data-prefetch
-strategies are configurable; choose them according to route-data freshness and
-network cost.
+`preventNavigate` enables `usePreventNavigate`. The hook can asynchronously
+block SPA navigation. For other navigation with unsaved state, it falls back
+to the browser's dialog behavior.
 
-On the first render, the router's previous URL is `undefined`. Code that
-compares the current and previous location must handle that missing value.
+Test navigation initiated by links, browser history, and full document exits.
+An asynchronous SPA decision and a browser-controlled unload prompt do not
+have identical UX or test behavior.
 
-## Preventing navigation
+The same experimental array also supports `valibot` for the experimental
+`valibot$` validator; see
+[Build and deployment](build-and-deployment.md#experimental-feature-gating).
 
-The stable `usePreventNavigate$` API asynchronously blocks SPA navigation. It
-falls back to browser dialogs for other unsaved-state navigation. The earlier
-`preventNavigate` Vite experiment flag is no longer required.
+## Initial previous URL
 
-## Rewrites and redirects
+*Batch: `v1.8-1.13`*
 
-`RequestEvent.rewrite()` performs an internal redirect while keeping the
-browser-visible URL. Returning or throwing its result from a request handler
-has the same control-flow effect in current V2 code:
+On the first render, the router's previous URL is `undefined`. Treat absence
+as the initial-navigation state.
+
+Do not substitute the current URL unless the application explicitly wants that
+semantic. Components that compare previous and current locations should have a
+separate first-render branch.
+
+## Rewrite fan-in
+
+*Batch: `v1.8-1.13`*
+
+Multiple rewrite routes may point to the same destination route. This is valid
+fan-in and no longer produces an error.
+
+Use it for aliases, localization entry points, or legacy paths that share one
+handler. Preserve the original browser-visible URL when application behavior,
+analytics, or canonical links depend on it.
+
+## Request-event rewrites
+
+*Batch: `v1.14-1.19`*
+
+`RequestEvent.rewrite()` performs an internal redirect while preserving the
+URL shown in the browser. Throw its result from a request handler:
 
 ```ts
 export const onRequest: RequestHandler = async ({ rewrite }) => {
-  return rewrite('/articles/42');
+  throw rewrite('/articles/42');
 };
 ```
 
-The stable `request.rewrite()` form also no longer needs an experimental flag.
-Multiple rewrite routes may target the same destination route.
+Because the visible URL remains unchanged, generate canonical metadata and
+relative links with an explicit understanding of whether they should describe
+the requested path or the rewritten destination.
 
-An invalid absolute URL passed to rewrite handling returns `400`, not `500`.
-Update error handling and tests to expect a client-error response.
+Request-event typing and middleware details are in
+[Server and route data](server-and-route-data.md#request-event-rewrites).
 
-`rewriteRoutes` accepts `exclude` patterns for paths that must not receive
-generated localized routes.
+## Redirect caching
 
-## Error pages and layouts
+*Batch: `v1.14-1.19`*
 
-Use `404.tsx` for not-found responses. It renders during development as well as
-production. Use `error.tsx` for other HTTP statuses and read the current code
-with `useHttpStatus()`.
+Redirect responses no longer inherit `Cache-Control` from a parent layout.
+They default to `no-store`.
 
-Both error route types render inside layouts selected by normal `@layout` and
-`!` modifiers. A miss uses the nearest `404.tsx`. Static builds prerender the
-not-found page; rename it to `404!.tsx` when it must bypass the surrounding
-layout.
+Set a redirect cache policy explicitly only when the redirect is safe to cache
+for every affected user and request variant. Do not expect a layout's page
+cache policy to carry over.
 
-The `notFound` values returned by router factory functions are inert. Define
-not-found behavior through the router exports that own it.
+Route-data requests have a different cache path: Qwik City navigation follows
+the `q-data.json` response headers and uses a one-hour default duration. See
+[Build and deployment](build-and-deployment.md#asset-paths-and-cache-headers).
 
-## Router development behavior
+## Related transition lifecycle
 
-Router development uses the same Node middleware as production and discovers
-new routes through hot reload. Verify navigation in development as well as a
-production or SSG build, especially for `404.tsx`, localized rewrites, and
-layout modifiers.
+Qwik emits `qviewTransition` when a view transition starts. See
+[Components and events](components-and-events.md#view-transition-event) when
+navigation code needs to coordinate with that event.

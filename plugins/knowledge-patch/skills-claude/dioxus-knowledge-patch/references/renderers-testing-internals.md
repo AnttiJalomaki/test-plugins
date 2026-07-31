@@ -1,139 +1,233 @@
 # Renderers, Testing, Hot-Patching, and Internals
 
-## Desktop and renderer services
+## Renderer choices
 
-Desktop custom asset handlers can stream bytes directly from Rust into the WebView without a JavaScript encoding layer. File drops use the normal event system and provide full paths rather than requiring external interception.
+The maintained first-party directions are web, desktop, mobile (a thin layer
+over the desktop webview), and native. LiveView remains supported but is
+deprioritized in favor of fullstack and may be removed; avoid beginning new
+architecture on it. `dioxus-tui` is deprecated and lives on a legacy Blitz
+branch.
 
-Desktop child windows can overlay an existing WGPU or OpenGL window, and an application with its own windows can provide Dioxus a custom event loop. System-tray support is available. The `dioxus-document` abstraction lets a custom renderer implement the `Document` service used by `Title`, `Script`, and `eval`; `dioxus-history` makes `Link` and `Router` renderer-independent. A custom renderer crate can enable `third-party-renderer` to suppress the no-active-platform warning.
+Dioxus Native/Blitz, introduced publicly around `0.7.0`, renders through WGPU
+without a webview, using Taffy for layout, Stylo for CSS, and Vello for painting.
+Blitz can also be used as a modular HTML/CSS engine. Native CSS coverage and
+performance are still works in progress.
 
-## Dioxus Native and Blitz
+The `native-dom` package isolates the bridge between Blitz and `dioxus-core`,
+allowing a host such as a Bevy game to keep ownership of its window/input loop
+while embedding a Dioxus UI. Native apps can import
+`dioxus_native::prelude::*` since `0.7.3`.
 
-Dioxus Native, introduced in 0.7.0, is an experimental WGPU renderer built on the separately reusable Blitz engine. It covers accessibility, events, assets, HTML/CSS layout, and text painting. Less-common CSS and JavaScript-dependent pages remain incomplete, so it is not a drop-in browser.
+## Writing a custom renderer
 
-Native rendering can embed Dioxus in Bevy or WGPU applications and run on embedded Linux. Dioxus Native adds application-defined custom elements in 0.8.0-alpha.0 along with broader incremental-rendering improvements.
+The renderer applies Dioxus's `Mutation` stream and feeds platform events back;
+Dioxus owns the virtual tree, diffing, memory management, and event dispatch.
+Mutations form a stack machine rather than a list of direct node addresses:
 
-LiveView remains supported but is deprioritized in favor of Fullstack and may be removed. Its router renders without a separate renderer-specific integration, but it does not synchronize with browser history. The older TUI renderer is deprecated and remains only in Blitz's legacy tree.
+- `LoadTemplate`, `CreatePlaceholder`, and `CreateTextNode` push real nodes.
+- `AppendChildren`, `InsertAfter`, `InsertBefore`, `ReplacePlaceholder`, and
+  `ReplaceWith` pop nodes; their `m` field is the count.
+- The mount node starts on the stack as `ElementId(0)`.
+- Other instructions include `AssignId`, `HydrateText`, `SetAttribute`,
+  `SetText`, listener add/remove, `Remove`, and `PushRoot`.
 
-## Rust hot-patching with Subsecond
+Dioxus reclaims `ElementId`s after removal. Store renderer nodes in a sparse
+`Vec<Option<T>>` indexed by ID and grow it as needed; never assume an ID remains
+globally unique.
 
-### Runtime behavior
+`LoadTemplate` names a compile-time-static `Template` delivered the first time
+it is used. Clone it per instantiation. `node_paths` and `attr_paths` are child-
+index paths from a root to dynamic holes, which later mutations hydrate or
+replace.
 
-The 0.7.0 Subsecond integration patches Dioxus components and server functions on Web, Desktop, and Mobile while retaining running state. It can serve any Rust project, but non-Dioxus code needs explicit `subsecond::call` synchronization points. Changed struct layouts are not migrated.
+```rust
+Template {
+    name: "main.rs:1:1:0",
+    roots: &[TemplateNode::Element {
+        tag: "h1",
+        namespace: None,
+        attrs: &[],
+        children: &[TemplateNode::DynamicText { id: 0 }],
+    }],
+    node_paths: &[&[0, 0]],
+    attr_paths: &[],
+}
+```
+
+HTML and SVG namespaces are helpers that compile away. A renderer may define
+its own element/attribute namespace while retaining components, hooks, and
+shared state.
+
+## RSX hot reload
+
+RSX hot reload and compiled-code patching are separate systems. Since `0.6.0`,
+RSX reload covers formatted strings in markup and component props, literal prop
+values, nested RSX in loops/conditions, and component children.
+
+To decide whether an edit is data-only, the dev server blanks each `rsx!` body
+and doc comment in old and new files and compares the remaining Rust. Any other
+Rust change triggers a rebuild. Inside RSX, it rematches a pool of dynamic items
+from the last compilation, so these can reload:
+
+- literal changes and markup restructuring;
+- moving attributes;
+- reusing an already compiled formatted segment such as `"{count}"`.
+
+A new Rust expression, changed control-flow condition, or changed number of
+`rsx!` macros forces a full rebuild.
+
+## Subsecond compiled-code patching
+
+Introduced in `0.7.0`, Subsecond patches compiled Rust functions into a running
+process without discarding application state. Dioxus components and server
+functions are automatic. Other Rust code crosses an explicit
+`dioxus::subsecond::call` site, which is also a synchronization point where a
+framework can drop listeners or recreate state.
 
 ```rust
 loop {
     std::thread::sleep(std::time::Duration::from_secs(1));
-    subsecond::call(|| tick());
+    dioxus::subsecond::call(|| tick());
 }
 ```
 
-In the initial stable workflow, opt in with `dx serve --hotpatch`. Patches were limited to the tip crate even though RSX hot reload spanned a workspace. Existing globals survived, renamed globals became new globals, and changed static initializers were not rerun. Workspace crate hot-patching arrived in 0.7.4; do not apply the earlier tip-crate limitation to versions with that support.
+Starter integrations exist for Axum, Bevy, and Ratatui. A non-Dioxus program can
+connect through `dioxus_devtools::connect_subsecond()` and route hot code through
+`dioxus_devtools::subsecond::call`. For an async entry point,
+`serve_subsecond_with_args` drops and recreates the future around each patch.
 
-```sh
-dx serve --hotpatch
-```
+### Default serve behavior
 
-Thread-local values defined in the patched tip crate reset to their initializer on each patch, while dependency thread-locals behave normally. Destructors for newly introduced globals do not run. Patching supports the iOS Simulator, but not code-signed physical iOS devices.
+> **Prerelease (`0.8.0-alpha.0`):** This guidance may change before stable release.
 
-Linux thin/patch linking forwards `-B` linker search paths as of 0.7.5. Preview hot-patching is enabled by default in 0.8.0-alpha.0, whose watcher covers `Cargo.toml`, configured watch paths, and Cargo-discovered dependency files.
+Compiled-code hot-patching is enabled by default under `dx serve`; the explicit
+`--hotpatch` flag is unnecessary. The watcher also reacts to manifest changes
+and configured watch paths.
 
-## WebAssembly splitting
+### Hard limits
 
-### Route and function split points
+Subsecond uses a global indirection/jump table. A struct size or alignment change
+cannot migrate live state and may crash rather than gracefully rebuild. Dispose
+or migrate affected state and force a full restart.
 
-`#[wasm_split]` on a route emits it as a lazy WebAssembly chunk fetched during first navigation. A named `#[wasm_split(name)]` can instead mark an async function as a statically discovered, Web-only boundary; calling and awaiting it loads its module before executing.
+Dioxus `0.7.4` added workspace-aware hot-patching orchestration. At the
+low-level patch boundary, only the selected tip crate is patched; changes in
+other workspace crates or dependencies require a separate build or patch
+boundary.
+
+Other limits:
+
+- Tip-crate thread locals reset on every patch; dependency thread locals keep
+  their values.
+- Static initializer changes are not observed.
+- Newly introduced globals never run their destructors; renaming a global makes
+  it a new global.
+- Supported targets include desktop Linux/macOS/Windows on x86_64/aarch64,
+  Android, iOS simulator, and WASM. Signed iOS devices are excluded.
+
+Press `r` in the `dx serve` TUI when these limits require a full rebuild.
+
+## WASM splitting
+
+`#[wasm_split(name)]` on an async function moves that function and code reachable
+only through it into an on-demand module. Awaiting it loads the module
+transparently. Outputs include `main.wasm`, split-point `module_*` files, shared
+`chunk_*` files, and a `__wasm_split.js` loader. All modules share the main
+module's memory and indirect function table, so ordinary Rust values cross the
+boundary.
 
 ```rust
 #[wasm_split(admin_panel)]
 async fn load_admin_panel() -> AdminPanel {
     AdminPanel::new()
 }
-
-let panel = load_admin_panel().await;
 ```
 
-The build passes through `keep_names` as of 0.7.4 for better WebAssembly stack traces. Bundled split chunks use content-hashed filenames as of 0.7.6.
-
-### Low-level lazy loaders
-
-Libraries can declare `#[lazy_loader(extern "auto")]`. The generated `LazyLoader::load().await` reports load success, and `.call(args)` returns `SplitLoaderError::NotLoaded` or `LoadFailed` when invocation cannot proceed. The `"auto"` ABI groups all discovered modules into one load unit.
+Libraries can declare a split boundary with `#[lazy_loader]`. It yields a
+`LazyLoader<Args, Return>` whose async `.load()` prepares the code and whose
+synchronous `.call(args)` returns `NotLoaded` or `LoadFailed` when unavailable.
+`extern "auto"` merges discovered code into a single module.
 
 ```rust
 #[lazy_loader(extern "auto")]
-fn my_lazy_fn(x: i32) -> i32;
+fn my_lazy_fn(value: i32) -> i32;
 ```
 
-## Custom renderer contracts
+Split points must be async and are discovered at compile time; there are no
+dynamic imports. The splitter needs the pre-`wasm-bindgen` binary with
+relocations, debug symbols, and LTO, so use `dx`, not a hand-built `wasm-pack`
+pipeline. Router variants can expose the same mechanism through
+`#[wasm_split("/route")]` and display a loading state during navigation.
 
-### API migrations
+## Testing hooks with `VirtualDom`
 
-A renderer moving to 0.6.0 must:
-
-- use `dioxus_devtools::connect`;
-- expose each custom element as a module containing `TAG_NAME`, `NAME_SPACE`, and attribute constants;
-- provide top-level `completions::CompleteWithBraces`;
-- route event attributes through `eventname::call_with_explicit_closure`;
-- implement `FileEngine::file_size` and `HtmlEventConverter::convert_resize_data`;
-- stop selecting the removed `dioxus-html` `web`/`native` features.
-
-In 0.7.0, renderer event attributes convert into `ListenerCallback<T>` rather than component-facing `EventHandler<Event<T>>`.
-
-### Mutation stack machine
-
-A renderer consumes static templates plus `Mutation` edits as a stack machine. It maintains reusable `ElementId` mappings, reserves ID 0 for the root, and tolerates reclaimed IDs. Its event loop waits for platform input and `VirtualDom::wait_for_work`, applies generated mutations, and translates native input into Dioxus `UserEvent` values.
-
-When a template is first used, it appears in `Mutations.templates`; build and cache its static tree before applying related edits. `LoadTemplate`, `CreatePlaceholder`, and `CreateTextNode` push nodes. Append, insert, and replace edits consume nodes. Dynamic paths inside cloned templates locate placeholders for operations such as `HydrateText`.
-
-## Direct SSR
-
-`dioxus_ssr::render_element` renders an RSX value directly. To render a `VirtualDom`, rebuild it first and pass a shared reference to `dioxus_ssr::render`.
+There is no dedicated hook-test library. Wrap the hook in a test component,
+create a `VirtualDom`, call `rebuild_in_place()` for the first render, then drain
+scheduled work with `wait_for_work()` and
+`render_immediate(&mut NoOpMutations)`. Run assertions inside the root reactive
+scope. `NoOpMutations` lives under `dioxus::dioxus_core`, not the prelude.
 
 ```rust
-let element_html = dioxus_ssr::render_element(rsx! { div { "hello" } });
+use dioxus::{dioxus_core::NoOpMutations, prelude::*};
+use futures::FutureExt;
 
-let mut vdom = VirtualDom::new(App);
+let mut vdom = VirtualDom::new_with_props(mock_app, props);
 vdom.rebuild_in_place();
-let vdom_html = dioxus_ssr::render(&vdom);
-```
 
-A `VirtualDom` is not `Send` and cannot be held across `.await`. Stateful low-level SSR must keep each DOM on a dedicated thread and communicate through channels, or use a pool of thread-bound DOMs.
-
-## Testing
-
-Component output can be asserted by rendering RSX with `dioxus-ssr`. There is no complete hook-testing harness; manually drive a `VirtualDom` for hook tests. End-to-end browser tests can let Playwright own the development server through its `webServer` configuration.
-
-```js
-webServer: {
-    command: "dx serve",
-    port: 8080,
-    reuseExistingServer: !process.env.CI,
+while vdom.wait_for_work().now_or_never().is_some() {
+    vdom.render_immediate(&mut NoOpMutations);
 }
+
+vdom.in_scope(ScopeId::ROOT, || {
+    assert_eq!(dioxus::core::generation(), 4);
+});
 ```
 
-For custom renderer tests, verify template caching, stack order, reclaimed IDs, hydration edits, event conversion, and concurrent wakeups from both the platform and `wait_for_work`.
+Inside the component, `dioxus::core::generation()` reports its render count and
+`dioxus::core::schedule_update()` returns an `Arc<dyn Fn()>` that forces another
+pass, allowing a test to advance a hook through successive generations.
 
-## LiveView browser escape hatches
+## Comparing RSX output
 
-LiveView handlers normally round-trip through the server. A quoted raw event attribute executes JavaScript in the browser for latency-sensitive interaction or synchronous default prevention.
+Elements are not directly comparable. Render both with standalone SSR and
+compare their strings; `render_element` takes an owned `Element`.
 
 ```rust
-rsx! {
-    input { "oninput": "console.log('input changed!')" }
+fn assert_rsx_eq(first: Element, second: Element) {
+    pretty_assertions::assert_str_eq!(
+        dioxus_ssr::render_element(first),
+        dioxus_ssr::render_element(second),
+    );
 }
 ```
 
-LiveView routing does not synchronize its route state with browser history. Treat it as renderer-local routing rather than `WebHistory` behavior.
+For browser end-to-end tests, point Playwright's `webServer.command` at
+`dx serve` on port 8080 and allow a generous first-build timeout. Rust source
+debugging in Chrome requires the DWARF-aware extension.
 
-## Native plugin FFI
+## Standalone SSR and `!Send` virtual DOMs
 
-Manganis added native Mobile FFI in 0.7.4. `#[manganis::ffi]` source assets may be Swift, Kotlin, Java, or C files/directories; DX bundles and compiles them into the generated project and creates Rust interfaces. Foreign blocks may declare opaque objects with `pub type`; arguments must be pointer-like or otherwise coercible across the language boundary.
+`dioxus-ssr` works inside any web framework without `dioxus-fullstack`. Build
+such a normal Rust service with `cargo run`, not `dx serve`. `render_element`
+takes owned RSX output; `render(&vdom)` needs a `VirtualDom` rebuilt first.
 
 ```rust
-#[manganis::ffi("/src/ios")]
-extern "Swift" {
-    pub type SomeSwiftObject;
-    pub fn do_thing(this: &SomeSwiftObject) -> Option<u32>;
-}
+let mut vdom = VirtualDom::new(app);
+vdom.rebuild_in_place();
+let html = dioxus_ssr::render(&vdom);
 ```
 
-Calls use runtime lookup such as JNI or Objective-C. Native compilation occurs after `rustc`, so Rust code cannot consume headers or other outputs generated by that native compilation. Plugin libraries also cannot add permissions automatically; document the required application-level `[permissions]` entries.
+A `VirtualDom` is not `Send` and must remain on its creating thread. A
+`Send`-requiring handler may construct and render one to a `String`, but cannot
+hold it across `.await`. Retained-state SSR therefore needs one DOM per thread
+communicating over channels, or a thread-local pool.
+
+## Renderer verification
+
+- Cache and clone templates exactly when first delivered.
+- Reuse reclaimed `ElementId`s safely and validate sparse storage growth.
+- Test the mutation push/pop count and root stack state.
+- Convert platform event data back into the types expected by Dioxus.
+- Exercise hydration paths separately from fresh mounts.
+- Force full rebuilds for state-layout changes and dependency edits that exceed
+  hot-patch boundaries.

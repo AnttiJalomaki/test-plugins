@@ -1,14 +1,34 @@
-# Serialization, data, validation, and diagnostics
+# Serialization, Data, and Diagnostics
 
-## JSON compatibility checks
+## Serialization compatibility (`10.0-guides`)
 
-In .NET 10, `System.Text.Json` checks for property-name conflicts
-(`10.0-guides`). Audit naming policies, explicit names, inheritance, and
-source-generated contracts for collisions.
+`System.Text.Json` checks for property-name conflicts. Resolve colliding names
+instead of depending on an implicit winner.
+
+`XmlSerializer` no longer ignores properties marked with `ObsoleteAttribute`.
+Such properties can enter the serialized contract; exclude them explicitly if
+they are not wire data.
+
+## JSON contracts (`10.0`)
+
+### Reference handling in generated contexts
+
+`JsonSourceGenerationOptionsAttribute.ReferenceHandler` accepts a
+`JsonKnownReferenceHandler`. A generated context can therefore preserve
+references instead of throwing when it encounters a cycle.
+
+```csharp
+[JsonSourceGenerationOptions(
+    ReferenceHandler = JsonKnownReferenceHandler.Preserve)]
+[JsonSerializable(typeof(Node))]
+partial class AppJsonContext : JsonSerializerContext;
+```
+
+### Duplicate-safe and strict input
 
 Set `AllowDuplicateProperties = false` to make serializers, `JsonObject`,
-dictionaries, and `JsonDocument` reject duplicate names with `JsonException`
-(`10.0`).
+dictionaries, and `JsonDocument` reject duplicate property names with
+`JsonException`.
 
 ```csharp
 var options = new JsonSerializerOptions
@@ -18,105 +38,30 @@ var options = new JsonSerializerOptions
 var value = JsonSerializer.Deserialize<Model>(json, options);
 ```
 
-The `JsonSerializerOptions.Strict` preset also rejects unmapped members, keeps
-case-sensitive property binding, and enforces nullable annotations and
+The `JsonSerializerOptions.Strict` preset additionally disallows unmapped
+members, retains case-sensitive binding, and enforces nullable annotations and
 required constructor parameters.
 
-## Source generation and reference preservation
+## Diagnostics (`10.0`)
 
-`JsonSourceGenerationOptionsAttribute.ReferenceHandler` accepts a
-`JsonKnownReferenceHandler`. A generated context can therefore preserve
-references instead of throwing for a cyclic object graph.
+### Telemetry schema URLs and activity serialization
 
-```csharp
-[JsonSourceGenerationOptions(
-    ReferenceHandler = JsonKnownReferenceHandler.Preserve)]
-[JsonSerializable(typeof(Node))]
-partial class AppJsonContext : JsonSerializerContext;
-```
+`ActivitySource` and `Meter` can carry a telemetry schema URL.
+`ActivitySourceOptions` supplies the constructor path when multiple options are
+needed. Out-of-process `Activity` serialization includes events and links, so
+consumers should be prepared to receive those collections.
 
-## JSON contracts and streaming
+### Rate-limited root-activity sampling
 
-.NET 11 Preview 6 adds the following (`11.0-preview.6`):
-
-- `JsonNamingPolicy.PascalCase`.
-- Per-member `JsonNamingPolicyAttribute`.
-- Type-level `JsonIgnoreAttribute` defaults.
-- Built-in F# discriminated-union support.
-- Reflection and source-generated C# union contracts customizable through
-  `JsonUnionAttribute`, `JsonUnionCaseInfo`, and type classifiers.
-- `SerializeAsyncEnumerable` output to a `PipeWriter`.
-- A `topLevelValues: true` mode that emits newline-delimited top-level values
-  instead of a JSON array.
-
-## XML contracts
-
-`XmlSerializer` no longer ignores properties marked with
-`ObsoleteAttribute` in .NET 10. Such properties can enter the serialized
-contract; explicitly exclude them if that is the intended wire shape.
-
-## CBOR depth
-
-`CborReader` and `CborWriter` enforce a default maximum nesting depth in .NET
-11 Preview 6 (`11.0-preview.6-compatibility`). Deep CBOR can now be rejected
-even when the application did not configure an explicit limit.
-
-## Configuration binding and validation
-
-.NET 11 Preview 6 adds `ConfigurationIgnoreAttribute` for excluding individual
-properties from binding. DataAnnotations adds:
-
-- `AsyncValidationAttribute`.
-- `IAsyncValidatableObject`.
-- Asynchronous `Validator` methods.
-- Asynchronous options validation.
-- `IAsyncStartupValidator`.
-
-Use the asynchronous path end to end; do not block asynchronous validators
-inside synchronous validation.
-
-## EF Core query filters
-
-EF Core 10 supports multiple named query filters on one entity type. Disable
-an individual named filter when needed rather than disabling all filters for
-that entity.
-
-## Telemetry schemas and sampling
-
-In .NET 10, `ActivitySource` and `Meter` can carry a telemetry schema URL.
-`ActivitySourceOptions` is the multi-option construction path. Out-of-process
-`Activity` serialization includes events and links.
-
-EventSource trace aggregators can rate-limit root activities with a filter
-such as:
+EventSource trace aggregators can cap root activities per second. A filter such
+as the following sets the cap to 100:
 
 ```text
 [AS]*/-ParentRateLimitingSampler(100)
 ```
 
-Also revalidate sampling after upgrading: `ActivitySource.CreateActivity` and
-`StartActivity` sampling behavior changed, and the default trace-context
-propagator is the W3C standard.
+## EF Core query filters (`10.0`)
 
-## Cache metrics and tracing rules
-
-With `TrackStatistics=true`, `MemoryCache` publishes these instruments in .NET
-11 Preview 6:
-
-- `dotnet.cache.requests`
-- `dotnet.cache.evictions`
-- `dotnet.cache.entries`
-- `dotnet.cache.estimated_size`
-
-Injecting `IMeterFactory` scopes them per cache instead of using the shared
-process meter.
-
-`AddTracing` configures source-specific and operation-specific `Activity`
-enable or disable rules without manually building listeners.
-
-```csharp
-builder.Services.AddTracing(t =>
-    t.DisableTracing(
-        sourceName: "MyCompany.Orders",
-        operationName: "HealthCheck"));
-```
+EF Core 10 supports multiple named query filters for an entity type. Disable an
+individual named filter when needed instead of disabling every filter attached
+to that entity.

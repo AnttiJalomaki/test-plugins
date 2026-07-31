@@ -10,99 +10,116 @@ metadata:
 
 # .NET and C# Knowledge Patch
 
-Use this skill when writing, reviewing, upgrading, or troubleshooting modern
-.NET and C# code. Check the project's target framework, SDK selection,
-`LangVersion`, runtime identifier, publishing mode, and preview opt-ins before
-applying guidance. Preview language and runtime features can require both a
-matching compiler/runtime and explicit project configuration.
+Use this skill when current .NET SDK, runtime, library, deployment, or C# behavior
+matters, especially for migrations, changed defaults, and new compiler syntax.
 
-## Reference index
+## Start Here
+
+1. Identify the selected SDK, target framework, language version, runtime, and deployment model rather than assuming they move together.
+2. For an upgrade, scan **Migration Blockers** before adopting new APIs.
+3. Open the matching topic reference for durable details and constraints.
+4. Verify platform-conditional behavior on the actual target OS and runtime,
+   especially cryptography, TLS, native loading, containers, and UI.
+5. In reproducible builds, pin contractual defaults such as the base image,
+   workload set, image format, test runner, or JSON policy.
+
+## Reference Index
 
 | Reference | Topics |
-|---|---|
-| [language.md](references/language.md) | C# extension blocks, properties, lambdas, partial members, assignments, spans, unions, closed hierarchies, control flow, and pointer safety |
-| [runtime-and-io.md](references/runtime-and-io.md) | Runtime Async, process control, core types, LINQ, tensors, files, pipes, compression, archives, diagnostics, and platform behavior |
-| [serialization-hosting-and-data.md](references/serialization-hosting-and-data.md) | JSON, XML, configuration, validation, hosting, logging, caching, tracing, and EF Core |
-| [security-networking-and-interop.md](references/security-networking-and-interop.md) | Certificates, post-quantum cryptography, AES-KWP, X25519, TLS, HTTP, QUIC, native libraries, and COM |
-| [sdk-cli-build-and-test.md](references/sdk-cli-build-and-test.md) | CLI commands, file-based apps, MSBuild, workloads, NuGet, testing, watch/run workflows, and solution filters |
-| [deployment-and-ui.md](references/deployment-and-ui.md) | Containers, NativeAOT, native output, runtime configuration, desktop UI, MAUI, and deployment baselines |
+| --- | --- |
+| [language.md](references/language.md) | C# extension members, properties, spans, lambdas, partial members, assignments, and Visual Basic compatibility |
+| [runtime-and-io.md](references/runtime-and-io.md) | Runtime compatibility, core types, I/O, diagnostics, globalization, tensors, and intrinsics |
+| [sdk-cli-build-and-test.md](references/sdk-cli-build-and-test.md) | CLI defaults, tools, restore, workloads, MSBuild, file-based apps, completions, and testing |
+| [deployment-and-ui.md](references/deployment-and-ui.md) | Containers, native publishing, base images, file-based deployment, WPF, Windows Forms, and drawing |
+| [security-networking-and-interop.md](references/security-networking-and-interop.md) | Certificates, post-quantum crypto, AES-KWP, TLS, HTTP, URI, mail, native loading, and COM |
+| [serialization-hosting-and-data.md](references/serialization-hosting-and-data.md) | JSON, XML, hosting, configuration, logging, and EF Core query filters |
 
-## Upgrade triage
+## Migration Blockers
 
-Before changing code, identify whether the problem is a compile-time language
-change, runtime behavior change, SDK/CLI change, or package/tooling change.
+### Pin container assumptions
 
-### High-impact runtime and library changes
+Default container images use Ubuntu. If a Dockerfile, native dependency, or
+operations script assumes another distribution's package names, filesystem
+layout, or package manager, select a compatible base image explicitly or
+adapt the build. Also set `ContainerImageFormat` when Docker versus OCI output
+is operationally significant.
 
-- `BackgroundService.ExecuteAsync` runs entirely as a `Task`; failures can now
-  surface from both `IHost.RunAsync` and `IHost.StopAsync`.
-- The runtime no longer installs default termination-signal handlers. Review
-  applications that implicitly relied on them.
-- `DateOnly.TryParse` and `TimeOnly.TryParse` can throw for invalid input.
-  Do not assume every failure is represented only by `false`.
-- `CborReader` and `CborWriter` have a default nesting limit.
-- ZIP and TAR readers validate CRC32 and header checksums. Treat newly exposed
-  failures as corrupt input rather than suppressing validation.
-- `ZipArchive.CreateAsync` loads entries eagerly, so entry-read failures can
-  occur during archive creation.
-- Empty `DeflateStream` and `GZipStream` output now includes framing headers
-  and footers.
-- `BufferedStream.WriteByte` does not implicitly flush.
-- On Unix, `FileStream.IsAsync` and `SafeFileHandle.IsAsync` now report the
-  underlying non-blocking state accurately.
-- `Environment.TickCount` follows Windows timeout behavior consistently.
-- A custom `Type` subclass passed to `Nullable.GetUnderlyingType` now throws.
+See [deployment-and-ui.md](references/deployment-and-ui.md).
 
-See [runtime-and-io.md](references/runtime-and-io.md) for exact archive,
-process, I/O, diagnostics, and core-library behavior.
+### Audit restore and package metadata
 
-### Security and networking changes
+Restore audits transitive dependencies. Versionless `PackageReference` items,
+invalid package IDs, and some HTTP warnings now fail instead of drifting
+through the build. NU1510 identifies direct references that pruning can
+remove. Review `deps.json` consumers because packages without runtime assets
+are omitted.
 
-- Check `IsSupported` before using `MLKem`, `MLDsa`, or `SlhDsa`; platform
-  support depends on the cryptographic backend.
-- Composite ML-DSA uses draft-08, and PQC `SecretKey` members were renamed to
-  `PrivateKey`.
-- Unix requires OpenSSL 1.1.1 or later. Use
-  `DOTNET_OPENSSL_VERSION_OVERRIDE` for the OpenSSL override.
-- OpenSSL cryptographic primitives are unavailable on macOS, and DSA is no
-  longer available there.
-- Server-side `SslStream` disables AIA certificate downloads by default.
-- Trimmed publications disable HTTP/3 by default.
-- Browser HTTP clients stream responses by default.
-- `MailAddress` rejects addresses containing consecutive dots.
-- `X500DistinguishedName` validation is stricter.
+See [sdk-cli-build-and-test.md](references/sdk-cli-build-and-test.md).
 
-See
-[security-networking-and-interop.md](references/security-networking-and-interop.md)
-before changing certificate, TLS, HTTP, native-library, or COM code.
+### Check CLI automation streams and defaults
 
-### SDK, restore, and deployment changes
+User-facing CLI flows default `--interactive` to true. Informational output
+unrelated to command results, including `dotnet watch` logging, goes to
+standard error. Capture stdout and stderr according to meaning, and pass
+noninteractive settings explicitly in automation. New solutions use SLNX by
+default, and `dotnet package list` restores before listing.
 
-- `dotnet new sln` creates SLNX by default.
-- CLI informational output and `dotnet watch` logging go to standard error.
-- `--interactive` defaults to `true` in user scenarios.
-- `dotnet package list` performs restore.
-- A versionless `PackageReference` is an error; transitive package auditing is
-  enabled during restore.
-- Direct references pruned by NuGet raise NU1510, and
-  `PrunePackageReference` makes direct prunable references private.
-- Workload management defaults to workload-set mode.
-- .NET tools are packaged per runtime identifier. Include `any` when a
-  portable framework-dependent fallback is required.
-- Default container images use Ubuntu. Pin or adapt images that depend on the
-  prior distribution's packages, paths, or package manager.
-- NativeAOT libraries on Unix use the `lib` prefix.
-- File-based apps publish with native AOT by default.
+See [sdk-cli-build-and-test.md](references/sdk-cli-build-and-test.md).
 
-See [sdk-cli-build-and-test.md](references/sdk-cli-build-and-test.md) and
-[deployment-and-ui.md](references/deployment-and-ui.md) for migration details.
+### Revisit hosting shutdown behavior
 
-## C# quick reference
+The runtime no longer installs default termination-signal handlers, and an
+entire `BackgroundService.ExecuteAsync` method runs as a `Task`. Code that
+relied on the old synchronous prefix, implicit signal handling, or lifecycle
+timing needs explicit validation.
+
+See [runtime-and-io.md](references/runtime-and-io.md) and
+[serialization-hosting-and-data.md](references/serialization-hosting-and-data.md).
+
+### Validate serialization contracts
+
+`System.Text.Json` detects property-name collisions. Duplicate JSON names can
+be rejected explicitly, and the strict preset also enforces unmapped-member,
+case, nullability, and required-constructor rules. `XmlSerializer` includes
+obsolete properties instead of silently omitting them. Treat these as schema
+changes, not merely parser changes.
+
+See [serialization-hosting-and-data.md](references/serialization-hosting-and-data.md).
+
+### Re-test native loading and interop
+
+Single-file applications no longer probe the executable directory for native
+libraries. `DllImportSearchPath.AssemblyDirectory` is now literal: it searches
+only the assembly directory. Casting an `IDispatchEx` COM object to `IReflect`
+fails. Make native-library locations and COM assumptions explicit.
+
+See [security-networking-and-interop.md](references/security-networking-and-interop.md).
+
+### Review crypto platform requirements
+
+Unix cryptography requires OpenSSL 1.1.1 or later. OpenSSL primitives are not
+available on macOS, and post-quantum algorithms require newer platform
+providers. Check `IsSupported` before generating or importing post-quantum
+keys. Update renamed private-key members and environment variables before
+deploying.
+
+See [security-networking-and-interop.md](references/security-networking-and-interop.md).
+
+### Expect stricter validation and exception changes
+
+Stricter checks affect LDAP controls, `X500DistinguishedName`, generic
+signature types, JSON names, WPF definitions, and mail addresses with
+consecutive dots. Some `System.Drawing` failures now throw
+`ExternalException`. Tests should assert the new contract rather than broad
+legacy behavior.
+
+## C# Quick Reference
 
 ### Extension blocks
 
-C# extension blocks support instance and static members. A named receiver
-defines instance members; omit the receiver name for static members.
+An extension block with a named receiver defines instance members. Omitting
+the receiver name permits static members. Blocks can add properties, methods,
+and operators, so they are broader than classic extension methods.
 
 ```csharp
 public static class SequenceExtensions
@@ -110,18 +127,15 @@ public static class SequenceExtensions
     extension<T>(IEnumerable<T> source)
     {
         public bool IsEmpty => !source.Any();
-        public T this[int index] => source.ElementAt(index);
     }
 }
 ```
 
-Indexers are instance members, so their extension block requires a named
-receiver.
-
 ### Field-backed properties
 
-Use the contextual `field` token to access a synthesized backing field from an
-accessor:
+Use the contextual `field` token inside an accessor to reach the synthesized
+backing field. If the type already has an identifier named `field`, write
+`@field` or `this.field` to disambiguate.
 
 ```csharp
 public string Message
@@ -131,111 +145,107 @@ public string Message
 }
 ```
 
-If the type already declares an identifier named `field`, use `@field` or
-`this.field` for that existing identifier.
-
 ### Null-conditional assignment
 
-`?.` and `?[]` can be assignment targets. The right side runs only when the
-receiver is non-null:
+`?.` and `?[]` can be assignment targets. The right-hand side runs only for a
+non-null receiver. Simple and compound assignment are supported; `++` and
+`--` are not.
 
 ```csharp
 customer?.Order = GetCurrentOrder();
 customer?.Balance += payment;
 ```
 
-Simple and compound assignments are supported; `++` and `--` are not.
+### Spans and overload resolution
 
-### Preview unions and closed hierarchies
+Arrays, `Span<T>`, and `ReadOnlySpan<T>` participate in additional implicit
+and composed conversions. Generic inference and extension receiver binding
+understand spans more directly. Re-run overload-sensitive tests after moving
+code to C# 14 because a different viable overload can win.
 
-A `union` accepts implicit conversion from each listed case and enables an
-exhaustive `switch` when every case is handled:
+### Lambda parameter modifiers
 
-```csharp
-public record Cat(string Name);
-public record Dog(string Name);
-public union Pet(Cat, Dog);
-
-string Name(Pet pet) => pet switch
-{
-    Cat cat => cat.Name,
-    Dog dog => dog.Name,
-};
-```
-
-The contextual `closed` modifier restricts direct descendants to the
-declaring assembly and enables exhaustive matching. It is not transitive.
-Consult [language.md](references/language.md) for preview limitations and the
-temporary `ClosedAttribute` requirement.
-
-### Pointer safety is operation-specific
-
-With the preview language version, declarations, address-of, `fixed`,
-pointer-targeted `stackalloc`, and `sizeof` on unmanaged types can appear
-outside an `unsafe` context. Dereferencing, pointer member or element access,
-and function-pointer invocation still require `unsafe`. Pointer-taking runtime
-APIs no longer independently carry `RequiresUnsafe`; the pointer operation
-still governs the required context.
-
-## New runtime and SDK patterns
-
-### Runtime Async
-
-For a `net11.0` project, enable runtime-managed async suspension with:
-
-```xml
-<PropertyGroup>
-  <Features>runtime-async=on</Features>
-</PropertyGroup>
-```
-
-It supports NativeAOT and ReadyToRun and exposes the real async call chain in
-live stack traces. Use `UseRuntimeAsync=false` to opt out. Do not use the
-removed runtime-async environment variables.
-
-### One-shot tool execution
-
-Run a tool without installing it:
-
-```bash
-dotnet tool exec --source ./artifacts/package dotnetsay@0.1.0 "Hello"
-```
-
-Without `@version`, the latest version is selected. A nearby local tool
-manifest can supply the version, and a new download prompts for confirmation.
-
-### Strict JSON
-
-Reject duplicate property names explicitly:
+Implicitly typed simple lambda parameters may use `scoped`, `ref`, `in`,
+`out`, or `ref readonly`. A `params` parameter still needs an explicitly typed
+parameter list.
 
 ```csharp
-var options = new JsonSerializerOptions
-{
-    AllowDuplicateProperties = false
-};
+TryParse<int> parse = (text, out result) => int.TryParse(text, out result);
 ```
 
-`JsonSerializerOptions.Strict` also rejects unmapped members, keeps
-case-sensitive binding, and enforces nullable annotations and required
-constructor parameters. See
-[serialization-hosting-and-data.md](references/serialization-hosting-and-data.md)
-for generated reference handling, unions, naming policies, and streaming.
+### Other language changes
 
-### Process execution
+- `nameof(List<>)` returns `"List"` without a type argument.
+- Instance constructors and events can be partial. Only the implementing
+  constructor supplies `this()` or `base()`; an implementing event supplies
+  `add` and `remove`.
+- A type can define dedicated compound-assignment operators.
 
-Prefer the one-shot `Process.Run*` and `RunAndCaptureText*` APIs for bounded
-commands. Use `ReadAllLinesAsync` when output must be streamed as
-`ProcessOutputLine` values while preserving the stdout/stderr distinction.
-Review platform restrictions before using detached, suspended, inherited
-handle, or kill-on-parent-exit behavior.
+See [language.md](references/language.md) for declaration rules and migration
+details.
 
-## Working rules
+## API Selection Quick Reference
 
-1. Read the relevant topic reference before relying on a changed default.
-2. Verify preview APIs against the actual target framework and SDK.
-3. Preserve explicit compatibility choices in project files, environment
-   variables, container tags, or serializer options.
-4. Re-run restore, build, tests, publish, and deployment checks after an
-   upgrade; several failures intentionally move earlier in the workflow.
-5. Prefer feature detection such as cryptographic `IsSupported` checks over
-   assumptions based only on operating-system names.
+### Certificates and PFX
+
+Use the algorithm-specific `FindByThumbprint(HashAlgorithmName, ...)` overload
+when the thumbprint is not SHA-1. Export PKCS#12 with an explicit preset or
+`PbeParameters` so compatibility-oriented 3DES/SHA-1 and modern
+AES-256/SHA-256 output are deliberate choices.
+
+### JSON source generation
+
+Generated contexts can preserve references:
+
+```csharp
+[JsonSourceGenerationOptions(ReferenceHandler = JsonKnownReferenceHandler.Preserve)]
+[JsonSerializable(typeof(Node))]
+partial class AppJsonContext : JsonSerializerContext;
+```
+
+### Numeric text comparison
+
+`CompareOptions.NumericOrdering` orders embedded digit runs numerically, so
+`"2"` sorts before `"10"` and compares equal to `"02"`. Do not use it with
+index or prefix operations such as `IndexOf`, `StartsWith`, or `IsPrefix`.
+
+### Tensor slices
+
+Tensor slicing returns a view rather than a copy. Later reads observe changes
+to the underlying storage. Arithmetic operators require the element type to
+implement the corresponding generic-math interfaces.
+
+## Tooling Quick Reference
+
+- `dotnet tool exec package@version` downloads and runs a tool without
+  installing it. It prompts before a new download and honors a nearby local
+  manifest version.
+- Add the `any` RID with platform RIDs to create a portable,
+  framework-dependent tool fallback.
+- Pass `--cli-schema` to any CLI command to obtain a JSON command schema.
+- Use noun-first `dotnet package ...` and `dotnet reference ...` commands or
+  their older aliases.
+- Generate native completion scripts with `dotnet completions script`.
+- Select `Microsoft.Testing.Platform` under `test.runner` in `global.json`
+  when `dotnet test` should use that runner.
+- Publishing a file-based application creates a native executable by default;
+  add `#:property PublishAot=false` when a dependency is incompatible.
+
+See [sdk-cli-build-and-test.md](references/sdk-cli-build-and-test.md) for exact
+constraints and examples.
+
+## Platform Checks
+
+- On macOS, opt in to client TLS 1.3 through Network.framework only after
+  testing protocol availability, buffering, cancellation, zero-byte reads,
+  and IDN behavior.
+- In trimmed publications, HTTP/3 is disabled by default.
+- Browser HTTP clients stream responses by default.
+- On x64, `Avx10v2` APIs exist but JIT support remains disabled by default.
+- For Windows desktop applications, resolve WPF/Windows Forms type-name
+  collisions and treat malformed WPF resources and definitions as failures.
+
+The detailed platform branches are in
+[security-networking-and-interop.md](references/security-networking-and-interop.md),
+[runtime-and-io.md](references/runtime-and-io.md), and
+[deployment-and-ui.md](references/deployment-and-ui.md).

@@ -2,7 +2,7 @@
   "patch": "model-context-protocol-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-30T11:23:08Z",
+  "built_at": "2026-07-31T11:50:09Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -40,27 +40,27 @@
     "2026-07-28-rc": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "typescript-sdk-v2-migration": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "typescript-sdk-2026-revision": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "python-sdk-v2-migration": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "python-sdk-v2-overview": {
-      "kind": "unversioned",
+      "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     }
   },
   "retire_candidates": []

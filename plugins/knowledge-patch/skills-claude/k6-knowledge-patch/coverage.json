@@ -2,21 +2,11 @@
   "patch": "k6-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T08:44:43Z",
+  "built_at": "2026-07-31T11:28:52Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
   "batches": {
-    "1.0.0-rc1": {
-      "kind": "versioned",
-      "codex": "gaps",
-      "build": "included"
-    },
-    "1.0.0-rc2": {
-      "kind": "versioned",
-      "codex": "gaps",
-      "build": "included"
-    },
     "1.0.0": {
       "kind": "versioned",
       "codex": "gaps",
@@ -71,6 +61,16 @@
       "kind": "versioned",
       "codex": "gaps",
       "build": "included"
+    },
+    "1.0.0-rc1": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "retired"
+    },
+    "1.0.0-rc2": {
+      "kind": "versioned",
+      "codex": "gaps",
+      "build": "retired"
     }
   },
   "retire_candidates": []

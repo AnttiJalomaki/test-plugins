@@ -1,211 +1,68 @@
-# Protocol lifecycle, messages, schemas, and results
+# Lifecycle, Messages, Metadata, and Schemas
 
-Use this reference to select a protocol era, validate messages, expose
-capabilities and metadata, implement cacheable results, and assign errors.
+## JSON-RPC batching history
 
-Relevant protocol attributions: `2025-03-26`, `2025-06-18`,
-`2025-11-25`, and `2026-07-28-rc`.
-
-## Select one protocol era
-
-The negotiated revision chooses a coherent method registry, lifecycle, result
-shape, transport behavior, and capability vocabulary. Do not mix individual
-features from different eras on one connection.
-
-### Legacy lifecycle
-
-The 2025-06-18 revision strengthens the lifecycle operation requirement from
-SHOULD to MUST. Legacy implementations must perform the initialization
-lifecycle and use its negotiated version and capabilities.
-
-### Modern stateless lifecycle
-
-The modern RC removes protocol-level sessions, `Mcp-Session-Id`, `initialize`,
-and `notifications/initialized`. List endpoints no longer vary by connection.
-Servers that need cross-call state expose an explicit handle, usually as an
-ordinary tool argument.
-
-Every request carries these reserved `_meta` values:
-
-- `io.modelcontextprotocol/protocolVersion`;
-- `io.modelcontextprotocol/clientCapabilities`;
-- preferably `io.modelcontextprotocol/clientInfo`.
-
-Every modern server response should carry
-`io.modelcontextprotocol/serverInfo`. A version mismatch produces
-`UnsupportedProtocolVersionError`.
-
-## Discover server support
-
-Modern servers implement `server/discover` and report supported protocol
-versions, capabilities, and identity:
-
-```json
-{"jsonrpc":"2.0","id":1,"method":"server/discover"}
-```
-
-A client may call discovery before any other request to select a revision. It
-can also use the call as a backward-compatibility probe over stdio. Treat
-self-reported server identity as display and diagnostic data, never as input to
-security or behavioral decisions.
-
-## Frame one JSON-RPC message at a time
-
-The 2025-03-26 revision introduced JSON-RPC batches as a top-level array. The
-2025-06-18 revision removed that feature: a top-level array is no longer valid
-MCP. Streamable HTTP likewise accepts one request, notification, or response in
-each POST body.
-
-Only produce an array for a peer explicitly pinned to the brief
-2025-03-26 behavior:
+The `2025-03-26` revision introduced batching, allowing several protocol
+requests in one top-level array:
 
 ```json
 [
-  {"jsonrpc":"2.0","id":1,"method":"ping"},
-  {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+  {"jsonrpc": "2.0", "id": 1, "method": "ping"},
+  {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
 ]
 ```
 
-## Negotiate and respect capabilities
+The `2025-06-18` revision removed batching. For that revision and later, a
+top-level request or response array is invalid; send every JSON-RPC message
+separately. This also matches Streamable HTTP's one-message-per-POST framing.
 
-- Tool definitions may carry behavioral annotations, including whether a tool
-  is read-only or destructive. Treat them as presentation and planning hints,
-  not as an authorization boundary.
-- A server advertises the `completions` capability before a client relies on
-  argument completion. `CompletionRequest.context` can include variables
-  already resolved so later suggestions are context-aware.
-- In the modern era, `ClientCapabilities` and `ServerCapabilities` also expose
-  an `extensions` field. Negotiate extension-specific behavior there rather
-  than assuming it is core.
+## Lifecycle requirement (`2025-06-18`)
 
-## Content and progress values
+The lifecycle operation changed from **SHOULD** to **MUST**. Treat it as a
+required part of implementations targeting this revision rather than an
+optional interoperability enhancement.
 
-MCP content can include audio as well as text and images.
+## Extensible metadata (`2025-06-18`)
 
-`ProgressNotification` supports a descriptive `message` in addition to
-numeric progress values:
+Additional interface types define `_meta`. Validators, schema consumers, and
+generated bindings must allow it on each newly covered interface shape and
+preserve its defined semantics.
 
-```json
-{
-  "jsonrpc":"2.0",
-  "method":"notifications/progress",
-  "params":{"progressToken":"job-7","progress":42,"message":"Indexing files"}
-}
-```
+## Programmatic names and display titles (`2025-06-18`)
 
-Keep request-scoped progress on the transport stream belonging to that request.
+Schema types may supply `title` as a human-friendly display name while keeping
+`name` as the programmatic identifier. Protocol operations continue to address
+objects by `name`; user interfaces may prefer `title`.
 
-## Names, titles, icons, and descriptions
+## Icons and implementation descriptions (`2025-11-25`)
 
-Use `name` as the programmatic identifier in protocol calls and optional
-`title` as the human-friendly display label. Servers may provide icon metadata
-for tools, resources, resource templates, and prompts.
+Tools, resources, resource templates, and prompts may expose icons as metadata.
+Clients can display those icons when presenting the objects.
 
-`Implementation.description` supplies optional human-readable client or server
-context during initialization. None of these display fields changes identity
-or method dispatch.
+The initialization `Implementation` interface has an optional `description`
+field for human-readable client or server context.
 
-## Use `_meta` for extensibility
+## Tool validation error layer (`2025-11-25`)
 
-The 2025-06-18 schemas permit `_meta` on additional interface shapes.
-Validators and generated bindings must allow it where the selected revision
-defines it.
+Represent a tool input-validation failure as a Tool Execution Error, not a
+Protocol Error. The distinction lets the caller inspect the tool failure and
+retry with corrected input.
 
-Modern OpenTelemetry propagation uses conventional `traceparent`,
-`tracestate`, and `baggage` keys inside `_meta`.
+## JSON Schema dialect (`2025-11-25`)
 
-Reserved envelope, protocol, tracing, retry, and subscription metadata must be
-handled separately from application parameters. Do not depend on unknown
-top-level fields surviving an SDK parse.
+JSON Schema 2020-12 is the default dialect for MCP schema definitions. Schema
+producers, validators, and code generators use it unless a different dialect is
+explicitly selected.
 
-## Apply JSON Schema 2020-12
+## Standalone request-parameter schemas (`2025-11-25`)
 
-JSON Schema 2020-12 is the default dialect for MCP schema definitions unless a
-schema explicitly selects another dialect.
+Request payload schemas are decoupled from RPC method definitions and exposed
+as standalone parameter schemas. Schema consumers and generated bindings must
+resolve the new organization rather than assuming that each method definition
+contains its parameter shape.
 
-Modern tool `inputSchema` and `outputSchema` values may use any keyword in that
-dialect. Implementations must resolve `$ref` and put resource bounds around
-composition keywords. `structuredContent` may be any JSON value, not only an
-object. Generated schema definitions for `minimum`, `maximum`, and `default`
-accept numbers, not only integers.
+## Invalid Origin response (`2025-11-25`)
 
-Request parameter schemas are standalone from RPC method definitions. Schema
-consumers and generated bindings must import or generate those separate
-parameter types rather than assuming every method owns an inline payload
-schema.
-
-## Distinguish tool and protocol failures
-
-A tool argument validation failure should be a Tool Execution Error rather
-than a Protocol Error, so the caller can inspect and correct its input.
-Malformed MCP envelopes, unsupported methods, capability failures, and
-transport-contract violations remain protocol errors.
-
-For modern errors:
-
-| Condition or range | Code |
-| --- | --- |
-| Resource not found | `-32602` |
-| Implementation-defined server errors | `-32000` through `-32019` |
-| MCP-reserved errors | `-32020` through `-32099` |
-| Header mismatch | `-32020` |
-| Missing required client capability | `-32021` |
-| Unsupported protocol version | `-32022` |
-
-The modern schema includes `HeaderMismatchError`. Do not retain the older
-resource-not-found allocation `-32002`.
-
-## Produce typed modern results
-
-Every modern result carries `resultType`:
-
-- `"complete"` for an ordinary result;
-- `"input_required"` for a result that embeds client work.
-
-A modern codec must reject a missing discriminator. A compatibility client
-reading a result from an older revision may interpret a missing value as
-`"complete"`. SDKs may consume the wire discriminator and omit it from public
-result objects.
-
-## Cache only cacheable operations
-
-Results for these modern operations implement `CacheableResult`:
-
-- `tools/list`;
-- `prompts/list`;
-- `resources/list`;
-- `resources/read`;
-- `resources/templates/list`.
-
-Each contains `ttlMs` and `cacheScope`, whose value is `"public"` or
-`"private"`:
-
-```json
-{"ttlMs":30000,"cacheScope":"private"}
-```
-
-Return `tools/list` in deterministic order. A zero TTL and private scope are
-safe conservative defaults. Cache keys must partition any response whose
-contents depend on user, tenant, authorization, or other private context.
-
-## Removed and deprecated core behavior
-
-The modern RC removes `ping`, `logging/setLevel`, and
-`notifications/roots/list_changed`. A request opts into logging with
-`_meta["io.modelcontextprotocol/logLevel"]`; a server must not emit
-`notifications/message` for a request that omitted it.
-
-Roots, Sampling, Logging, HTTP+SSE, and Sampling's `includeContext` values
-`"thisServer"` and `"allServers"` are deprecated. Existing compatibility paths
-may continue during the deprecation window, but new implementations should:
-
-- pass explicit tool parameters, resource URIs, or server configuration instead
-  of Roots;
-- call provider APIs directly instead of Sampling;
-- use stderr or OpenTelemetry instead of protocol Logging;
-- use Streamable HTTP instead of HTTP+SSE;
-- omit `includeContext` or select `"none"`.
-
-See [interaction-patterns.md](interaction-patterns.md) for multi-round
-replacement patterns and [http-and-subscriptions.md](http-and-subscriptions.md)
-for the transport-level replacements.
+A Streamable HTTP server that rejects an invalid `Origin` returns HTTP 403
+Forbidden. Validate the header consistently on incoming connections to prevent
+DNS-rebinding attacks.

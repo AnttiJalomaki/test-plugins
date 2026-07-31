@@ -1,73 +1,47 @@
 # Editions, Schema, and Descriptors
 
-Use this reference when selecting an Edition, migrating schema syntax,
-configuring language features, changing imports or visibility, or consuming
-field descriptors.
+## Edition and compiler relationship
 
-## Descriptor cardinality and presence
+Edition numbers are independent of shared releases and runtime majors.
+Edition 2023 requires `protoc` 27.0 or later; Edition 2024 requires 32.0 or
+later. The Edition 2024 announcement targeted protobuf 32.x in Q3 2025 and
+marked its then-announced behavior as provisional. (release-lifecycle,
+edition-2024-announcement)
 
-`31.0` deprecates `FieldDescriptor.label`, `getLabel`, and the `LABEL_*`
-constants. Reflection, code generators, and dynamic-message code should ask
-the semantic question directly:
+upb generators enable Edition 2024 from 34.0. At the same release, upb parses
+descriptor `syntax` and `edition` more strictly, so malformed dynamic
+descriptor data can be rejected. (34.0)
 
-- Use `isRepeated` for cardinality.
-- Use `isRequired` for required proto2 or Editions fields.
-- Use `hasPresence` for singular-field presence.
-- In proto3-specific code, use `hasOptionalKeyword` only when the optional
-  keyword itself matters, and `getRealContainingOneof` when oneof membership
-  matters.
+## Edition 2024 C++ defaults
 
-For Editions, the transitional `getLabel` behavior reduces every singular
-field to `LABEL_OPTIONAL` and every repeated field to `LABEL_REPEATED`;
-`hasOptionalKeyword` always returns false. Proto2 labels temporarily continue
-to mirror the declared `optional`, `required`, or `repeated` keyword.
-
-`34.0-migration` removes C++ `FieldDescriptor::label()`, Python
-`FieldDescriptor.label`, and PHP `FieldDescriptor::getLabel()`.
-Language-specific replacements include:
-
-- C++: replace `has_optional_keyword()` with `has_presence()`, and replace
-  `is_optional()` with `!is_required() && !is_repeated()`.
-- PHP: use `hasPresence()`; the broken `hasOptionalKeyword()` is removed in
-  `34.0`.
-- Objective-C: after `-[GPBFieldDescriptor optional]` is removed, test
-  `!required && fieldType == GPBFieldTypeSingle`.
-
-## Edition 2024 adoption
-
-The `edition-2024-announcement` material was provisional and targeted Edition
-2024 at protobuf 32.x. Confirm the final compiler behavior in project tests
-when migrating older preview schemas.
-
-### C++ string representations
-
-The default `features.(pb.cpp).string_type` changes from `STRING` to `VIEW`.
-Generated string-field APIs therefore use view behavior unless the schema
-overrides the feature.
-
-Generated enum-name helpers also default to borrowed views through
-`enum_name_uses_string_view`:
+`features.(pb.cpp).string_type` defaults to `VIEW` instead of `STRING`, so
+generated string-field APIs have view semantics unless overridden. The
+`enum_name_uses_string_view` default similarly changes enum-name helpers to
+return borrowed `absl::string_view`. (edition-2024-announcement)
 
 ```cpp
 absl::string_view Foo_Name(int);
 ```
 
-Callers must not assume ownership or null termination. The `ctype` field option
-is prohibited; select the representation with
-`features.(pb.cpp).string_type`.
+Edition 2024 removes the `ctype` field option. Select the representation with
+`features.(pb.cpp).string_type`. (edition-2024-announcement)
 
-### Naming enforcement
+## Naming-style enforcement
 
-`feature.enforce_naming_style` enables strict naming-style checking by default
-to keep schemas round-trippable. A feature value can opt a file back into the
-legacy naming style.
+Edition 2024 enables strict naming-style enforcement by default through
+`feature.enforce_naming_style`, preserving schema round-trippability. A feature
+value can opt a file back into legacy naming. (edition-2024-announcement)
 
-### Symbol visibility
+At 35.0, the compiler implements the Edition 2026 naming-style behavior and
+its corresponding feature value. Edition 2026 schemas can be rejected when
+field names collide after language-specific name conversion. (35.0)
 
-`default_symbol_visibility` controls whether imported messages and enums are
-visible to a schema without changing code generation. Edition 2024 defaults to
-`EXPORT_TOP_LEVEL`: top-level symbols export, while nested symbols are local.
-Use `export` and `local` to state exceptions:
+## Symbol visibility
+
+Edition 2024 introduces `default_symbol_visibility` and defaults it to
+`EXPORT_TOP_LEVEL`: top-level messages/enums are exported and nested symbols
+are local. `export` and `local` modifiers override visibility without changing
+code generation. (edition-2024-announcement)
 
 ```proto
 local message LocalMessage {
@@ -77,28 +51,16 @@ local message LocalMessage {
 }
 ```
 
-`35.0` extends visibility checks to service input and output message types. A
-service method now fails when its request or response type is not visible from
-the service file.
+At 35.0, visibility checking extends to service method request and response
+messages. A type not visible from the service file produces an error.
+(35.0)
 
-### Java file layout and large enums
+## Imports and option dependencies
 
-`nest_in_file_class` replaces the removed `java_multiple_files` option.
-Edition 2024 emits classes in separate files by default. The default outer
-class name is always the camel-cased proto filename plus `Proto`; for example,
-`foo/bar_baz.proto` becomes `BarBazProto`. Use `java_outer_classname` to
-override it.
-
-The opt-in `large_enum` feature permits Java output beyond the normal enum
-constant limit. The generated type emulates an enum but cannot support every
-enum operation, including `switch`. The Java lite runtime gains support in
-`34.0`, including correct handling of aliased values.
-
-### Option-only imports
-
-Use `import option` when a file needs custom options without importing the
-source file's messages or enums as normal symbols. Place these declarations
-after normal imports:
+`import option` imports custom options without exposing the source file's
+messages or enums as ordinary symbols. It must follow normal imports. Bazel
+targets put these imports in `option_deps`, which requires Bazel 8 or later.
+(edition-2024-announcement)
 
 ```proto
 edition = "2024";
@@ -108,9 +70,6 @@ option (file_opt1) = true;
 option (file_opt2) = {bar: true};
 ```
 
-Bazel targets put these files in `option_deps`, which requires Bazel 8 or
-later:
-
 ```build
 proto_library(
   name = "foo",
@@ -119,104 +78,105 @@ proto_library(
 )
 ```
 
-Edition 2024 removes `import weak` and the `weak` field option. Schemas that
-used weak imports to consume custom options without C++ or Go generation
-should migrate to `import option`.
+Edition 2024 removes `import weak` and the `weak` field option. Migrate weak
+imports used only for custom options to `import option`.
+(edition-2024-announcement)
 
-### Compiler and upb validation
+At 34.0, the compiler validates feature support on custom options and validates
+both options and features during parsing. Unsupported feature definitions that
+previously passed unchecked can now fail. The C++ implementation also rejects
+`[unverified_lazy = true]` on extension fields. (34.0)
 
-`34.0` validates feature support on custom options and validates options and
-features during parsing. Unsupported feature definitions can now fail instead
-of passing unchecked.
+## Descriptor label migration
 
-The same release makes the C++ implementation reject
-`[unverified_lazy = true]` on extensions; remove it from extension fields.
-upb adds stricter `syntax` and `edition` validation for dynamic descriptor
-data, and upb generators enable Edition 2024.
+The 31.0 release deprecated `FieldDescriptor.label`, `getLabel`, and the
+`LABEL_*` constants. Use semantic queries:
 
-## Edition 2026 adoption
+- `isRepeated` for cardinality;
+- `isRequired` for required proto2 or Editions fields;
+- `hasPresence` for singular-field presence;
+- `hasOptionalKeyword` and `getRealContainingOneof` only for proto3
+  optional-keyword and real-oneof questions.
 
-### Stricter naming and visibility
+For Editions fields, the transitional `getLabel` behavior simplifies every
+singular field to `LABEL_OPTIONAL` and every repeated field to
+`LABEL_REPEATED`; `hasOptionalKeyword` is always false. Proto2 labels continue
+to reflect declared keywords during that transition. (31.0)
 
-`35.0` implements the Edition 2026 `enforce_naming_style` behavior. Fields
-whose names collide after language-specific conversion can be rejected.
+The 34.0 migration removes C++ `FieldDescriptor::label()`, Python
+`FieldDescriptor.label`, and PHP `FieldDescriptor::getLabel()`.
+(34.0-migration)
 
-`36.0-rc1` changes `default_symbol_visibility` to `STRICT`. Do not assume the
-Edition 2024 `EXPORT_TOP_LEVEL` behavior survives an Edition upgrade; declare
-the intended visibility and validate every imported service and message type.
+For current C++, replace `has_optional_keyword()` with `has_presence()` and
+write the old `is_optional()` meaning as
+`!is_required() && !is_repeated()`. PHP provides `hasPresence()` and removes
+its broken `hasOptionalKeyword()` helper. Objective-C replaces the removed
+`-[GPBFieldDescriptor optional]` with
+`!required && fieldType == GPBFieldTypeSingle`.
+(34.0-announcement, 34.0)
 
-### Descriptor limits and reserved numbers
+## Java Edition 2024 features
 
-The `enforce_proto_limits` feature is implemented in `36.0-rc1`, and Edition
-2026 enables descriptor proto-limit enforcement by default. Descriptors that
-previously exceeded those limits can fail after upgrading.
+`nest_in_file_class` replaces the removed `java_multiple_files` option.
+Edition 2024 generates classes in separate files by default. The default outer
+class is the camel-cased proto filename plus `Proto`; for example,
+`foo/bar_baz.proto` becomes `BarBazProto`. Override with
+`java_outer_classname`. (edition-2024-announcement)
 
-The compiler also rejects `INT_MAX` in reserved field-number declarations.
-Replace sentinel reservations with valid explicit ranges or numbers.
+The opt-in `large_enum` feature permits Java generated enums beyond the normal
+enum-constant limit. Such types emulate enums and do not support every enum
+operation, including `switch`. From 34.0, the Java lite runtime honors
+`large_enum` and correctly handles aliased values. (edition-2024-announcement,
+34.0)
 
-### Generic service options
-
-`36.0-rc1` warns on `py_generic_service`, `cc_generic_service`, and
-`java_generic_service`. Treat these options as deprecated migration work and
-move RPC generation to the appropriate language-specific plugin.
+## Edition 2026 language features
 
 ### Go API level
 
-The `edition-2026-guide` changes the default
-`features.(pb.go).api_level` from `API_OPEN` in Edition 2023 to `API_OPAQUE` in
-Editions 2024 and 2026. Opaque output hides generated struct fields behind
-accessors. Select `API_OPEN` to retain direct fields or `API_HYBRID` to expose
-both fields and accessors during migration.
+`features.(pb.go).api_level` defaults to `API_OPAQUE` in Editions 2024 and
+2026, hiding generated struct fields behind accessors. Select `API_OPEN` to
+preserve direct field access or `API_HYBRID` to expose fields and accessors
+during migration. (edition-2026-guide)
 
 ```proto
 edition = "2026";
-
 import option "google/protobuf/go_features.proto";
-
 option features.(pb.go).api_level = API_HYBRID;
 ```
 
 ### Go enum-prefix stripping
 
-Edition 2024 and newer accept `features.(pb.go).strip_enum_prefix` at file,
-enum, or enum-value scope:
-
-- `STRIP_ENUM_PREFIX_KEEP` is the default and preserves generated names.
-- `STRIP_ENUM_PREFIX_GENERATE_BOTH` emits both forms for migration.
-- `STRIP_ENUM_PREFIX_STRIP` removes the repeated enum-name prefix.
+Edition 2024 and newer support `features.(pb.go).strip_enum_prefix` at file,
+enum, or enum-value scope. `STRIP_ENUM_PREFIX_KEEP` preserves names;
+`STRIP_ENUM_PREFIX_GENERATE_BOTH` supports staged migration; and
+`STRIP_ENUM_PREFIX_STRIP` removes the repeated enum prefix.
+(edition-2026-guide)
 
 ```proto
 edition = "2026";
-
 import option "google/protobuf/go_features.proto";
-
 option features.(pb.go).strip_enum_prefix = STRIP_ENUM_PREFIX_STRIP;
 ```
 
-### C++ repeated-field proxies
+### C++ repeated accessors and options
 
-The `edition-2026-guide` adds `features.(pb.cpp).repeated_type`.
-Selecting `PROXY` makes repeated-field accessors return `RepeatedFieldProxy`
-rather than pointers or references to `RepeatedField` or `RepeatedPtrField`.
-The default is `LEGACY`, so APIs change only where the feature is selected at
-file or field scope.
+`features.(pb.cpp).repeated_type = PROXY` makes generated repeated accessors
+return `RepeatedFieldProxy`. `LEGACY` remains the default, so the API changes
+only when selected at file or field scope. Edition 2026 schemas must remove
+`cc_api_version`, `cc_utf8_verification`, and `cc_enable_arenas`.
+(edition-2026-guide)
 
 ```proto
 edition = "2026";
-
 import option "google/protobuf/cpp_features.proto";
-
 option features.(pb.cpp).repeated_type = PROXY;
 ```
 
-Edition 2026 schemas must also remove `cc_api_version`,
-`cc_utf8_verification`, and `cc_enable_arenas`.
+### Custom JSON enum strings and C++ namespaces
 
-### Custom enum JSON strings
-
-`edition-2026` permits an enum value to override its JSON string with
-`(pb.enumvalue.json).string`. This complements field-level `json_name` for
-conflict avoidance, migrations, and external naming:
+Enum values can override their JSON string with `(pb.enumvalue.json).string`,
+complementing the field-level `json_name` option for conflicts, migrations,
+and external naming requirements. (edition-2026)
 
 ```proto
 enum Foo {
@@ -225,22 +185,11 @@ enum Foo {
 }
 ```
 
-### C++ generated namespaces
-
-`edition-2026` can decouple the generated C++ namespace from the proto package
-with `(pb.file.cpp).namespace`:
+The file option `(pb.file.cpp).namespace` decouples generated C++ bindings from
+the proto package. (edition-2026)
 
 ```proto
 import option "google/protobuf/cpp_options.proto";
-
 package clock.time;
-
 option (pb.file.cpp).namespace = "clock_time";
 ```
-
-## Edition and compiler relationship
-
-Per `release-lifecycle`, Editions have their own numbering. Edition 2023
-requires `protoc` 27.0 or newer, while Edition 2024 requires 32.0 or newer.
-Using a newer compiler does not require migrating older proto2, proto3, or
-Edition schemas.

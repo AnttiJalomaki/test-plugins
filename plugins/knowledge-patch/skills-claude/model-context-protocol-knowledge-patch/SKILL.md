@@ -1,223 +1,203 @@
 ---
 name: model-context-protocol-knowledge-patch
 description: Model Context Protocol (MCP)
-version: 2026-07-28 RC
+version: 2025-11-25
 license: MIT
 metadata:
   author: Nevaberry
 ---
 
 
-# Model Context Protocol
 
-Use this skill when designing, migrating, debugging, or reviewing MCP clients,
-servers, transports, authorization, or the TypeScript and Python SDKs.
+# Model Context Protocol Compatibility
 
-First identify all three compatibility dimensions:
-
-1. The negotiated protocol revision and whether the connection uses the legacy
-   handshake era or the modern discovery era.
-2. The SDK major version and runtime-specific adapter.
-3. The peer's advertised capabilities and the transport actually in use.
-
-Do not infer one dimension from another. An SDK can support several protocol
-revisions, and modern behavior can require an explicit negotiation option or
-entry point.
+Load this skill when implementing or reviewing MCP clients, servers, transports,
+authorization, elicitation, sampling, tasks, schemas, or revision negotiation.
+Choose a protocol revision before selecting message shapes or capabilities, and
+use the negotiated revision rather than assuming that newer features are safe.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [references/protocol-core.md](references/protocol-core.md) | Lifecycle, discovery, message framing, schemas, metadata, caching, errors, and deprecations |
-| [references/http-and-subscriptions.md](references/http-and-subscriptions.md) | Streamable HTTP, sessions, SSE, cancellation, routing headers, security, and subscriptions |
-| [references/authorization.md](references/authorization.md) | OAuth profile, discovery, registration, token binding, scopes, issuer validation, and redirect safety |
-| [references/interaction-patterns.md](references/interaction-patterns.md) | Elicitation, sampling, structured tool results, tasks, and multi-round requests |
-| [references/typescript-sdk-v2.md](references/typescript-sdk-v2.md) | TypeScript package split, codemod, handlers, transports, errors, negotiation, and modern serving |
-| [references/python-sdk-v2.md](references/python-sdk-v2.md) | Python dependencies, renamed APIs, server/client migration, transports, errors, OAuth, and subscriptions |
+| [authorization.md](references/authorization.md) | OAuth profile, discovery, registration, tokens, scopes, and HTTP security |
+| [http-and-subscriptions.md](references/http-and-subscriptions.md) | Streamable HTTP, SSE, sessions, cancellation, resumption, and legacy fallback |
+| [interaction-patterns.md](references/interaction-patterns.md) | Elicitation, sampling, tools, tasks, progress, completion, audio, and links |
+| [protocol-core.md](references/protocol-core.md) | Lifecycle, batching, metadata, names, schemas, validation, and implementation metadata |
 
-## Breaking changes first
+## Breaking changes and deprecations
 
-### Separate the legacy and modern protocol eras
+### Do not batch messages after 2025-03-26
 
-The modern revision is stateless at protocol level:
+JSON-RPC batching existed in the `2025-03-26` revision but was removed in
+`2025-06-18`. For `2025-06-18` and later, never send a top-level array; send
+each request, notification, or response as a separate JSON-RPC message.
+Streamable HTTP POST already requires exactly one message per body.
 
-- call `server/discover` to select a supported revision;
-- omit `initialize`, `notifications/initialized`, and `Mcp-Session-Id`;
-- carry protocol version, client capabilities, and preferably client identity in
-  request `_meta`;
-- return server identity and a required result discriminator;
-- pass application state explicitly, such as a handle in tool arguments.
+### Treat lifecycle and protocol-version handling as mandatory
 
-Legacy initialization and session behavior remain relevant when a client or
-server negotiates a 2025 revision. Never send methods from one era after the
-connection has selected the other.
+For `2025-06-18`, perform the required lifecycle operation. After
+initialization, attach the negotiated `MCP-Protocol-Version` to every HTTP
+request. A missing version is interpreted as `2025-03-26` when there is no
+other version information; an invalid or unsupported version returns HTTP 400.
 
-### Do not batch current MCP JSON-RPC messages
+### Prefer Streamable HTTP over HTTP+SSE
 
-The 2025-03-26 protocol briefly allowed a top-level JSON-RPC array. The
-2025-06-18 revision removed batching, and Streamable HTTP accepts one request,
-notification, or response per POST. Send each message separately unless
-interoperating with a peer explicitly pinned to the earlier revision.
+Use one MCP endpoint for POST and optional GET. Retain the legacy SSE and POST
+endpoints only when old-client compatibility is required. When probing an
+unknown URL, fall back to legacy HTTP+SSE only if the initial Streamable HTTP
+POST fails with 400, 404, or 405; other 4xx responses are not transport probes.
 
-### Replace server-to-client pushes with multi-round results
+### Follow the current registration preference
 
-Modern servers do not directly issue elicitation, sampling, roots, or ping
-requests. Return an input-required result containing named `inputRequests`;
-the client fulfills them and retries the original operation with
-`inputResponses`.
+For clients without a prior relationship, prefer a Client ID Metadata Document
+when the authorization server advertises support. Dynamic Client Registration
+is an optional compatibility fallback, followed by user-entered credentials.
+The metadata-document URL is the `client_id`, and the served document must
+repeat that exact value and declare `client_name` and `redirect_uris`.
 
-Carry prior answers and flow phase in integrity-protected `requestState`.
-Treat that state as untrusted, bind it to principal, operation, and expiry, and
-remember that signing does not encrypt it.
+### Omit sampling context unless explicitly negotiated
 
-### Rebuild subscriptions around `subscriptions/listen`
+`includeContext: "thisServer"` and `"allServers"` are soft-deprecated in
+`2025-11-25`. Omit `includeContext` for its `"none"` default. Send an old value
+only when the client advertises `sampling: {context: {}}`.
 
-Modern change notifications use a long-lived POST response opened by
-`subscriptions/listen`. The older GET event stream and
-`resources/subscribe`/`resources/unsubscribe` do not carry forward.
-Subscription notifications carry a subscription ID; request-scoped progress
-and logging stay on the response stream for their request.
+### Classify tool argument failures as execution errors
 
-### Treat 2025 tasks as legacy interop
+As of `2025-11-25`, input-validation failures from `tools/call` are Tool
+Execution Errors, not Protocol Errors. Return them where the caller can inspect
+the failure and correct the arguments.
 
-The experimental 2025 task shape is not the modern task design. Modern tasks
-are an official extension, omit `tasks/list` and `tasks/result`, poll with
-`tasks/get`, and supply client input with `tasks/update`. SDK v2 task helpers
-may be removed even where explicit custom-method wire interop remains possible.
+## Streamable HTTP quick reference
 
-## TypeScript v2 migration
+### POST requests
 
-Run the codemod from each package root, then inspect every
-`@mcp-codemod-error` marker and format the result:
+For each client message, issue a fresh POST with:
 
-```bash
-npx @modelcontextprotocol/codemod@latest v1-to-v2 .
-grep -rn '@mcp-codemod-error' .
+```http
+Accept: application/json, text/event-stream
+Content-Type: application/json
 ```
 
-Use Node.js 20 or newer. Replace the monolithic package with the client,
-server, core schema, and runtime adapter packages that the code actually uses.
-Never import the unpublished internal core package, and do not pass v1 class
-instances or nominal types into v2 code.
+Return an empty HTTP 202 for an accepted notification or response-only input.
+For request input, return either one JSON response or an SSE stream; clients
+must implement both response forms.
 
-Replace variadic `.tool()`, `.prompt()`, and `.resource()` registration with
-`registerTool`, `registerPrompt`, and `registerResource`. Use Standard Schema
-objects—Zod 4.2 or newer is supported—and register low-level handlers by
-method string. Request details now live under `ctx.mcpReq`; HTTP-only state is
-under `ctx.http`.
+### GET streams
 
-Choose the serving entry deliberately:
+A client may GET the same endpoint with `Accept: text/event-stream` for
+server-initiated traffic. Return 405 when this stream is unsupported. Do not put
+ordinary JSON-RPC responses on it except when replaying a prior request stream.
 
-- `createMcpHandler()` for per-request HTTP serving;
-- `serveStdio()` to select an era for a stdio connection;
-- a Node adapter for Node request/response APIs;
-- the Web-standard transport for fetch-shaped runtimes.
+### Sessions and cancellation
 
-A plain client still uses the legacy handshake unless `versionNegotiation` is
-configured. `auto` probes discovery and performs only allowed fallback;
-pinning the modern revision fails closed when negotiation cannot succeed.
+If initialization returns `Mcp-Session-Id`, repeat it on every later HTTP
+request. A required missing ID returns 400; an expired or terminated ID returns
+404, after which initialize again without an ID. Request cleanup with DELETE,
+while accepting that a server may return 405.
 
-Read [references/typescript-sdk-v2.md](references/typescript-sdk-v2.md) before
-changing imports, registration, error handling, authorization, tests, cache
-stores, or transport setup.
+A disconnected SSE response does not cancel its request. Send an explicit
+`CancelledNotification` to cancel work.
 
-## Python v2 migration
+### Pollable SSE
 
-The Python v2 line is prerelease. Pin an explicit v2 prerelease or use
-`mcp>=2,<3`, allow it to exact-pin `mcp-types`, and update raised dependency
-floors. Libraries that require v1 behavior should cap below v2.
-
-Replace:
-
-- `httpx` and `httpx-sse` with the non-interchangeable `httpx2` types;
-- `FastMCP` with `MCPServer`;
-- ambient `get_context()` access with an injected `Context`;
-- low-level decorators with constructor `on_*` callbacks;
-- `McpError(ErrorData(...))` with `MCPError(code, message, data)`;
-- camel-case Python attributes with snake-case attributes, while preserving
-  wire aliases during serialization;
-- RootModel-style message unions with concrete members and exported adapters.
-
-Use `model_dump(by_alias=True, mode="json")` for wire JSON. Put extensions in
-`_meta`, because unknown protocol-model fields are discarded.
-
-The high-level `Client` defaults to automatic era negotiation. On a modern
-connection, push-style back-channel calls fail; use resolver-driven
-input-required flows or pin legacy behavior temporarily. Read
-[references/python-sdk-v2.md](references/python-sdk-v2.md) before changing
-dependencies, resource handling, timeouts, OAuth, stdio, or HTTP clients.
+For resumable responses, first emit a unique event ID with empty data. Before a
+temporary close, send an SSE `retry` delay. The client honors it and reconnects
+with GET plus `Last-Event-ID`, including when the stream began as a POST
+response. Replay only the disconnected logical stream.
 
 ## Authorization quick reference
 
-For authorized HTTP servers:
+### Protect the MCP resource, not an upstream API
 
-- use OAuth 2.1 and PKCE; stdio credentials come from the environment;
-- discover protected-resource metadata, then authorization-server metadata;
-- include the canonical MCP resource URI in authorization and token requests;
-- send the bearer token on every HTTP request and never in a query string;
-- validate token audience/resource and never forward the inbound token to an
-  upstream API;
-- validate authorization-response issuer and keep stored credentials separated
-  by issuer;
-- prefer Client ID Metadata Documents, with dynamic registration only as a
-  compatibility fallback;
-- handle 401 for missing or invalid authorization and 403 plus an
-  `insufficient_scope` challenge for step-up authorization.
+HTTP authorization uses OAuth 2.1; stdio obtains credentials from the
+environment. Require PKCE for every client. Send bearer tokens on every HTTP
+request, never in query strings. Use 401 for missing, invalid, or expired
+authorization and 403 for insufficient scope.
 
-See [references/authorization.md](references/authorization.md) for discovery
-ordering, exact URLs, registration requirements, and SDK-specific safety rules.
+An authorized MCP server publishes RFC 9728 protected-resource metadata with
+at least one `authorization_servers` entry and points to it from a 401
+`WWW-Authenticate` challenge. The client selects an advertised authorization
+server and resolves its RFC 8414 metadata.
 
-## Transport and security quick reference
+Include the RFC 8707 `resource` parameter in every authorization and token
+request. Use the most specific canonical absolute MCP URI, include a
+distinguishing path when needed, and omit fragments. Reject tokens issued for
+another resource, and never pass an inbound MCP token through to an upstream
+API.
 
-For a legacy Streamable HTTP request, send `Accept: application/json,
-text/event-stream`; support either a single JSON response or an SSE response.
-After initialization, send the negotiated `MCP-Protocol-Version`.
+### Select scopes and step up deliberately
 
-For modern HTTP, send the routing headers required for the method and tool-like
-name. Schema properties marked `x-mcp-header` mirror selected arguments into
-`Mcp-Param-*`, and the server must reject header/body mismatches.
+Initially use the challenge's `scope`; otherwise request all
+`scopes_supported`, or omit `scope` when metadata omits that field. A challenge
+scope is authoritative for that request. For step-up, return 403 with bearer
+`insufficient_scope`, the required `scope`, and `resource_metadata`; reauthorize
+and retry the original operation with a small retry limit.
 
-Validate every present `Origin`. Local servers should bind to loopback, protect
-against DNS rebinding, authenticate connections, and return HTTP 403 for an
-invalid origin. Use HTTPS for non-loopback authorization and redirect
-endpoints.
+## Interaction quick reference
 
-Do not apply old SSE retry assumptions to modern response streams. A broken
-modern stream loses that in-flight request; retry with a new request ID.
+### Elicitation
 
-## Results, schemas, and errors
+Check the advertised elicitation modes. `{}` means legacy form-only behavior,
+and an omitted request `mode` defaults to `"form"`. Form schemas are flat.
+Primitive fields and string choices are supported; `2025-11-25` also supports
+titled single choices and multi-select string arrays with defaults.
 
-Use JSON Schema 2020-12 by default. Tool input and output schemas can use the
-full dialect, so resolve references and enforce resource limits for composition
-keywords. Validate `structuredContent` against declared output schemas and
-retain a text serialization when older clients need compatibility.
+Use URL mode for sensitive or third-party interaction outside the client, not
+for authorizing the client to the MCP server. `accept` means only that the user
+agreed to open the URL. Wait for `notifications/elicitation/complete`, or handle
+`-32042`, complete its required URL elicitations, and retry.
 
-Return tool argument validation failures as tool execution errors where the
-caller can correct the input. Reserve protocol errors for protocol failures.
-In the modern allocation:
+### Tool-enabled sampling
 
-- `-32020` is header mismatch;
-- `-32021` is missing required client capability;
-- `-32022` is unsupported protocol version;
-- implementation-defined errors use `-32000` through `-32019`;
-- MCP-reserved errors use `-32020` through `-32099`.
+Require `sampling: {tools: {}}` before supplying `tools` or `toolChoice` in
+`sampling/createMessage`. Execute assistant `tool_use` content and place the
+matching `tool_result` in the immediately following user message. Every use has
+exactly one result, and that message contains only tool results; otherwise use
+`-32602`.
 
-Cache only when the negotiated revision and result shape support it. Honor
-`ttlMs` and `cacheScope`, partition private caches correctly, and never treat
-self-reported server identity as a security decision.
+### Structured tool results
+
+When a tool declares `outputSchema`, make `structuredContent` conform and have
+clients validate it. Also serialize the same object into a text `content` item
+for older clients. A result may include a `resource_link`; do not assume linked
+resources also appear in `resources/list`.
+
+## Experimental tasks quick reference
+
+Tasks in `2025-11-25` require capability negotiation by request category.
+Servers advertise `tasks.requests.tools.call`; clients advertise task support
+for sampling or elicitation requests. Negotiate `tasks.list` and `tasks.cancel`
+separately, and honor each tool's `execution.taskSupport` value.
+
+An accepted task-augmented call returns `result.task` immediately. The receiver
+assigns the ID, starts in `working`, and may override the requested TTL. Poll
+`tasks/get` at `pollInterval`; status notifications do not replace polling.
+Call `tasks/result` for the terminal underlying result or error, and also on
+`input_required` so the receiver can deliver nested requests.
+
+Keep terminal states immutable. Expired tasks may disappear, and cancelling a
+terminal task returns `-32602`. Apply related-task metadata only as specified in
+[interaction-patterns.md](references/interaction-patterns.md).
+
+## Schema and presentation quick reference
+
+Use JSON Schema 2020-12 by default. Account for standalone request-parameter
+schemas rather than assuming parameters are embedded in RPC method definitions.
+Allow `_meta` on the interface shapes that define it.
+
+Use `name` as the programmatic identifier and optional `title` for display.
+Tools, resources, resource templates, and prompts may carry icons. Initialization
+`Implementation` data may include a human-readable `description`.
 
 ## Implementation checklist
 
-1. Pin or negotiate the protocol revision before choosing methods and codecs.
-2. Confirm advertised capabilities before elicitation, sampling, completion,
-   tasks, list calls, or subscriptions.
-3. Validate transport headers, content type, origin, authorization resource,
-   and issuer at the HTTP boundary.
-4. Keep request cancellation, progress, logging, and subscription traffic on
-   the stream defined by the selected era.
-5. Validate tool inputs and structured outputs with the selected JSON Schema
-   dialect.
-6. Test the actual runtime entry point; in-memory legacy transports do not
-   prove modern HTTP behavior.
-7. Exercise stale-cache, step-up authorization, broken-stream, and
-   multi-round retry paths explicitly.
+- Pin behavior to the negotiated protocol revision.
+- Send one JSON-RPC message per Streamable HTTP POST.
+- Carry the negotiated version and any session ID on every required request.
+- Validate `Origin`; return HTTP 403 when it is rejected.
+- Bind bearer tokens to the canonical MCP resource and never forward them.
+- Negotiate elicitation, completion, sampling, and task capabilities before use.
+- Preserve structured tool results in both structured and compatibility text forms.
+- Treat dropped SSE connections as resumable streams, not implicit cancellation.
+- Validate schemas with the correct dialect and error layer.

@@ -1,97 +1,50 @@
 # C++ runtime and generated APIs
 
-Source batches represented here: 30.0-migration, 30.0, 31.0,
-edition-2024-announcement, 34.0-announcement, 34.0-migration, 34.0, 35.0,
-36.0-rc1, edition-2026-guide, edition-2026.
-
-## Language and distribution baseline
-
-The v30 migration raises the minimum C++ language level from C++14 to C++17.
-The C++ CocoaPods release is removed; consume the C++ runtime from the GitHub
-release.
-
-Generated code and the C++ runtime must match exactly. Do not assume ABI
-stability across minor or patch releases.
-
-## Borrowed strings and debug output
+## Borrowed descriptor strings (`30.0-migration`)
 
 `MessageLite::GetTypeName`, `UnknownField::length_delimited`, and descriptor
-name methods such as `FieldDescriptor::full_name` return
-`absl::string_view` after the v30 migration. Update callers to retain borrowed
-views safely or make an explicit `std::string` copy. Never assume
-`string_view::data()` is null-terminated.
+name accessors such as `FieldDescriptor::full_name` now return
+`absl::string_view`. Accept a borrowed view or explicitly copy into
+`std::string` when ownership is needed. Never assume `view.data()` is
+null-terminated.
 
-Edition 2024's C++ string-field and enum-name defaults also use views; audit
-generated-call sites when adopting the edition.
+Edition 2024 also defaults generated string fields to view behavior and changes
+enum-name helpers to return `absl::string_view`; see the Editions reference.
 
-`AbslStringify`, `proto2::ShortFormat`, `proto2::Utf8Format`, and
-`*DebugString` methods redact fields marked `debug_redact`, prepend a
-per-process randomized marker, and no longer emit parseable TextFormat. Use
-debug forms for logging, binary encoding for serialization, or
-`TextFormat.printer().printToString(proto)` when explicitly requiring
-parseable, unredacted text.
+## Debug output is redacted and non-parseable (`30.0-migration`)
 
-## Arena and container migration
+`AbslStringify`, `proto2::ShortFormat`, `proto2::Utf8Format`, and all
+`*DebugString` methods redact fields carrying `debug_redact`, prepend a
+per-process randomized marker, and no longer produce parseable TextFormat. Use
+them for logs only. Use binary encoding for serialization, or explicitly call
+`TextFormat.printer().printToString(proto)` when parseable unredacted text is a
+deliberate requirement.
 
-Replace removed APIs:
+## Removed foundational APIs (`30.0-migration`)
 
-| Removed API | Migration |
-| --- | --- |
-| `Arena::CreateMessage` | `Arena::Create` |
-| `Arena::GetArena(value)` | `value->GetArena()` |
-| `JsonOptions` | `JsonPrintOptions` |
-| `RepeatedPtrField::ClearedCount` | No direct replacement; redesign around arenas |
+- Replace `Arena::CreateMessage` with `Arena::Create`.
+- Replace `Arena::GetArena(value)` with `value->GetArena()`.
+- Replace `JsonOptions` with `JsonPrintOptions`.
+- `RepeatedPtrField::ClearedCount` has no direct replacement; migrate the
+  allocation strategy to arenas.
+- The descriptor no longer exposes the raw `ctype` option. Query
+  `FieldDescriptor::cpp_string_type()`.
+- C++17 is the minimum supported language level.
 
-Do not construct `RepeatedField(Arena*)`, `RepeatedPtrField(Arena*)`, or
-`Map(Arena*)`; those constructors are removed at the v34 boundary.
+## Cleared arena oneofs (`30.0-migration`)
 
-`RepeatedPtrField` uses contiguous chunks of preallocated storage in v34,
-similar to `std::deque`. Review code depending on older copy/move behavior.
-Some `UnsafeArena` operations can become equivalent to their arena-safe forms
-and may be deprecated.
+Debug builds clear the memory for an arena-allocated oneof message when the
+oneof is cleared, and ASAN poisons that region. Holding or using the old message
+pointer is a use-after-free; reacquire the active oneof member after mutation.
 
-`Arena::Ptr` and `Arena::UniquePtr` are available in v35 for explicit
-smart-pointer management of arena-associated values.
+## Reflection capacity reservation (`30.0`)
 
-In debug builds, clearing an arena-allocated oneof message clears its memory
-and ASAN poisons it. Any access through a stale pointer is a diagnosed
-use-after-free.
+`MutableRepeatedFieldRef<T>::Reserve()` is removed. Generic reflection code
+must stop trying to reserve capacity through this view.
 
-## Descriptor and reflection APIs
+## Rollout macros and arena constructors (`34.0-announcement`)
 
-`FieldDescriptor::label()` is deprecated in v31 and removed in v34. Use:
-
-- `is_repeated()` for repeated cardinality;
-- `is_required()` for required fields;
-- `has_presence()` for presence;
-- `!is_required() && !is_repeated()` when testing optional cardinality.
-
-Do not replace label checks mechanically with
-`FieldDescriptor::has_optional_keyword()`: that API is also removed at the v34
-boundary. Edition singular fields do not carry proto2-style label meaning.
-
-The v30 migration no longer exposes `ctype` through `FieldDescriptor` options.
-Use `FieldDescriptor::cpp_string_type()`. Edition 2024 removes the schema
-`ctype` option in favor of `features.(pb.cpp).string_type`.
-
-`MutableRepeatedFieldRef<T>::Reserve()` is removed in v30. Generic repeated
-field reflection must stop reserving capacity through that view.
-
-## Removed and changed runtime APIs
-
-At the v34 boundary:
-
-- replace `AddUnusedImportTrackFile()` with `AddDirectInputFile()`;
-- replace `ClearUnusedImportTrackFiles()` with `ClearDirectInputFiles()`;
-- pass a `unique_ptr` to `AddIgnoreCriteria()` to transfer ownership;
-- replace `FieldDescriptor::has_optional_keyword()` with `has_presence()`;
-- express `FieldDescriptor::is_optional()` as
-  `!is_required() && !is_repeated()`;
-- remove calls to `UseDeprecatedLegacyJsonFieldConflicts()`, which has no
-  replacement.
-
-The v34 rollout macros below are removed and their behaviors become
-unconditional:
+These future-rollout macros are removed because their behavior is unconditional:
 
 - `PROTOBUF_FUTURE_RENAME_ADD_UNUSED_IMPORT`
 - `PROTOBUF_FUTURE_REMOVE_ADD_IGNORE_CRITERIA`
@@ -101,49 +54,69 @@ unconditional:
 - `PROTOBUF_FUTURE_REMOVE_MAP_FIELD_ARENA_CONSTRUCTOR`
 - `PROTOBUF_FUTURE_REMOVE_REPEATED_FIELD_ARENA_CONSTRUCTOR`
 
-`PROTOBUF_CONSTEXPR` is removed in v34; use the C++ `constexpr` keyword.
+The constructors `RepeatedField(Arena*)`, `RepeatedPtrField(Arena*)`, and
+`Map(Arena*)` are deleted. Do not construct generated field containers directly
+from an arena pointer.
 
-Edition 2026 schemas must remove `cc_api_version`, `cc_utf8_verification`, and
-`cc_enable_arenas`.
+## Generator and descriptor migrations (`34.0-announcement`)
 
-## Bounds and ownership hardening
+- Replace `AddUnusedImportTrackFile()` and `ClearUnusedImportTrackFiles()` with
+  `AddDirectInputFile()` and `ClearDirectInputFiles()`.
+- Pass a `unique_ptr` to `AddIgnoreCriteria()` so ownership transfers
+  explicitly.
+- Replace `FieldDescriptor::has_optional_keyword()` with `has_presence()` when
+  presence is the real question.
+- Express `FieldDescriptor::is_optional()` as
+  `!is_required() && !is_repeated()`.
+- `UseDeprecatedLegacyJsonFieldConflicts()` has no replacement.
 
-`RepeatedField::Get` and `RepeatedPtrField::Get` gain comprehensive bounds
-checks at the v34 boundary. Several logically constant APIs become
-`[[nodiscard]]`, so ignoring results can newly trigger compiler diagnostics.
+`RepeatedField::Get` and `RepeatedPtrField::Get` now perform comprehensive
+out-of-bounds checks. Several logically constant APIs are also `[[nodiscard]]`,
+so builds that discard their return values may newly fail under warning-as-error
+policies.
 
-In v34, `ExtractSubrange` and `DeleteSubrange` validate their ranges and abort
-on out-of-bounds access. In v35, `UnsafeArenaExtractSubrange`, `ReleaseLast`,
-and `SwapElements` are also checked. Validate indices, counts, and ranges
-before calling any of them.
+## `RepeatedPtrField` storage migration (`34.0-migration`)
 
-Debug builds check that a `CopyFrom` destination is not a descendant of its
-source. Never copy a recursive parent into one of its descendants.
+Elements now occupy contiguous chunks of preallocated memory, similar to
+`std::deque`. Review code that depends on prior copy or move behavior. Some
+`UnsafeArena` operations become equivalent to their arena-safe counterparts and
+may later be deprecated.
 
-The `[unverified_lazy = true]` option is rejected on extensions in v34. Remove
-it from extension declarations.
+The deprecated C++ `FieldDescriptor::label()` accessor is removed. Use
+cardinality and presence predicates instead of reconstructing a label.
 
-## Parsing, JSON, and field masks
+## Checked operations and invariants (`34.0`)
 
-`BinaryToJson` returns a parse failure when skipping an unknown field fails;
-do not assume unknown-field skipping always succeeds.
+- `[unverified_lazy = true]` is rejected on extensions; remove the option from
+  extension fields.
+- `ExtractSubrange` and `DeleteSubrange` validate ranges and abort on invalid
+  bounds.
+- Debug builds reject `CopyFrom` when the destination is a descendant of the
+  source. Never copy a parent message into one of its descendants.
+- `BinaryToJson` propagates a parse failure when skipping an unknown field
+  fails; callers can now receive an error for input previously treated as
+  successful.
+- `FieldMaskUtil::TrimMessage` now supports repeated message fields.
 
-`FieldMaskUtil::TrimMessage` handles repeated message fields in v34, so masks
-can trim messages containing repeated submessages.
+## Language and build cleanup (`34.0`)
 
-`TimeUtil::FromString` validates `Duration` and `Timestamp` values against
-their specification limits in 36.0-rc1. Syntactically valid but out-of-range
-values fail.
+`PROTOBUF_CONSTEXPR` is removed; use the `constexpr` language keyword. The old
+`safe_boundary_check` switch is also removed; source builds select checking
+with `--//third_party/protobuf:bounds_check_mode`.
 
-## New generated/runtime capabilities
+## Arena smart pointers (`35.0`)
 
-Protobuf message and enum types can be used directly as Abseil flag values in
-v35. Enum support includes `std::vector` values.
+`Arena::Ptr` and `Arena::UniquePtr` express pointer ownership for values
+associated with an arena. Prefer them where raw arena-backed pointers left
+ownership or lifetime unclear.
 
-Edition 2026 offers `features.(pb.cpp).repeated_type = PROXY`, which makes
-repeated-field accessors return `RepeatedFieldProxy` rather than pointers or
-references to concrete repeated containers. It remains opt-in because the
-default is `LEGACY`.
+## Abseil flags (`35.0`)
 
-Edition 2026 also offers `(pb.file.cpp).namespace` to choose a generated C++
-namespace independently of the proto package.
+Messages and enums can be used directly as Abseil flag values. Enums are also
+supported inside `std::vector` flag values.
+
+## Expanded bounds checks (`35.0`)
+
+`UnsafeArenaExtractSubrange`, `ReleaseLast`, and `SwapElements` now validate
+their indices and ranges. Validate arguments in application code rather than
+depending on previously unchecked behavior.

@@ -1,76 +1,83 @@
 # PHP, Ruby, and JRuby runtimes
 
-Source batches represented here: 30.0-migration, 30.0, 31.0,
-34.0-announcement, 34.0-migration, 34.0, 36.0-rc1.
+## Strict numeric JSON parsing (`30.0-migration`)
 
-## PHP runtime and type baselines
+Ruby and PHP now reject nonnumeric strings such as `""`, `"12abc"`, and
+`"abc"` for numeric protobuf fields during JSON parsing. Version 29.x only
+warned for these cases. Treat the parse as a validation failure and do not rely
+on partial numeric conversion.
 
-Protobuf v34 requires PHP 8.2 or newer. The shared v34 release moves the PHP
-runtime package from 4.33 to 5.34.
+## Earlier Ruby UTF-8 failures (`30.0-migration`)
 
-Replace removed PHP runtime types:
+Ruby surfaces UTF-8 enforcement errors earlier when a protobuf `string` field
+contains invalid UTF-8. Validate or transcode input before assignment rather
+than expecting serialization to be the first failure point.
 
-| Removed | Replacement |
-| --- | --- |
-| `Google\Protobuf\Field_Kind` | `Google\Protobuf\Field\Kind` |
-| `Google\Protobuf\Field_Cardinality` | `Google\Protobuf\Field\Cardinality` |
-| `Google\Protobuf\Internal\RepeatedField` | `Google\Protobuf\RepeatedField` |
+## JRuby implementation default (`30.0`)
 
-Generated setters carry PHP type hints in v34, and redundant `GPBUtil` checks
-are removed. Reflection, subclasses, and callers that assumed untyped
-signatures need adjustment.
+JRuby uses its FFI implementation by default. Applications that depended on the
+previous implementation must test native integration and deployment packaging.
+The behavior did not trigger a Ruby package-major bump because JRuby remains a
+best-effort target.
 
-## PHP reflection and defaults
+## Ruby interpreter baseline (`31.0`)
 
-`FieldDescriptor::getLabel()` is deprecated and then removed in v34. PHP field
-descriptors implement `hasPresence()` in v34, while the broken
-`hasOptionalKeyword()` helper is removed. Use cardinality and presence
-semantics directly.
+The Ruby runtime requires Ruby 3.1 or newer.
 
-The PHP runtime honors proto2 and Editions scalar defaults at the v34 boundary
-instead of silently ignoring them. Pure-PHP type validation aligns with
-upb-PHP, including rejection of `null` for string fields.
+## PHP runtime type replacements (`34.0-announcement`)
 
-## PHP JSON and binary validation
+- Replace `Google\Protobuf\Field_Kind` with
+  `Google\Protobuf\Field\Kind`.
+- Replace `Google\Protobuf\Field_Cardinality` with
+  `Google\Protobuf\Field\Cardinality`.
+- Replace `Google\Protobuf\Internal\RepeatedField` with
+  `Google\Protobuf\RepeatedField`.
 
-During JSON parsing, the v30 migration changes nonnumeric strings such as
-`""`, `"12abc"`, and `"abc"` for numeric fields from warnings to errors.
+## PHP JSON validation (`34.0-announcement`)
 
-At the v34 boundary, PHP JSON parsing also rejects:
+PHP JSON parsing rejects:
 
-- out-of-range numbers;
+- numeric values outside the target field's range;
 - non-integer numeric values for integer fields;
-- duplicate fields belonging to one oneof;
-- non-string values for string fields.
+- duplicate fields from the same oneof; and
+- non-string JSON values for string fields.
 
-JSON serialization rejects `Infinity` and `NaN` as number values. A v34
-serializer option can emit fields whose values equal their defaults.
+Serialization also rejects `Infinity` and `NaN` when presented as JSON number
+values. Route all these cases through normal parse/serialize error handling.
 
-In 36.0-rc1, `mergeFromString` and `serializeToString` accept a configurable
-`recursion_limit`, allowing applications to bound deeply nested binary
-traversal.
+## PHP defaults and type consistency (`34.0-announcement`)
 
-## Ruby runtime support and behavior
+The runtime now honors proto2 and Editions scalar defaults instead of ignoring
+them. Pure-PHP type checks align with upb-PHP, including rejection of `null` for
+string fields. Audit code that used an absent scalar's zero value instead of its
+declared default.
 
-Ruby 3.0 support is removed in v31, making Ruby 3.1 the minimum. Ruby 4.0 is
-supported in v34. The 36.0-rc1 line removes Ruby 3.1 support, so upgrade the
-interpreter before adopting it.
+## PHP runtime floor and descriptor labels (`34.0-migration`)
 
-Ruby surfaces UTF-8 enforcement errors earlier for invalid bytes in protobuf
-`string` fields after the v30 migration.
+PHP requires version 8.2 or newer. The deprecated
+`FieldDescriptor::getLabel()` accessor is removed; use cardinality and presence
+predicates.
 
-Ruby JSON numeric parsing rejects nonnumeric strings such as `""`, `"12abc"`,
-and `"abc"` after v30; the same inputs only warned in v29.x.
+## Typed generated setters (`34.0`)
 
-Ruby code generation can emit RBS files in v34 so generated protobuf APIs can
-participate in RBS-based type checking.
+Generated PHP setters carry PHP type hints, and redundant `GPBUtil` checks are
+removed. Reflection, subclasses, mocks, or callers that depended on untyped
+setter signatures must align with the generated types.
 
-## JRuby
+## PHP JSON default emission (`34.0`)
 
-JRuby uses its FFI implementation by default beginning in v30. Applications
-that depended on the old implementation can break. This does not trigger a
-Ruby package major bump because JRuby support is best-effort rather than
-official.
+JSON serialization can opt into emitting fields whose values equal their
+defaults. Decide explicitly whether external JSON contracts expect these fields
+and update golden output when enabling the option.
 
-The support target is the newest JRuby compatible with protobuf's minimum
-supported Ruby version.
+## PHP presence reflection (`34.0`)
+
+PHP field descriptors implement `hasPresence()`. The broken
+`hasOptionalKeyword()` helper is removed. Reflection logic should ask about
+presence semantics directly rather than infer them from an optional keyword.
+
+## Ruby RBS output and Ruby 4 (`34.0`)
+
+Ruby code generation can emit RBS files for generated protobuf types. Add the
+outputs to the type-checking pipeline when using RBS. The runtime also supports
+Ruby 4.0.

@@ -1,324 +1,391 @@
 # CLI, Platforms, Bundling, and Tooling
 
-## Install and inspect the toolchain
+## Installation and diagnostics
 
-The direct installer removes the old `cargo-binstall` prerequisite and honors `CARGO_HOME`. Version mismatches produce guidance, and `dx self-update` updates the CLI. Since 0.7.9, `dx --version` includes the current Git SHA and Cargo-installed CLI binaries contain the version metadata needed by self-update.
+The `dx` CLI works with Dioxus and ordinary Rust projects. It can extract
+`asset!` declarations, hot-patch code, launch the debugger, and create native
+bundles. Install from the project script and update in place:
 
 ```sh
 curl -fsSL https://dioxus.dev/install.sh | bash
-dx --version
 dx self-update
 ```
 
-`dx doctor` diagnoses missing toolchains and native prerequisites. Desktop needs WebView2 on Windows and WebKitGTK 4.1 plus xdotool/libxdo on Linux. iOS needs Xcode and its SDKs; Android needs the SDK and NDK.
+DX warns when its version is incompatible with the `dioxus` crate. Run
+`dx doctor` before diagnosing mobile SDK, native system library, or Rust target
+problems. `dx print` exposes the Cargo, linker, and environment arguments DX
+would use so another tool can reproduce the build.
 
-The 0.8.0-alpha.0 CLI must be source-installed with locked dependencies because unconstrained resolution can choose an incompatible upstream set.
+### Prerelease source installation
 
-```sh
-cargo install dioxus-cli --locked
-```
+> **Prerelease (`0.8.0-alpha.1`):** This guidance may change before stable release.
 
-## Create and inspect projects
+Plain `cargo install dioxus-cli` works again; the `--locked` workaround required
+by the preceding alpha is no longer necessary.
 
-`dx new` offers Bare-Bones, Jumpstart, and Workspace layouts. Workspace starts separate Web, Desktop, and Mobile crates. `dx new --template gh:owner/repository` clones a custom GitHub template, while `dx init` initializes the current directory.
+## Commands and output contracts
 
-```sh
-dx new
-dx new --template gh:dioxuslabs/dioxus-template
-dx init
-```
+- `dx serve` builds and runs with development hot reload and compiled-code
+  patching where supported.
+- `dx run` builds and runs without hot reload.
+- `dx build` creates build artifacts; `--raw-json-diagnostics` emits compiler
+  diagnostics separately from normal JSON logs.
+- `dx bundle` creates distributable artifacts; `--package-types` is repeatable.
+- `dx check` lints the project and `dx fmt` formats RSX while respecting
+  `rustfmt.toml` and `#[rustfmt::skip]`.
+- `dx completions <shell>` emits a shell completion script (since `0.7.6`).
+- `dx translate --file <path>` or `--raw "<html>"` converts HTML to RSX;
+  `--component` wraps it in a component and `--output` writes a file.
+- `dx components` manages the component registry; `dx tools` runs individual
+  build stages such as `build-assets` and `hotpatch`.
+- `dx config` reads or writes CLI settings. Cargo manifest flags such as
+  `--locked`, `--offline`, and `--frozen` are global.
 
-`dx print` emits structured project information, including Cargo and linker arguments, so external tools can reproduce DX's build context. `dx translate` converts HTML from a file or raw string into RSX, writes stdout unless `--output` is set, and optionally wraps the result in a component.
+`dx new` offers bare-bones, jumpstart, and workspace starters. Select another
+repository with `--template gh:owner/repo`; the default shorthand points at
+`DioxusLabs/dioxus-template`.
 
-```sh
-dx print
-dx translate --file index.html --output index.rs
-dx translate --raw "<div>Hello world</div>" --component
-```
-
-`dx components` manages the `dioxus-component` registry; `dx components add <name>` copies component source into the application rather than adding an opaque binary dependency.
-
-## Cargo features and launch configuration
-
-Renderer support is selected as features on the main `dioxus` crate, and all platforms use `dioxus::launch`. `dx serve --platform` activates the matching build feature. Fullstack builds client and server in parallel.
-
-The default crate features are `signals`, `macro`, `html`, `hooks`, and `hot-reload`. Optional `router` both re-exports the router and enables current-platform integration; `logger` installs the default tracing subscriber. A project disabling defaults must explicitly restore every layer it uses.
-
-```toml
-[dependencies]
-dioxus = { version = "0.7", default-features = false, features = [
-    "signals", "macro", "html", "hooks", "hot-reload",
-    "router", "logger", "web",
-] }
-```
-
-The former Fullstack-wide `Config` is gone. Supply server, Web, and Desktop settings independently through `LaunchBuilder` and keep shared settings such as the root element consistent.
-
-```rust
-LaunchBuilder::new()
-    .with_cfg(server_only! { ServeConfigBuilder::default().root_id("app") })
-    .with_cfg(web! { dioxus::web::Config::default().rootname("app") })
-    .launch(app);
-```
-
-Ordinary conditional compilation can branch to system APIs with `#[cfg(web)]`, `#[cfg(android)]`, and `#[cfg(ios)]`.
-
-## Development server and hot reload
-
-The rewritten CLI stores build output under `target/dx`. During `dx serve`, `r` rebuilds and `v`/`t` adjust log verbosity. WebAssembly tracing and panics are captured, and symbolized stack traces can link to the editor.
-
-Targets can be selected with `--platform` or shorthand flags.
+Use `--log-to-file <PATH>` for complete diagnostics. `--json-output` applies to
+all commands and guarantees the final output line is the command result. Its
+`.json` field is itself a JSON string; bundle output requires `--verbose`:
 
 ```sh
-dx serve --web
-dx serve --desktop
-dx serve --platform ios
-dx serve --platform android
-dx serve --platform fullstack
+dx bundle --desktop --json-output --verbose \
+  | tail -1 \
+  | jq -r '.json | fromjson | .BundleOutput.bundles[]'
 ```
 
-Mobile serving builds the same `main.rs` used on other platforms and includes simulators, logging, hot reload, and asset bundling; the older `cdylib` entrypoint and manual binding layer are unnecessary. Simulators open automatically. Android physical-device serving uses `adb reverse`; iPad targets are supported.
+CLI output has lived beneath `target/dx` since `0.6.0`; the old `outdir`
+concept was removed.
 
-DX can also serve ordinary Rust projects and run named packages as client/server peers. Cargo-style `--offline` and `--locked` are accepted.
+## Selecting platforms and profiles
+
+Prefer bare flags such as `dx serve --web`, `--desktop`, `--ios`, or
+`--android`. `--platform` is also supported; it was accidentally missing only
+in `0.7.0` and restored in `0.7.1`. `--renderer native` selects the native
+renderer, and `--bundle` chooses a bundle format.
+
+Each platform selects its Cargo feature and a dedicated profile:
+`web-dev`/`web-release`, `server-dev`, `desktop-dev`, `ios-dev`, or
+`android-dev`. DX detects fullstack from `dioxus/fullstack` plus a Cargo feature
+literally named `server`, then runs separate client and backend Cargo builds.
+
+Serve separate packages together when client and server live in different
+workspace crates:
 
 ```sh
-dx serve @client --package client @server --package server
+dx serve @client --package frontend @server --package backend
 ```
 
-The 0.8.0-alpha.0 watcher enables Rust hot-patching by default and watches `Cargo.toml`, `[web.watcher].watch_path`, and files discovered from Cargo dependency data. Stable hot-patch behavior and limitations are detailed in [renderers-testing-internals.md](renderers-testing-internals.md).
+## Web and fullstack deployment
 
-## Build diagnostics, logs, and debugging
+`dx bundle --web` writes
+`target/dx/<app>/<profile>/web/`, containing both a `public/` directory and a
+neighboring `server` executable. Deploying only `public` loses server functions.
+Run the executable directly. Default launch code reads `IP` and `PORT` and binds
+to `127.0.0.1`, so a container commonly needs:
 
-`dx build --raw-json-diagnostics` emits raw machine-readable compiler diagnostics (since 0.7.1). `dx bundle --json-output` emits structured command logs so CI can discover artifacts. The global `--log-to-file` captures all DX logs independently of verbosity.
-
-```sh
-dx build --raw-json-diagnostics
-dx bundle --json-output
-dx --log-to-file dx.log serve
+```dockerfile
+ENV PORT=8080
+ENV IP=0.0.0.0
+ENTRYPOINT ["/usr/local/app/server"]
 ```
 
-Pressing `d` in `dx serve` starts an LLDB session through a VS Code-based editor on Web, Desktop, or Mobile. Web opens a separate Chrome instance, and the DWARF symbols extension provides demangled Rust names. Cursor became a supported editor in 0.7.6.
+The CLI does not install the browser target; run
+`rustup target add wasm32-unknown-unknown` before a web build.
 
-The default subscriber initialized by `dioxus::launch` logs at `DEBUG` in development and `INFO` in release. Call `dioxus::logger::initialize_default()` to log before launch, or use `dioxus::logger::init` to choose a level. Web uses `tracing-wasm`, Desktop/server use `FmtSubscriber`, Android sends to logcat, and iOS sends to oslog.
+For GitHub Pages, set `[web.app].base_path` to the repository, bundle into
+`docs`, move the contents out of the nested `public` directory, and copy
+`index.html` to `404.html` so client routes survive refreshes.
 
-```rust
-fn main() {
-    dioxus::logger::init(tracing::Level::INFO)
-        .expect("failed to init logger");
-    dioxus::launch(App);
-}
-```
+## `Dioxus.toml` web configuration
 
-DX telemetry is enabled by default and includes anonymized command names, stage timings, stripped error locations, a hashed system ID, target triple, version, and CI status. Disable it persistently, at runtime, or at compile time.
-
-```sh
-dx config set disable-telemetry true
-TELEMETRY=false dx serve
-```
-
-Generate shell completions with the 0.7.6 `completions` subcommand.
-
-```sh
-dx completions
-```
-
-## `Dioxus.toml` foundations
-
-The `[application]`, `[web.app]`, `[web.watcher]`, `[web.resource]`, and `[web.resource.dev]` tables are required even when empty. `asset_dir` is copied to the output; `sub_package` chooses the default workspace package.
+These keys cover behaviors with no simple CLI equivalent. In particular,
+`index_on_404` makes history-based client routes work in development, while
+`wasm_opt.level` defaults to `"4"` (speed, not size). Proxy entries forward the
+path and query without rewriting.
 
 ```toml
 [application]
 asset_dir = "public"
-sub_package = "my-crate"
+sub_package = "my-workspace-member"
 
 [web.app]
-[web.watcher]
-[web.resource]
-[web.resource.dev]
-```
-
-Configured icon paths resolve relative to the crate, not the CLI working directory (since 0.7.2). The CLI overrides Cargo profile `strip` and performs stripping itself with LLVM tooling. Web base paths are normalized by trimming surrounding slashes.
-
-## Web serving and release output
-
-`Dioxus.toml` can make the development server fall back to the index for routes, inject development-only resources, proxy a backend prefix while retaining path and query, and serve HTTPS through `mkcert` or supplied certificates. Release assets are Brotli-precompressed by default. `[web.wasm_opt]` accepts `z`/`s` for size or `1`–`4` for speed and can retain debug symbols.
-
-```toml
-[web]
-pre_compress = true
+title = "Project"
+base_path = "project"
 
 [web.watcher]
+reload_html = true
 index_on_404 = true
+
+[web.resource]
+style = ["./assets/main.css"]
+script = ["./public/index.js"]
 
 [[web.proxy]]
 backend = "http://localhost:8000/api/"
 
-[[web.https]]
-enabled = true
-mkcert = true
+[web]
+pre_compress = true
 
 [web.wasm_opt]
 level = "z"
-debug = false
+debug = true
 ```
 
-A custom `index.html` must keep `<div id="main"></div>` as the mount point; custom templates still hot-reload.
+`[web.resource.dev]` mirrors resource injection for development only. Configure
+development TLS with `enabled`, `mkcert`, `key_path`, and `cert_path` under
+`web.https`. A custom `index.html` must contain `<div id="main">`; hot reload
+still works with the template. Tailwind watcher paths use `tailwind_input` and
+`tailwind_output`.
 
-For GitHub Pages, set `web.app.base_path` to the repository, bundle into `docs`, move `docs/public` contents upward, and copy `index.html` to `404.html`. `index_on_404` affects DX's server only; external hosts need their own SPA fallback.
+## Desktop prerequisites and behavior
 
-```sh
-dx bundle --out-dir docs
-mv docs/public/* docs
-cp docs/index.html docs/404.html
-```
+Linux desktop builds require WebKitGTK **4.1** and `xdotool`—for Debian/Ubuntu,
+`libwebkit2gtk-4.1-dev` and `libxdo-dev`; for Arch, `webkit2gtk-4.1` and
+`xdotool`; for Fedora, `libxdo-devel` plus the matching WebKit package. Include
+the runtime equivalents in `.deb` and `.rpm` dependency metadata.
 
-## Desktop and mobile application settings
+Under WSL, set `DISPLAY=:0` and install a fallback such as `zenity` for file
+dialogs; current `libEGL` warnings are expected. Windows requires WebView2,
+normally present with Edge.
 
-Desktop `new_window` is asynchronous as of 0.7.0. File-dialog operations using Tokio became asynchronous in 0.7.1; await both rather than consuming results synchronously. Desktop configuration can decide whether clicking the tray icon shows the main window (since 0.7.4).
+Desktop supports system trays, custom event loops, and child-window mode for
+overlaying Dioxus on another WGPU/OpenGL renderer (restored/added in `0.6.0`).
+Since `0.7.1`, `with_on_window_ready` exposes the window before webview
+attachment and Tokio file dialogs are async. Tray icons can show the main window
+on click, and `0.7.6` ensures the configured Windows executable icon is applied.
 
-`Dioxus.toml` can drive generated Android manifests, Apple property lists and entitlements, permissions, icons, splash screens, URL schemes, and `MainActivity.kt`. Android's application ID follows `bundle.identifier`, and the minimum SDK default moved to 28. Windows application icons are applied during both `dx serve` and `dx bundle` as of 0.7.6.
+## Mobile prerequisites and workflow
 
-Manual Android setup installs all four supported Rust targets and configures `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`, emulator, and platform-tools paths. iOS uses separate device and Apple-silicon simulator targets.
+Since `0.6.0`, iOS and Android applications use the same ordinary `main.rs` as
+other platforms; the old `cdylib`, `#[no_mangle] start_app`, and manual panic
+catching layer are obsolete. DX owns simulator/device serving and RSX/asset hot
+reload.
 
-```sh
-rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-```
+Android requires Rust targets `aarch64-linux-android`,
+`armv7-linux-androideabi`, `i686-linux-android`, and
+`x86_64-linux-android`, plus `JAVA_HOME`, `ANDROID_HOME`, and `NDK_HOME`. Install
+the SDK, command-line tools, side-by-side NDK, and CMake through Android Studio.
+iOS requires `aarch64-apple-ios` and `aarch64-apple-ios-sim` plus Xcode tooling.
 
-Dioxus can package iOS widgets, including Live Activity extensions, alongside the primary app as of 0.7.4.
+DX can serve real Android devices through `adb reverse`. It bundles native
+`.dylib` and `-framework` dependencies automatically and, since `0.7.4`, can
+bundle iOS widget extensions for Live Activities and home-screen widgets.
+Android release APK signing is configured under `bundle.android`.
 
-## Unified permissions, links, and background modes
+## Unified mobile permissions
 
-The `permission!()` macro is removed. Put application permissions in top-level `[permissions]`; the CLI maps unified entries to Android names and Apple usage-description keys. Entries include `location` (`fine` or `coarse`), `background_location`, `camera`, `microphone`, `notifications`, `photos.read`, `photos.write`, `bluetooth`, `contacts`, `calendar`, `biometrics`, `nfc`, `motion`, `health`, and `speech`. Apple notification permission remains runtime-only. Native-plugin libraries cannot inject permissions and must tell the app which entries to add.
+Declare platform-neutral permissions once. The CLI maps them into Android
+manifest entries and Apple usage descriptions; `description` becomes the Apple
+prompt text.
 
 ```toml
-[bundle]
-identifier = "com.example.myapp"
-
 [permissions]
-location = { precision = "fine", description = "Use location for navigation" }
+location = { precision = "fine", description = "Show nearby places" }
 camera = { description = "Take profile photos" }
 ```
 
-`[deep_links]` declares custom schemes, universal/App Link hosts, and path patterns; an empty path list matches all paths. Platform-specific URL schemes and Android intent filters extend unified values. Unified `[background]` switches include `location`, `remote-notifications`, `processing`, `audio`, `fetch`, `voip`, and `bluetooth`. Apple background modes and Android foreground-service types extend them.
+Typed keys are `location` (`fine` or `coarse`), `background_location`, `camera`,
+`microphone`, `notifications`, `photos.read`, `photos.write`, `bluetooth`,
+`contacts`, `calendar`, `biometrics`, `nfc`, `motion`, `health`, and `speech`.
+Put other Android capabilities under `[android.permissions]` with their complete
+`android.permission.*` names. The old `permission!()`/`PermissionBuilder` API
+was removed.
+
+## Deep links and background modes
 
 ```toml
 [deep_links]
 schemes = ["myapp"]
 hosts = ["example.com", "*.example.com"]
-paths = ["/app/*", "/share/*"]
+paths = ["/app/*"]
 
 [background]
 location = true
+audio = true
+fetch = true
 remote-notifications = true
+voip = true
+bluetooth = true
 processing = true
 ```
 
-Top-level `[ios]`, `[android]`, and `[macos]` tables extend or override unified configuration:
+An empty `paths` list matches every path for the configured hosts.
 
-- iOS: `deployment_target`, `url_schemes`, `background_modes`, `[[ios.document_types]]`, `[ios.plist]`, `[ios.entitlements]`, and `[ios.raw].info_plist`.
-- Android: `min_sdk`, `target_sdk`, `features`, `url_schemes`, `foreground_service_types`, `[[android.intent_filters]]`, `[[android.intent_filters.data]]`, `[android.queries].packages`, `[android.permissions]`, and `[android.raw].manifest`.
-- macOS: `minimum_system_version`, `frameworks`, `url_schemes`, `category`, `[[macos.document_types]]`, `[macos.plist]`, `[macos.entitlements]`, and `[macos.raw].info_plist`.
+Platform sections extend rather than replace unified values: Apple URL schemes
+add to `deep_links.schemes`, and Apple background modes or Android foreground
+service types add to `[background]`.
 
-## Bundles and deployment
+## Platform manifest sections
 
-`dx bundle` emits Desktop installers, Android `.apk`, iOS `.ipa`/`.app`, and Web output. Native dynamic libraries and frameworks are copied automatically, and Fullstack server builds may target server-side `wasm32` environments. Desktop formats are host-platform and host-architecture only, selected with repeatable `--package-types`.
+`[ios]`, `[android]`, and `[macos]` are top-level manifest configuration, not
+`[bundle.*]` installer metadata. Each has typed fields and a raw escape hatch:
+`[ios.raw].info_plist` and `[android.raw].manifest` splice values verbatim.
+Generated platform projects use Handlebars templates and are disposable; do not
+edit their generated XML/plist by hand.
 
-```sh
-dx bundle --desktop --package-types macos --package-types dmg
+```toml
+[ios]
+deployment_target = "15.0"
+
+[[ios.document_types]]
+name = "My Document"
+extensions = ["mydoc"]
+role = "Editor"
+
+[ios.plist]
+ITSAppUsesNonExemptEncryption = false
+
+[ios.entitlements]
+"com.apple.security.application-groups" = ["group.com.example.app"]
+
+[android]
+min_sdk = 24
+target_sdk = 34
+features = ["android.hardware.location.gps"]
+
+[[android.intent_filters]]
+actions = ["android.intent.action.VIEW"]
+categories = ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"]
+auto_verify = true
+
+[[android.intent_filters.data]]
+scheme = "https"
+host = "example.com"
+path_prefix = "/app"
+
+[android.queries]
+packages = ["com.other.app"]
+
+[macos]
+frameworks = ["CoreLocation.framework"]
+category = "public.app-category.productivity"
 ```
 
-`[bundle].resources` accepts globs. Each `external_bin` source file must have the target triple appended on disk but is addressed at runtime by the unsuffixed name.
+Do not confuse `[macos] minimum_system_version` and inline
+`[macos.entitlements]` with `[bundle.macos]` values, where entitlements is a
+path to a plist. For the complete mobile schema introduced around `0.7.4`, use
+the CLI repository's `packages/cli/schema.json` rather than guessing field
+names.
+
+## Kotlin, Java, and Swift FFI
+
+First-party mobile FFI arrived in `0.7.4`. Annotate an `extern` block with the
+source directory and use the source-language ABI. Foreign objects are declared
+as Rust types and may receive ordinary Rust `impl` methods.
+
+```rust
+#[manganis::ffi("/src/ios")]
+extern "Swift" {
+    pub type SomeSwiftObject;
+    pub fn value(this: &SomeSwiftObject) -> Option<u32>;
+}
+
+#[manganis::ffi("/src/android")]
+extern "Kotlin" {
+    fn do_thing() -> JObject;
+}
+```
+
+Calls use runtime lookup—JNI for Kotlin/Java and the Objective-C runtime for
+Swift—so values must be pointer-like or cross-language coercible. The macro
+emits sources as Manganis assets; extraction and native compilation happen in
+the bundler after rustc. This is not a `build.rs` replacement: Rust cannot
+consume headers or other outputs generated by that native compilation.
+TypeScript/JavaScript bindings were only planned in `0.7.4`, not supported.
+
+## Bundle metadata and package selection
+
+Desktop installer metadata belongs in `Dioxus.toml`:
 
 ```toml
 [bundle]
+identifier = "com.example.app"
+publisher = "Example"
+icon = ["icons/32.png", "icons/app.icns", "icons/app.ico"]
 resources = ["main.css", "**/*.png"]
+category = "Utility"
 external_bin = ["bin/helper"]
-```
 
-For Fullstack Web, `dx bundle --web` writes a `public` client directory beside a server executable. Deploy both, run the executable, and set `IP=0.0.0.0` in a container; `dioxus::launch` reads `IP` and `PORT`.
-
-```sh
-IP=0.0.0.0 PORT=8080 ./server
-```
-
-## Linux and macOS packaging
-
-Linux musl targets use a vendored `libgit2` as of 0.7.2. FreeBSD is detected when choosing esbuild tooling as of 0.7.6.
-
-`[bundle.deb]` controls dependencies, provisions, conflicts, replacements, section, priority, changelog, desktop template, lifecycle scripts, and payload files. File-map keys are package destinations; values are sources relative to the current working directory.
-
-```toml
-[bundle.deb]
-section = "utils"
-priority = "optional"
-post_install_script = "packaging/post-install.sh"
-files = { "/usr/share/example/default.toml" = "packaging/default.toml" }
-```
-
-macOS apps are code-signed during build and packaging. `[bundle.macos]` can add frameworks, set the minimum OS, identity/provider, entitlements, replacement `Info.plist`, files under `Contents`, and hardened runtime. Disable hardened runtime when a less-strict ad-hoc signature is needed.
-
-```toml
 [bundle.macos]
-minimum_system_version = "12.0"
-entitlements = "packaging/entitlements.plist"
-info_plist_path = "packaging/Info.plist"
-hardened_runtime = false
-files = { "Resources/default.toml" = "packaging/default.toml" }
+frameworks = ["CoreML"]
+minimum_system_version = "10.13"
+entitlements = "entitlements.plist"
+signing_identity = "KEYCHAIN ENTRY"
+hardened_runtime = true
 ```
 
-## Windows packaging
+`category` is a fixed App-Store-style enum. `resources` takes globs. For a
+sidecar, list the path without a target triple but ship the file with the triple
+appended; access it at runtime by the bare binary name.
 
-Windows WebView2 installation modes include skip, download, embedded bootstrapper, offline installer, and fixed runtime. A custom signing command receives the binary at `%1`; a WiX `upgrade_code` must remain stable across releases.
+`--package-types` is repeatable. Valid types include macOS `macos`/`dmg`, Linux
+`appimage`/`rpm`/`deb`, Windows `msi`/`nsis`, iOS `ios`, Android package output,
+and `updater` where supported. Desktop bundling is host-bound, so build each OS
+on its own runner.
 
-Built-in signing under `[bundle.windows]` takes a certificate thumbprint, digest algorithm, timestamp URL, and explicit timestamp protocol.
+### Whole resource directories
+
+> **Prerelease (`0.8.0-alpha.1`):** This guidance may change before stable release.
+
+The bundler can copy complete resource directories into a bundle, in addition
+to individual resource globs and file maps.
+
+## Windows installers and signing
+
+`webview_install_mode` controls WebView2: `Skip`, `DownloadBootstrapper`,
+`EmbedBootstrapper`, `OfflineInstaller`, or `FixedRuntime { path }`. `Skip`
+leaves the app unable to run on a machine without WebView2.
+
+A custom signing command must contain literal `%1` for the binary path, which
+also allows `osslsigncode` from a non-Windows host:
 
 ```toml
-[bundle.windows]
-certificate_thumbprint = "A1B2C3D4E5F6..."
-digest_algorithm = "sha-256"
-timestamp_url = "http://timestamp.digicert.com"
-tsp = true
-```
-
-WiX and NSIS have separate configuration. WiX supports templates/fragments, component/feature/merge refs, languages, licensing, artwork, elevated updates, and an MSI version. NSIS independently controls templates/artwork, install scope, translations, start-menu folder, hooks, and minimum WebView2.
-
-```toml
-[bundle.windows.wix]
-license = "packaging/license.rtf"
-banner_path = "packaging/banner.bmp"
-enable_elevated_update_task = true
+[bundle.windows.sign_command]
+cmd = "osslsigncode"
+args = ["sign", "-in", "%1"]
 
 [bundle.windows.nsis]
-license = "packaging/license.txt"
-display_language_selector = true
-start_menu_folder = "Example"
-installer_hooks = "packaging/hooks.nsh"
+install_mode = "PerMachine"
+minimum_webview2_version = "110.0.1531.0"
 ```
 
-Windows on ARM gained `wasm_opt` support and an `aarch64-pc-windows-msvc` CLI artifact in 0.7.5. That release also passes the FIPS flag to `candle.exe` for compliant bundling.
+The `.exe` installer package name is `nsis`. Its settings include
+`CurrentUser`/`PerMachine`/`Both`, installer hooks, and minimum WebView2.
+WiX's `upgrade_code` GUID must remain stable across releases or Windows treats
+an update as a separate application.
 
-## Release-size tuning
+## Debian and macOS package details
 
-For a minimum-size release, a nightly `.cargo/config.toml` can rebuild `std` with immediate aborts and combine size optimization, LTO, virtual-function elimination, and reduced location metadata. Config-file profile values override corresponding `Cargo.toml` profile settings.
+Debian's section supports `depends`, `section`, `priority`, maintainer scripts,
+a Handlebars desktop template, and a destination-to-source `files` map. It also
+supports `provides`, `conflicts`, `replaces`, and `changelog`.
 
-```toml
-[unstable]
-build-std = ["std", "panic_abort", "core", "alloc"]
-build-std-features = ["panic_immediate_abort"]
+`bundle.macos.files` provides the same destination-to-source mapping outside
+resource globs. macOS additionally supports `info_plist_path`,
+`exception_domain`, and `provider_short_name`.
 
-[build]
-rustflags = ["-Clto", "-Zvirtual-function-elimination", "-Zlocation-detail=none"]
+Since `0.7.4`, DX's installer implementation is vendored in-tree rather than
+depending on `tauri-bundler`; remove workarounds for its formerly broken bundle
+asset paths or NSIS/MSI output.
 
-[profile.release]
-opt-level = "z"
-debug = false
-lto = true
-codegen-units = 1
-panic = "abort"
-incremental = false
+## Logging, debugger, and telemetry
+
+`dioxus::launch` installs tracing at `Debug` in development and `Info` in
+release. Override it by calling `dioxus::logger::init(Level)` before launch.
+Web uses `tracing-wasm`, desktop/server use `tracing-subscriber`, Android emits
+to logcat, and iOS emits to oslog.
+
+During `dx serve`, press `d` to attach LLDB through a VSCode-family editor; web,
+desktop, mobile, and Cursor are supported. Rust-level WASM debugging in Chrome
+requires the DWARF-aware debugging extension.
+
+Since `0.7.0`, CLI telemetry is enabled by default and includes stripped command
+invocations, stage timings, sanitized panics, a hardware-derived identifier,
+target/CI status, and DX version. Opt out with the `disable-telemetry` Cargo
+feature, `TELEMETRY=false`, or:
+
+```sh
+dx config set disable-telemetry true
 ```
-
-## Documentation context and ecosystem pointers
-
-Dioxus publishes a first-party `llms.txt` generated from its documentation, and current templates can include condensed release context. The documented internationalization helper is `dioxus-i18n`.

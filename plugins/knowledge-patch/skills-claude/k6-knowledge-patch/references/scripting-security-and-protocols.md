@@ -1,9 +1,10 @@
 # Scripting, Security, and Protocols
 
-## TypeScript and JavaScript runtime behavior
+## Direct TypeScript execution
 
-Direct `.ts` execution became available in `1.0.0` without a separate
-transpilation step:
+### Run `.ts` tests without a separate build (since 1.0.0)
+
+k6 executes TypeScript test entry files directly.
 
 ```typescript
 import http from 'k6/http';
@@ -19,80 +20,21 @@ export default function () {
 }
 ```
 
-The JavaScript runtime gained logical assignment and destructuring in exports
-in `1.0.0-rc1`:
-
-```javascript
-let name;
-name ??= 'default';
-export const [first, second] = [1, 2];
-```
-
-`k6/browser`, `k6/net/grpc`, and `k6/crypto` became stable and
-production-ready in `1.0.0`.
-
-## Crypto and authentication helpers
-
-Web Crypto became stable through global `crypto` in `1.0.0-rc1`:
-
-```javascript
-export default function () {
-  console.log(crypto.randomUUID());
-}
-```
-
-Do not import deprecated `k6/experimental/webcrypto`. The crypto module gained
-PBKDF2 password-based key derivation in `1.6.0`.
-
-The jslib TOTP package added RFC 6238 generation and verification from a
-base32 secret in `1.6.0`:
-
-```javascript
-import { TOTP } from 'https://jslib.k6.io/totp/1.0.0/index.js';
-
-const totp = new TOTP('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 6);
-const code = await totp.gen();
-const valid = await totp.verify(code);
-```
-
-## Secret sources and redaction
-
-The asynchronous `k6/secrets` API was introduced in `1.0.0-rc1`. Built-in
-sources read key-value files or CLI values, and extensions can supply other
-sources. Retrieved values are redacted from logs, including when nested in
-logged responses:
-
-```javascript
-import secrets from 'k6/secrets';
-
-export default async function () {
-  console.log(await secrets.get('cool'));
-}
-```
-
 ```sh
-k6 run --secret-source=mock=cool="not cool secret" script.js
+k6 run script.ts
 ```
 
-Redaction expanded to `float32` and `float64` values in `1.0.0-rc2`.
+## Stable and preview script modules
 
-URL-based sources were added in `1.5.0`, but that release supplied only a mock
-implementation and no production-ready external secret-manager integration.
+### Use the stable core modules (since 1.0.0)
 
-`K6_SECRET_SOURCE` became an equivalent to `--secret-source` in `1.7.0` and
-accepts the same syntax:
+`k6/browser`, `k6/net/grpc`, and `k6/crypto` are stable and production-ready.
 
-```sh
-K6_SECRET_SOURCE='mock=cool="not cool secret"' k6 run script.js
-```
+### Evaluate the preview assertions library (since 1.2.0)
 
-In `2.0.0`, `k6 cloud run --local-execution` automatically enables the Cloud
-secret source. Use `--no-cloud-secrets` to opt out.
-
-## Assertions
-
-The URL-hosted `k6-testing` preview library became usable in `1.2.0`, bringing
-`expect()` and Playwright-style matchers to protocol and browser tests:
+The URL-hosted `k6-testing` preview library supplies `expect()` and
+Playwright-style matchers for protocol and browser tests. It is usable, but
+some matchers and test coverage may still be absent.
 
 ```javascript
 import { expect } from 'https://jslib.k6.io/k6-testing/0.5.0/index.js';
@@ -103,37 +45,38 @@ export default function () {
 }
 ```
 
-It was a preview with incomplete matcher and feature coverage; pin its URL
-version and validate required matchers before relying on it.
+## gRPC values and metadata
 
-## Explicit test failure
+### Marshal special floating-point values (since 1.2.0)
 
-`execution.test.fail()` was added in `1.0.0-rc2`. It marks the test failed
-without stopping execution, so metrics and cleanup continue:
+gRPC float values `NaN` and `Infinity` are encoded with their string
+representations instead of `null`. Existing scripts require no changes.
 
-```javascript
-import exec from 'k6/execution';
+### Send the authority pseudo-header (since 1.2.0)
 
-export default function () {
-  exec.test.fail('validation failed');
-}
-```
+The gRPC module supports the `authority` pseudo-header for services that
+require it.
 
-Execution-status consumers can distinguish this outcome using
-`ExecutionStatusMarkedAsFailed` as of `1.6.0`.
+## Structured and binary logging
 
-## gRPC values and headers
+### Preserve nested values (since 1.5.0)
 
-As of `1.2.0`, gRPC marshals `NaN` and `Infinity` float values as their string
-representations rather than `null`; existing scripts need no change.
+`console.log()` traverses nested arrays and objects without dropping functions
+or classes. Functions and classes render as `"[object Function]"`; circular
+references are marked `"[Circular]"` rather than collapsing the entire value
+to `[object Object]`.
 
-The gRPC module also supports the `authority` pseudo-header as of `1.2.0` for
-services that require it.
+### Render binary values (since 1.6.0)
+
+`console.log()` displays `ArrayBuffer` byte contents and typed-array types,
+lengths, and values, including binary values nested in other objects.
 
 ## WebSockets
 
-The experimental WebSockets API gained close codes and reasons in `1.5.0`.
-`close(code, reason)` sends both values, and the close event exposes them:
+### Send and inspect close details (since 1.5.0)
+
+The then-experimental WebSockets module added a close code and reason to
+`close()` and exposed both values on the close event:
 
 ```javascript
 import ws from 'k6/experimental/websockets';
@@ -148,25 +91,61 @@ export default function () {
 }
 ```
 
-The module stabilized unchanged at `k6/websockets` in `1.6.0`; migrate off
-the deprecated experimental import.
+### Import the stable module (since 1.6.0)
 
-In `1.8.0`, sending a TypedArray through `k6/websockets` began incrementing
-`bufferedAmount` correctly, preventing the counter from becoming negative
-during transmission.
+WebSockets are stable at `k6/websockets`. The API did not change during the
+move. `k6/experimental/websockets` is deprecated and scheduled for removal.
 
-## Console inspection
+```javascript
+import ws from 'k6/websockets';
+```
 
-`console.log()` began deeply traversing nested arrays and objects in `1.5.0`.
-Functions and classes render as `"[object Function]"`, and circular references
-as `"[Circular]"`, instead of collapsing the full value to `[object Object]`.
+### Track TypedArray buffering correctly (since 1.8.0)
 
-In `1.6.0`, logging also began rendering `ArrayBuffer` bytes and typed-array
-types, lengths, and values, including nested binary values.
+Sending a TypedArray through `k6/websockets` increments `bufferedAmount`
+correctly. The counter no longer becomes negative as typed-array data is sent.
 
-## HTTP method signatures
+## Cryptography and one-time passwords
 
-Beginning in `1.8.0`, `http.get()` and `http.head()` warn about extra
-positional arguments. The extras are still ignored, but callers should move
-supported options into the documented parameter object instead of suppressing
-the warning.
+### Derive keys with PBKDF2 (since 1.6.0)
+
+The crypto module supports PBKDF2 password-based key derivation.
+
+### Generate and verify TOTP codes (since 1.6.0)
+
+The jslib TOTP package generates and verifies RFC 6238 time-based one-time
+passwords from a base32 secret.
+
+```javascript
+import { TOTP } from 'https://jslib.k6.io/totp/1.0.0/index.js';
+
+const totp = new TOTP('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 6);
+const code = await totp.gen();
+const valid = await totp.verify(code);
+```
+
+## Secret sources
+
+### Fetch from an HTTP endpoint (since 1.5.0)
+
+Secret management can retrieve secrets from an HTTP endpoint, allowing a
+custom service to supply test values. The 1.5 implementation is only a mock;
+it is not a production-ready external secret-manager integration.
+
+### Configure sources through the environment (since 1.7.0)
+
+`K6_SECRET_SOURCE` accepts the same value syntax as `--secret-source`.
+
+```sh
+K6_SECRET_SOURCE='mock=cool="not cool secret"' k6 run script.js
+```
+
+Cloud secrets used with local Cloud execution are covered in
+[Local Cloud execution](cli-cloud-and-configuration.md#local-cloud-execution).
+
+## Execution status
+
+### Detect an explicit failure (since 1.6.0)
+
+Code consuming execution status can distinguish a test marked failed with
+`exec.test.fail()` through `ExecutionStatusMarkedAsFailed`.

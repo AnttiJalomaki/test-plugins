@@ -1,42 +1,56 @@
 ---
 name: dioxus-knowledge-patch
 description: Dioxus
-version: 0.7.9
+version: 0.8.0-alpha.1
 license: MIT
 metadata:
   author: Nevaberry
 ---
 
 
+
 # Dioxus Knowledge Patch
 
-Use this skill when creating, migrating, debugging, testing, or packaging a Dioxus application. Start with the quick references below, then open the topic file that matches the work at hand.
+Use this skill when creating, migrating, debugging, testing, or packaging a Dioxus
+application. Inspect manifests and the target platform, then open the matching
+topic reference.
+
+> [!CAUTION]
+> This skill includes guidance for `0.8.0-alpha.1`; prerelease guidance may
+> change before stable release.
 
 ## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [components-reactivity.md](references/components-reactivity.md) | Components, props, signals, stores, hooks, tasks, resources, suspense, errors, events |
-| [assets-styling-ui.md](references/assets-styling-ui.md) | Assets, RSX, attributes, CSS, Tailwind, document elements, evaluation, accessible UI |
-| [fullstack-routing.md](references/fullstack-routing.md) | Server functions, Axum, SSR, hydration, forms, streaming, WebSockets, files, routing |
-| [cli-platforms-bundling.md](references/cli-platforms-bundling.md) | CLI, project configuration, Web/Desktop/Mobile, logging, debugging, deployment, installers |
-| [renderers-testing-internals.md](references/renderers-testing-internals.md) | Native and custom renderers, LiveView, direct SSR, tests, hot-patching, WASM splitting, native plugins |
-| [migration-edge-cases.md](references/migration-edge-cases.md) | Breaking API changes, deprecations, dependency boundaries, behavioral edge cases, preview cautions |
-| [ecosystem-sdk-components.md](references/ecosystem-sdk-components.md) | Styled components, primitives, virtual lists, attributes, SDK services, persistence, timers |
+| [components-reactivity.md](references/components-reactivity.md) | Components, props, errors, signals, stores, hooks, tasks, suspense, and events |
+| [assets-styling-ui.md](references/assets-styling-ui.md) | Assets, RSX, attributes, CSS, Tailwind, document elements, evaluation, and accessible UI |
+| [fullstack-routing.md](references/fullstack-routing.md) | Server functions, Axum, SSR, hydration, forms, streams, WebSockets, files, SSG, and routing |
+| [cli-platforms-bundling.md](references/cli-platforms-bundling.md) | CLI, project configuration, Web, Desktop, Mobile, FFI, logging, deployment, and installers |
+| [renderers-testing-internals.md](references/renderers-testing-internals.md) | Native and custom renderers, direct SSR, tests, hot reload, hot-patching, and WASM splitting |
+| [migration-edge-cases.md](references/migration-edge-cases.md) | Breaking API changes, dependency boundaries, behavioral fixes, and prerelease cautions |
+| [ecosystem-sdk-components.md](references/ecosystem-sdk-components.md) | SDK services, persistence, timers, primitives, styled components, and virtual lists |
 
 ## First checks
 
-- Inspect `Cargo.toml`, `Cargo.lock`, `Dioxus.toml`, enabled platform features, and the installed `dx` version before changing APIs.
-- Keep client-only and server-only dependencies behind their respective Cargo features; a server-function body does not hide adjacent native code from the client build.
-- Prefer the unified `dioxus` crate and its current prelude. Low-level runtime and renderer APIs often require explicit imports.
-- Run `dx doctor` when a native or mobile build fails before diagnosing Rust code.
-- Treat prerelease APIs as opt-in. Do not apply preview-only behavior to a stable application without checking its dependency version.
+- Read `Cargo.toml`, `Cargo.lock`, `Dioxus.toml`, enabled Cargo features, target
+  platform, and installed `dx` version before changing an API or build command.
+- Prefer the unified `dioxus` crate and prelude. Fullstack client and server
+  builds require different companion features.
+- Build fullstack browser and server targets with their separate companion
+  features; do not treat `fullstack` alone as a platform.
+- Run `dx doctor` before diagnosing native SDK, toolchain, or system-library
+  failures. Use `dx print` to reproduce DX's Cargo and linker arguments.
+- Treat alpha guidance as opt-in and verify its exact version before applying it.
 
 ## Breaking changes and deprecations
 
-### Components no longer take a scope
+### Components return a result
 
-Components take props directly, `Element` is static and result-based, and runtime helpers do not need a `Scope` argument.
+Current components return `Element`, which is a result-like render value.
+Propagate ordinary errors with `?` to the nearest
+`ErrorBoundary`; render nothing with `rsx! {}`. Do not use the removed
+`VNode::None` or the old `.throw()?` migration form in current code.
 
 ```rust
 fn Counter() -> Element {
@@ -47,11 +61,15 @@ fn Counter() -> Element {
 }
 ```
 
-Use `rsx! {}` to render nothing. Ordinary errors can propagate with `?` into an ancestor `ErrorBoundary`; do not use the removed `VNode::None` pattern.
+Use `dioxus::Result<T>`/`dioxus::Ok(value)` when an async reactive primitive
+needs the cloneable `CapturedError` form. Dioxus errors otherwise interoperate
+with `anyhow` and its context and downcast APIs.
 
 ### Prefer readable props and store lenses
 
-Use `ReadSignal<T>` for reactive readable props. RSX can decay a signal, memo, store lens, or plain value into it. Generic store helpers should accept `Readable` or `Writable` bounds because generated lens types are intentionally unnamed.
+Use `ReadSignal<T>` for readable reactive props. Signals, memos, store lenses,
+and plain values decay into it, so one prop supports reactive and untracked
+callers. `ReadOnlySignal` is deprecated.
 
 ```rust
 #[component]
@@ -60,93 +78,102 @@ fn Title(title: ReadSignal<String>) -> Element {
 }
 ```
 
-`ReadOnlySignal` is deprecated. Use current readable interfaces, and use `Store` for collections whose children need per-item reactive lenses.
+Use `Store` when children need reactive access to individual collection entries
+or nested fields. Generated lens types are intentionally unnamed, so generic
+helpers should accept `Readable` or `Writable` bounds rather than spelling the
+second `Store` parameter.
 
 ### Launch and features are platform-selected
 
-Use `dioxus::launch` or `LaunchBuilder`. Renderer features live on the main `dioxus` crate; fullstack client and server builds must enable `web` and `server` separately.
+Launch through `dioxus::launch`, `LaunchBuilder`, or `dioxus::serve`. Do not add
+old renderer launch crates or `dioxus-lib`. A fullstack configuration needs a
+client renderer and server target separately:
 
 ```toml
 [features]
-web = ["dioxus/web"]
+default = []
+web = ["dioxus/web", "dioxus/fullstack"]
+server = ["dioxus/server", "dioxus/fullstack"]
 desktop = ["dioxus/desktop"]
-server = ["dioxus/server"]
 ```
 
-The old `dioxus-lib` crate is gone. Use `dioxus` with the `lib` feature when only the framework library layer is required.
+The router is not a default feature. `dioxus::serve` requires `server`, while
+`LaunchBuilder` requires `launch`; stores are re-exported under `signals`, not a
+separate `stores` feature.
 
-### Event cancellation is synchronous
+### Events cancel browser defaults synchronously
 
-Call `event.prevent_default()` before any `.await`. Web forms submit by default, so cancel `onsubmit` when the application handles submission itself. LiveView executes Rust handlers on the server and cannot cancel a browser default in time; use synchronous browser-side JavaScript there.
+Call `event.prevent_default()` before any `.await`. Web forms submit by default,
+so cancel `onsubmit` when Rust handles the request. LiveView handlers execute on
+the server and cannot cancel a browser default in time; use a synchronous raw
+browser listener for that case.
 
-### Asset paths and options changed
+### Asset APIs and paths changed
 
-`asset!` paths are absolute from the current crate root and begin with `/`. Use `AssetOptions` and its variant constructors; do not use the old `mg!` or `ImageAssetOptions::new()` forms.
+Use `asset!` with crate-root-absolute paths such as `/assets/logo.png`. The old
+standalone `manganis::mg!` syntax was transitional. Retain an `Asset` value in
+the final program or mark an intentional indirect static `#[used]`, because
+link-time collection prunes unused assets.
 
-```rust
-let image = asset!(
-    "/assets/image.png",
-    AssetOptions::image().with_format(ImageFormat::Avif),
-);
-```
-
-### Fullstack types are Dioxus-facing
-
-Use explicit route macros for durable APIs, especially for native clients. Dioxus's `ServerFnError` is not the identically named generic `server_fn` type, and public dependency boundaries should align with the versions expected by Dioxus.
-
-If a locked stable project fails after the dependency corrections associated with 0.7.5, run `cargo update` before changing source code.
+Build child URLs under directory assets from the formatted hashed `Asset`, not
+from the source folder name. Use current `AssetOptions` builders.
 
 ## Reactivity and async work
 
-### Reads create subscriptions
+Use `peek()` for a signal read that must not subscribe the current scope, and
+`use_reactive` to make otherwise-untracked values into explicit dependencies.
 
-A signal read during rendering subscribes that component. Reads inside an event handler alone do not. Memos, effects, futures, resources, and loaders track reads according to their own execution semantics; use `peek()` for an intentional non-subscribing read.
+### Pick the task primitive by lifetime
 
-Signal writes within one runtime step are batched. An `.await` ends the step, permitting pending UI to paint. A dependent memo read immediately after a write recomputes synchronously.
-
-### Pick the right task primitive
-
-- `use_action` stores the latest `Result` and cancels stale work when called again.
-- `spawn` owns a `!Send` future for the current component and cancels it on unmount.
-- `spawn_forever` attaches app-long work to the root; it must not retain shorter-lived signals.
-- Move CPU-bound work to a native thread or Web Worker.
-
-### Resources, loaders, and suspense
-
-`use_resource` restarts when a tracked dependency changes. Use `CapturedError` or `dioxus::Ok` when its result error needs to be cloneable. `use_loader` routes loading and error states through suspense and error boundaries; start independent loaders before the first `?` to avoid waterfalls.
-
-Fullstack suspense data must use a server future so the result can be serialized for hydration. Keep reactive reads in the outer closure.
+- `use_action` stores the latest result and cancels stale work when called again.
+- `spawn` work is cancelled when its component unmounts.
+- `spawn_forever` attaches work to the root and must not retain shorter-lived
+  signals.
+- `use_loader` routes pending and error states through suspense and error
+  boundaries without an explicit state match.
 
 ## Fullstack quick reference
 
-### Compose an Axum server
+### Compose the Axum router
+
+`dioxus::server::router(app)` returns the configured static-assets,
+server-functions, and SSR router. Ordinary Axum routes added to it win over the
+SSR fallback. Import Axum through `dioxus::server::axum` to stay version-aligned.
 
 ```rust
 #[cfg(feature = "server")]
 dioxus::serve(|| async move {
     use dioxus::server::axum::routing::get;
-
     Ok(dioxus::server::router(app)
         .route("/health", get(|| async { "ok" })))
 });
 ```
 
-Ordinary Axum routes added to the assembled router take precedence over the SSR fallback. Use server-only extractors for request extensions such as authenticated sessions so they never enter the client payload.
+Prefer explicit `#[get]`/`#[post]` routes for independently shipped native
+clients. The hashed endpoint generated by bare `#[server]` can change with the
+function definition.
 
 ### Preserve HTTP semantics
 
-- An unrecognized server error becomes HTTP 500; use `OrHttpError` or a typed error implementing the status conversion traits.
-- An `ErrorBoundary` that handles an SSR error must recommit its HTTP status through `FullstackContext`.
-- Headers and status freeze when the first streaming chunk commits.
-- Native clients support server functions, files, streams, and WebSockets, but not SSR, hydration data, SSG, or `FullstackContext`.
+- Unrecognized errors become HTTP 500. Use `HttpError`, `OrHttpError`, or a
+  serializable typed error with status conversion for intentional responses.
+- An `ErrorBoundary` that catches an SSR error must recommit its status through
+  `FullstackContext`, or the friendly error page can return 200.
+- Out-of-order HTML streaming is opt-in. Once the first chunk commits, headers,
+  status, and crawler-visible head content are frozen.
 
 ### Keep hydration deterministic
 
-The client reruns the component tree during hydration. Put synchronous nondeterminism in `use_server_cached`, async nondeterminism in a server future or loader, and browser-only reads in `use_effect`. Do not put side effects in server-cached closures.
+Put synchronous nondeterminism in `use_server_cached` and async values in
+`use_server_future`. Their closures must not perform side effects because a
+hydrated client may skip them when the server already supplied a value.
 
 ## Routing quick reference
 
-Derive `Routable`, mount `Router::<Route> {}`, and navigate with typed variants. Matching prefers static paths, then dynamic fields, then catch-alls; enum order breaks ties. Query and hash segments do not reject a route when typed values are absent or malformed.
+Derive `Routable`, mount `Router::<Route> {}`, and navigate with typed variants.
+Static segments outrank dynamic segments, which outrank catch-alls; declaration
+order breaks ties. Query and hash parse failures default instead of rejecting a
+route, while path parse failures allow the next route to match.
 
 ```rust
 #[derive(Clone, PartialEq, Routable)]
@@ -158,16 +185,20 @@ enum Route {
 }
 ```
 
-Layouts render children through `Outlet::<Route> {}`. Configure a history provider explicitly when URL behavior matters, especially for browser, hash, LiveView, or memory routing.
+Layouts render children with `Outlet::<Route> {}`. Configure `WebHistory`, hash
+history, LiveView history, or memory history explicitly when URL behavior
+matters; the default is `MemoryHistory`.
 
 ## Assets, styling, and RSX
 
-- An asset is bundled only when its `Asset` value survives Rust optimization; retain exported library assets from the final app or mark intentional indirect statics `#[used]`.
-- Build child paths beneath an asset directory from the formatted hashed `Asset`, not from its source name.
-- Attribute spreads apply in source order; later values win. `None` removes a dynamic attribute.
-- Quote unknown attributes and all web-component attributes. Dashed tags create untyped web components.
-- In multi-node RSX, place a `key` on the first node.
-- For Tailwind 4, import Tailwind in the input, scan Rust sources with `@source`, and include DX's generated stylesheet.
+- Repeat `class:` for conditional classes. Prefer literal class strings so
+  Tailwind can discover them.
+- Quote unknown attributes and all attributes on dashed custom-element tags.
+- In multi-node list output, put `key` on the first node or a keyed `Fragment`.
+- Component props spread with Rust struct syntax; explicit fields override the
+  spread.
+- For Tailwind, configure the input/output paths in `Dioxus.toml` when the
+  defaults do not fit and ensure the generated stylesheet is included.
 
 ## CLI and platform workflow
 
@@ -175,19 +206,28 @@ Layouts render children through `Outlet::<Route> {}`. Configure a history provid
 dx doctor
 dx serve --web
 dx build --raw-json-diagnostics
-dx bundle --json-output
+dx bundle --json-output --verbose
 ```
 
-The CLI can serve web, desktop, iOS, Android, fullstack, and ordinary Rust packages. Native bundles are host-bound; mobile builds additionally depend on platform SDKs and signing configuration. Use `--log-to-file` for complete diagnostics and `dx print` when another tool must reproduce DX's build arguments.
+DX can serve web, desktop, iOS, Android, fullstack, and ordinary Rust packages.
+Native bundles are host-bound; mobile builds also require the platform SDKs,
+Rust targets, signing configuration, and permissions. Use `--log-to-file` for
+complete diagnostics and the last JSON-output line as a command's structured
+result.
 
-For a fullstack web deployment, ship both the generated `public` directory and server executable. Bind production containers with `IP=0.0.0.0`; `dioxus::launch` reads `IP` and `PORT`.
+Deploy a fullstack web build with both its `public` directory and `server`
+executable. The executable reads `IP` and `PORT`; production containers usually
+need `IP=0.0.0.0`.
 
 ## Verification checklist
 
-- Confirm every hook is called consistently; guarded early returns are supported, but hooks inside branches, loops, or closures are not.
-- Check that copied signal handles cannot outlive their owning component.
-- Verify server-only code and secrets are absent from the web artifact.
-- Exercise route fallbacks on the actual host, not only DX's development server.
-- Test installer resources, sidecars, icons, signing, deep links, and permissions on each target platform.
-- For custom renderers, test template caching, reclaimed element IDs, mutation stack order, event conversion, and hydration paths.
-- For hot-patching, distinguish RSX hot reload, Rust code patches, and full rebuilds; their file and workspace coverage differs.
+- Ensure root-scoped tasks capture only signals that live for the whole app.
+- Verify fullstack client and server builds select their intended Cargo features.
+- Exercise route fallbacks and deep links on the production host, not only DX's
+  development server.
+- Test installer resources, sidecars, icons, signing, permissions, widgets, and
+  deep links on every target platform.
+- For custom renderers, test template caching, reclaimed element IDs, mutation
+  stack order, event conversion, and hydration.
+- Distinguish RSX hot reload, compiled-code hot-patching, and full rebuilds when
+  diagnosing development behavior.

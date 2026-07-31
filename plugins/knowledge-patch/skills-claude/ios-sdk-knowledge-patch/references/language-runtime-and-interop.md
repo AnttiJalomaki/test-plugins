@@ -1,73 +1,116 @@
 # Language, Runtime, and Interoperability
 
-## Swift concurrency and memory safety
+Use this reference for C and Objective-C APIs, allocator changes, Swift compiler
+behavior, Swift/C++ interoperation, and binary-layout risk.
 
-### Core Data imports
+## Contents
 
-With the iOS 26 SDK, `NSManagedObject` imports as nonisolated and non-`Sendable`, `NSManagedObjectContext` as nonisolated and `Sendable`, and the `perform`/`performBlock` family with `Sendable` closures. Rebuilds can expose new concurrency warnings. Keep managed objects within their context's scope and diagnose violations with `-com.apple.CoreData.ConcurrencyDebug 1` (26.0).
+- [hvf Availability Checking](#hvf-availability-checking)
+- [libxml2 System Allocation](#libxml2-system-allocation)
+- [Public Fileport System Calls](#public-fileport-system-calls)
+- [Generic `std::char_traits` Compatibility](#generic-stdchar_traits-compatibility)
+- [Objective-C Nonatomic Property Race Sentinel](#objective-c-nonatomic-property-race-sentinel)
+- [Swift Explicit Modules](#swift-explicit-modules)
+- [`MutableSpan` as an `inout` Parameter](#mutablespan-as-an-inout-parameter)
+- [Inherited C++ Shared-Reference Annotations](#inherited-c-shared-reference-annotations)
+- [C++ Standard-Library ABI Edge Cases](#c-standard-library-abi-edge-cases)
 
-### Preference callbacks
+## hvf Availability Checking
 
-SwiftUI's `onPreferenceChange` closure no longer has to be `@Sendable`, avoiding needless diagnostics when the closure accesses main-actor-isolated state (18.4).
+Availability checking for hvf C APIs is disabled unless
+`BUILD_FOR_APPLE_SDK` is defined before any hvf header is included. For the iOS
+18.4 SDK (`18.4`), place the definition before imports:
 
-### MutableSpan
-
-`MutableSpan` can be passed as an `inout` function parameter without enabling an experimental feature (26.0).
-
-## Localization and formatting
-
-Interpolating a nonlocalized type into `LocalizedStringResource`, `String(localized:)`, or `AttributedString(localized:)` now produces a deprecation warning. Supply a localized value or deliberately convert descriptive output with `String(describing:)` (26.0).
-
-SwiftUI deprecates concatenating `Text` with `+`. Use `Text` interpolation so translations can reorder inserted content (26.0).
-
-`ISO8601FormatStyle` accepts fractional seconds regardless of `includingFractionalSeconds` (26.0), and it accepts hours-only time-zone offsets (26.6-rc).
-
-## Objective-C concurrency diagnostics
-
-A synthesized nonatomic setter can briefly write the sentinel `0x400000000000bad0`, or `0xbad0` on 32-bit watchOS. If a concurrent reader crashes on that value, the failure identifies unsafe concurrent property access; synchronize the mutation and read rather than filtering the value (26.0).
-
-## C allocation and system calls
-
-### libxml2 allocation
-
-The custom allocator API is deprecated on iOS 18.4. Replace `xmlMalloc()`, `xmlMallocAtomic()`, `xmlRealloc()`, `xmlFree()`, and `xmlMemStrdup()` with `malloc()`, `realloc()`, `free()`, and `strdup()` (18.4).
-
-Stop configuring allocation through `xmlMemSetup()`, `xmlMemGet()`, `xmlGcMemSetup()`, `xmlGcMemGet()`, or the corresponding globals. libxml2 and libxslt now use the system allocator internally.
-
-### Fileports
-
-`fileport_makeport(2)` and `fileport_makefd(2)` are public APIs and have manual pages (18.4).
-
-## C++ compatibility
-
-### Generic char traits
-
-Xcode 16.4 restores the generic `std::char_traits` base template that Xcode 16.3 removed, so nonstandard types such as `std::basic_string<long long>` compile again. The base template remains deprecated and is planned for removal; use the restoration only as migration time (18.5).
-
-### Shared-reference annotations
-
-Swift infers `SWIFT_SHARED_REFERENCE` for a C++ type when its base type already carries the annotation (26.0).
-
-### Direct spans in safe wrappers
-
-Safe-wrapper generation accepts a direct `std::span<T>` parameter annotated `__noescape` (27.0-beta4):
-
-```cpp
-void bar(std::span<int> y __noescape);
+```c
+#define BUILD_FOR_APPLE_SDK 1
 ```
 
-Another template instantiation elsewhere in the signature still blocks wrapper generation unless that instantiation is hidden behind a typedef.
+Defining it after a header has already been processed does not retroactively
+enable the checks.
 
-### Standard-container ABI edges
+## libxml2 System Allocation
 
-Xcode 26 can change the layout of `std::unordered_map`, `std::unordered_set`, their multi variants, and `std::deque` when an empty allocator shares a base across rebound allocator types. An enclosing type can also change layout when it contains a standard container and the same empty allocator, comparator, or hasher as a `[[no_unique_address]]` member or empty base. Rebuild ABI boundaries together or redesign the shared empty types (26.0).
+The libxml2 custom-allocation API is deprecated on iOS 18.4 (`18.4`). Replace:
 
-### Associative lookup semantics
+| Deprecated libxml2 entry point | System replacement |
+| --- | --- |
+| `xmlMalloc()`, `xmlMallocAtomic()` | `malloc()` |
+| `xmlRealloc()` | `realloc()` |
+| `xmlFree()` | `free()` |
+| `xmlMemStrdup()` | `strdup()` |
 
-`std::multimap::find` and `std::multiset::find` no longer necessarily return the first equivalent element. Use `lower_bound` or `equal_range` when equivalent-element order matters (27.0-beta4).
+Stop configuring allocators through `xmlMemSetup()`, `xmlMemGet()`,
+`xmlGcMemSetup()`, `xmlGcMemGet()`, or their corresponding global variables.
+libxml2 and libxslt now use the system allocator internally.
 
-Bounds for `std::map` and `std::set` may change when their comparator is not a strict weak order. Correct the comparator. `_LIBCPP_ENABLE_LEGACY_TREE_LOWER_UPPER_BOUND` is a temporary migration escape hatch, not a permanent substitute.
+## Public Fileport System Calls
 
-## Swift System file status
+`fileport_makeport(2)` and `fileport_makefd(2)` are public APIs in iOS 18.4
+(`18.4`) and have manual pages. Prefer these public declarations over private or
+locally reproduced interfaces.
 
-Swift System provides a `Stat` type covering `stat`, `lstat`, `fstat`, and `fstatat`. Initialize it from a `FilePath`, `FileDescriptor`, or C string, or call `FilePath.stat()` and `FileDescriptor.stat()` for instance access (27.0-beta4).
+## Generic `std::char_traits` Compatibility
+
+Xcode 16.4 (`18.5`) restores the generic base `std::char_traits` template that
+Xcode 16.3 removed. Nonstandard instantiations such as
+`std::basic_string<long long>` compile again.
+
+This restoration is temporary compatibility. The generic base remains
+deprecated and is planned for removal, so migrate nonstandard instantiations
+rather than treating restored compilation as a durable contract.
+
+## Objective-C Nonatomic Property Race Sentinel
+
+With the iOS 26 SDK (`26.0`), a synthesized setter can briefly store
+`0x400000000000bad0` during a nonatomic property mutation. On 32-bit watchOS the
+sentinel is `0xbad0`.
+
+If a concurrent reader crashes after observing this value, diagnose unsafe
+concurrent access to the nonatomic property. Add correct synchronization or
+isolation; do not special-case the sentinel as application data.
+
+## Swift Explicit Modules
+
+Xcode 26 (`26.0`) enables Swift explicit modules by default for Swift targets.
+The default does not apply to targets using a pre-Swift-5 language version or
+Swift/C++ interoperability.
+
+For a severe compatibility problem, opt out temporarily:
+
+```text
+SWIFT_ENABLE_EXPLICIT_MODULES=NO
+```
+
+Keep the workaround scoped to affected targets and re-evaluate it as compiler
+and dependency issues are resolved.
+
+## `MutableSpan` as an `inout` Parameter
+
+With Swift 6.2 in Xcode 26 (`26.0`), `MutableSpan` can be passed as an `inout`
+function parameter without enabling an experimental feature. Remove obsolete
+feature gates used solely for this capability.
+
+## Inherited C++ Shared-Reference Annotations
+
+Swift in Xcode 26 (`26.0`) infers `SWIFT_SHARED_REFERENCE` on a C++ type when
+its base type already carries that annotation. Account for the inherited
+semantics when reviewing imported ownership behavior; a repeated annotation on
+every derived type is not required.
+
+## C++ Standard-Library ABI Edge Cases
+
+Xcode 26 (`26.0`) can change the layout of these C++ standard-library
+containers when an empty allocator shares a base across rebound allocator
+types:
+
+- `std::unordered_map` and `std::unordered_multimap`
+- `std::unordered_set` and `std::unordered_multiset`
+- `std::deque`
+
+An enclosing type's layout can also change when it contains one of those
+containers and the same empty allocator, comparator, or hasher as either a
+`[[no_unique_address]]` member or an empty base.
+
+Rebuild all sides of a binary boundary together where possible. Audit persisted
+raw layouts, IPC payloads, exported C++ ABIs, and mixed-toolchain dependencies
+before assuming layout compatibility.

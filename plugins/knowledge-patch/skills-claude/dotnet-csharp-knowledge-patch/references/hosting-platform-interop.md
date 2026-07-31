@@ -1,56 +1,72 @@
-# Hosting, platform behavior, and interop
+# Hosting, Platform Behavior, and Interop
 
-## Hosting, configuration, and logging
+## Hosting, configuration, and logging (`10.0-guides`)
 
-.NET 10 changes hosting and extensions behavior (`10.0-guides`):
+### Background services
 
-- The entire `BackgroundService.ExecuteAsync` invocation runs as a `Task`,
-  including code before the first await.
-- Configuration preserves null values.
+All of `BackgroundService.ExecuteAsync` now runs as a `Task`. Audit code that
+depended on synchronous execution before the first await, especially startup
+ordering and exception propagation.
+
+### Configuration and logging
+
+- Configuration preserves null values. Distinguish a present null from a
+  missing key where configuration binding or merging depends on that state.
 - `ProviderAliasAttribute` moved to
-  `Microsoft.Extensions.Logging.Abstractions`.
-- Trim-related `DynamicallyAccessedMembers` annotations were removed from
-  trim-unsafe `Microsoft.Extensions.Configuration` code.
-- The ICU override variable is `DOTNET_ICU_VERSION_OVERRIDE`.
+  `Microsoft.Extensions.Logging.Abstractions`; update package and namespace
+  assumptions.
+- `DynamicallyAccessedMembers` annotations were removed from trim-unsafe
+  `Microsoft.Extensions.Configuration` code. Treat those paths as trim-unsafe
+  and verify trimmed applications directly.
+- The ICU override environment variable is `DOTNET_ICU_VERSION_OVERRIDE`.
 
-In .NET 11 Preview 6, `configProperties` values in
-`.runtimeconfig.dev.json` override values from `.runtimeconfig.json`
-(`11.0-preview.6-compatibility`). A failed `BackgroundService` propagates as an
-exception from `IHost.RunAsync` and `IHost.StopAsync`.
+## Process shutdown (`10.0-guides`)
 
-## Native libraries and COM
+The runtime no longer installs default termination-signal handlers. Applications
+that require graceful termination must register the relevant handling and
+connect it to their own shutdown lifecycle.
 
-Single-file .NET 10 applications do not probe the executable directory for
-native libraries. `DllImportSearchPath.AssemblyDirectory` searches only the
-assembly directory. Put native assets in an explicitly supported location or
-configure loading directly.
+## Containers and native libraries (`10.0-guides`)
 
-Casting an `IDispatchEx` COM object to `IReflect` now fails. Do not use that
-cast as a late-binding bridge.
+Default .NET 10 container images use Ubuntu. Builds that require packages,
+paths, or a package manager from the prior distribution must pin a compatible
+base or adapt the build.
 
-## Runtime platform behavior
+Single-file applications no longer probe the executable directory for native
+libraries. `DllImportSearchPath.AssemblyDirectory` searches only the assembly
+directory. Package native dependencies in a searched location or configure
+loading explicitly.
 
-Linux `DriveInfo.DriveFormat` reports filesystem types in .NET 10.
-LDAP `DirectoryControl` parsing is stricter.
+## COM interop (`10.0-guides`)
 
-## Windows desktop
+Casting an `IDispatchEx` COM object to `IReflect` now fails. Use supported COM
+dispatch behavior instead of depending on that cast.
 
-.NET 10 desktop compatibility changes include:
+## Windows desktop compatibility (`10.0-guides`)
 
-- Projects referencing WPF and Windows Forms must disambiguate `MenuItem` and
-  `ContextMenu`.
-- `HtmlElement.InsertAdjacentElement` has a renamed parameter.
+- A project referencing both WPF and Windows Forms must disambiguate
+  `MenuItem` and `ContextMenu`.
+- `HtmlElement.InsertAdjacentElement` has a renamed parameter. Update named
+  arguments.
 - `StatusStrip` defaults to the system render mode.
-- Some `System.Drawing` failures throw `ExternalException` instead of
-  `OutOfMemoryException`.
+- Some `System.Drawing` failures throw `ExternalException` rather than
+  `OutOfMemoryException`; revise exception handling that distinguishes them.
 - WPF rejects empty `ColumnDefinitions` and `RowDefinitions`.
-- Incorrect `DynamicResource` use can terminate the application.
+- Incorrect `DynamicResource` use can terminate the application. Validate
+  resource keys and placement rather than relying on a recoverable failure.
 
-Recompile source that uses renamed parameters, update exception handling, and
-exercise XAML/resource startup paths during migration.
+## .NET tasks in .NET Framework MSBuild (`10.0`)
 
-## MAUI and Android
+Visual Studio 2026 and `msbuild.exe` can execute .NET-built MSBuild tasks via
+`TaskHostFactory`. The task runs out of process, and task Host Objects are not
+supported on this path.
 
-.NET MAUI requires Android API level 24 or later in .NET 11 Preview 6. Update
-the minimum target and remove devices below that level from the support
-matrix.
+```xml
+<UsingTask TaskName="MyTask"
+           AssemblyFile="path\to\MyTask.dll"
+           Runtime="NET"
+           TaskFactory="TaskHostFactory" />
+```
+
+Add a conditional second `UsingTask` without the factory when Core MSBuild
+should keep the task in process.

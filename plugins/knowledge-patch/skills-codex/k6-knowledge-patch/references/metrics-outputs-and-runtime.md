@@ -1,25 +1,47 @@
-# Metrics, outputs, and runtime
+# Metrics, Outputs, and Runtime
 
-## OpenTelemetry
+## Export metrics with the current shapes
 
-In 1.2.0, the experimental OpenTelemetry output began defaulting to TLS 1.3.
-This was a minor-release breaking change while the output was experimental.
+### Rate metrics
 
-In 1.4.0, the output became stable as `opentelemetry`:
+Exported Rate metrics use one counter labeled with values `zero` and `nonzero`
+(since 1.3.0). Downstream consumers must aggregate or filter that labeled shape
+instead of expecting separate or unlabeled values.
+
+`K6_OTEL_SINGLE_COUNTER_FOR_RATE` was removed in v2 (2.0.0). Delete it from
+environment and deployment configuration; the single-counter migration can no
+longer be postponed.
+
+### Gauge extrema in Cloud output
+
+Cloud output v2 reports Gauge `min` and `max` in their correct fields (1.8.0).
+Queries no longer return the peak as the floor or the floor as the peak. Remove
+query-side swaps added to compensate for the earlier output.
+
+### Native histograms
+
+The `native-histograms` feature makes trend metrics use experimental native
+histograms (since 2.1.0):
+
+```sh
+k6 run --features native-histograms script.js
+```
+
+Enabled features are also metric tags, so dashboards can separate experimental
+and ordinary runs.
+
+## Configure OpenTelemetry
+
+The stable output name is `opentelemetry` (since 1.4.0). The old
+`experimental-opentelemetry` name still works but is deprecated. Replace the
+deprecated `K6_OTEL_EXPORTER_TYPE` with `K6_OTEL_EXPORTER_PROTOCOL`:
 
 ```sh
 k6 run --out opentelemetry script.js
 ```
 
-The `experimental-opentelemetry` alias remained but was deprecated.
-`K6_OTEL_EXPORTER_TYPE` was deprecated in favor of
-`K6_OTEL_EXPORTER_PROTOCOL`.
-
-In 2.0.0, `K6_OTEL_SINGLE_COUNTER_FOR_RATE` was removed, so deployment
-configuration cannot postpone the single-counter Rate representation.
-
-Since 2.1.0, the HTTP exporter accepts Basic Auth through
-`K6_OTEL_HTTP_EXPORTER_USERNAME` and `K6_OTEL_HTTP_EXPORTER_PASSWORD`, or
+The OpenTelemetry HTTP exporter accepts Basic Auth (since 2.1.0) through
+`K6_OTEL_HTTP_EXPORTER_USERNAME` and `K6_OTEL_HTTP_EXPORTER_PASSWORD`, or the
 `username` and `password` output-config keys:
 
 ```sh
@@ -28,71 +50,84 @@ K6_OTEL_HTTP_EXPORTER_PASSWORD=secret \
 k6 run --out opentelemetry script.js
 ```
 
-## Prometheus remote write
+Do not log the password or commit it in a shared output configuration.
 
-The experimental Prometheus output also began defaulting to TLS 1.3 in 1.2.0.
-Since 1.6.0, set its minimum with
-`K6_PROMETHEUS_RW_TLS_MIN_VERSION`; the default remains TLS 1.3:
+## Configure output TLS
+
+Experimental OpenTelemetry and Prometheus outputs default to TLS 1.3 (1.2.0).
+This was a minor-release breaking change because those outputs were
+experimental.
+
+The experimental Prometheus remote-write output accepts
+`K6_PROMETHEUS_RW_TLS_MIN_VERSION` to set its TLS floor (since 1.6.0); the
+default remains TLS 1.3:
 
 ```sh
 K6_PROMETHEUS_RW_TLS_MIN_VERSION=1.3 \
 k6 run script.js -o experimental-prometheus-rw
 ```
 
-## Metric representation and correctness
+## Use the built-in dashboard
 
-Since 1.3.0, exported Rate metrics are one counter with a label whose values
-are `zero` and `nonzero`. Downstream consumers must query that labeled shape.
+The web dashboard is included in the k6 binary in v2; the separate
+xk6-dashboard extension is unnecessary (2.0.0):
 
-Since 1.8.0:
-
-- Redirects emit browser request metrics only for the applicable redirect and
-  no longer duplicate samples for all earlier redirects.
-- Cloud output v2 places Gauge `min` and `max` in the correct fields; the peak
-  is no longer returned as the floor or vice versa.
-
-Since 1.0.0-rc2, end-of-test output includes threshold values even when they
-are not configured in `summaryTrendStats`.
-
-## JavaScript and TypeScript
-
-Since 1.0.0-rc1, the runtime supports logical assignment operators and array
-destructuring in exports:
-
-```javascript
-let name;
-name ??= 'default';
-export const [first, second] = [1, 2];
+```sh
+k6 run --out=web-dashboard script.js
 ```
 
-Since 1.0.0, k6 executes `.ts` files directly without a separate transpilation
-step. `k6/browser`, `k6/net/grpc`, and `k6/crypto` became stable in that
-release.
+## Handle gRPC values and metadata
 
-The preview `k6-testing` library became available in 1.2.0 with `expect()` and
-Playwright-style matchers for protocol and browser tests. It was usable but
-did not yet cover every matcher or case:
+`k6/net/grpc` is stable (1.0.0). gRPC marshaling represents floating-point
+`NaN` and `Infinity` as strings rather than `null` (since 1.2.0); existing
+scripts do not need a workaround.
+
+The gRPC module accepts the `authority` pseudo-header (since 1.2.0). Supply it
+for services that route or validate calls by authority.
+
+## Use WebSockets
+
+### Stable import path
+
+WebSockets are stable at `k6/websockets` (since 1.6.0). The API is unchanged,
+but the experimental import is deprecated:
 
 ```javascript
-import { expect } from 'https://jslib.k6.io/k6-testing/0.5.0/index.js';
+import ws from 'k6/websockets';
 ```
 
-## Crypto and authentication helpers
+### Close codes and reasons
 
-Web Crypto is stable through global `crypto` since 1.0.0-rc1:
+The WebSocket API can send a close code and reason and exposes both on the
+close event (since 1.5.0). This capability first appeared on the experimental
+path; use that path on 1.5.0 and the stable path on 1.6.0 or newer:
 
 ```javascript
+import ws from 'k6/websockets';
+
 export default function () {
-  console.log(crypto.randomUUID());
+  const socket = ws.connect('ws://example.com', socket => {
+    socket.on('close', event => {
+      console.log(event.code, event.reason);
+    });
+  });
+  socket.close(1000, 'Normal closure');
 }
 ```
 
-`k6/experimental/webcrypto` was deprecated and scheduled for removal in
-1.1.0.
+### Typed-array buffering
 
-Since 1.6.0, the crypto module supports PBKDF2 password-based key derivation.
-The jslib TOTP package can generate and verify RFC 6238 time-based one-time
-passwords from a base32 secret:
+Sending a TypedArray through `k6/websockets` increments `bufferedAmount`
+correctly (1.8.0). It no longer becomes negative as typed-array data is sent;
+remove guards that merely clamped the old erroneous counter.
+
+## Derive and verify cryptographic values
+
+`k6/crypto` is stable (1.0.0). It supports PBKDF2 password-based key derivation
+(since 1.6.0).
+
+The jslib TOTP package generates and verifies RFC 6238 time-based one-time
+passwords from a base32 secret (since 1.6.0):
 
 ```javascript
 import { TOTP } from 'https://jslib.k6.io/totp/1.0.0/index.js';
@@ -102,31 +137,30 @@ const code = await totp.gen();
 const valid = await totp.verify(code);
 ```
 
-## gRPC
+## Write preview assertions
 
-Since 1.2.0:
+The URL-hosted `k6-testing` preview library provides `expect()` and
+Playwright-style matchers for protocol and browser tests (since 1.2.0). It is
+usable, but matcher and coverage gaps may remain:
 
-- gRPC marshals `NaN` and `Infinity` float values as their string
-  representations rather than `null`; scripts need no change.
-- The gRPC module supports the `authority` pseudo-header for services that
-  require it.
+```javascript
+import { expect } from 'https://jslib.k6.io/k6-testing/0.5.0/index.js';
+import http from 'k6/http';
 
-## WebSockets
+export default function () {
+  expect(http.get('https://quickpizza.grafana.com/').status).toBe(200);
+}
+```
 
-In 1.5.0, the experimental WebSockets module allowed `close(code, reason)` and
-exposed both values on close events.
+Pin the URL version and validate that the matchers used by a test are present.
 
-In 1.6.0, WebSockets became stable at `k6/websockets`; the API stayed the same
-and `k6/experimental/websockets` was deprecated.
+## Parse richer console output
 
-Since 1.8.0, sending a TypedArray increments `bufferedAmount` correctly,
-preventing the value from becoming negative while data is transmitted.
+`console.log()` traverses nested arrays and objects without dropping functions
+or classes (since 1.5.0). Functions and classes render as
+`"[object Function]"`, and circular references render as `"[Circular]"`
+instead of collapsing the entire value to `[object Object]`.
 
-## Console representation
-
-Since 1.5.0, `console.log()` traverses nested arrays and objects. Functions and
-classes render as `"[object Function]"`, and circular references as
-`"[Circular]"`, rather than collapsing the whole value.
-
-Since 1.6.0, logging displays `ArrayBuffer` bytes and typed-array types,
-lengths, and values, including nested instances.
+It also renders `ArrayBuffer` bytes and shows typed-array types, lengths, and
+values, including when nested (since 1.6.0). Update snapshot or log parsers that
+assumed opaque binary values or shallow objects.

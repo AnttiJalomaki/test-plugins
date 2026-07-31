@@ -2,7 +2,7 @@
   "patch": "aspnet-core-knowledge-patch",
   "target": "claude",
   "source": "codex",
-  "built_at": "2026-07-29T02:31:59Z",
+  "built_at": "2026-07-31T09:57:39Z",
   "streams": {
     "codex": "codex-gpt-5.6-sol-r2"
   },
@@ -20,32 +20,32 @@
     "11.0-preview.1": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.2": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.3": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.4": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.5": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     },
     "11.0-preview.6": {
       "kind": "versioned",
       "codex": "gaps",
-      "build": "included"
+      "build": "retired"
     }
   },
   "retire_candidates": []

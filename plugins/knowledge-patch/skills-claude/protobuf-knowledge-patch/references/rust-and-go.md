@@ -1,51 +1,43 @@
 # Rust and Go generated APIs
 
-Source batches represented here: 34.0, 35.0, 36.0-rc1,
-edition-2026-guide.
+## Rust `MessageMut` sendability (`34.0`)
 
-## Rust version pairing and crate releases
+`MessageMut` includes a `Send` bound. Implementations and generic code must be
+safe to move across threads and satisfy that bound; thread-confined wrapper
+types may need redesign.
 
-Rust generated code and runtime versions must match exactly. Do not apply the
-V-to-V+1 compatibility window used by most other protobuf runtimes.
+## Standard optional accessors (`35.0`)
 
-Beginning with protobuf minor 36, Rust Crates.io versions drop the `-release`
-suffix. Update dependency constraints, publication checks, and release
-automation to use the unsuffixed version.
+Generated Rust `_opt()` accessors return the standard `Option` type instead of
+`protobuf::Optional`. Replace named uses, conversions, and trait implementations
+that depend on the old wrapper.
 
-## Rust ownership, mutation, and views
+## Generated `XyzView` collisions (`35.0`)
 
-`MessageMut` includes a `Send` bound in v34. Implementations and generic code
-must be safe to transfer across threads.
+If one generated scope contains direct siblings named `Xyz` and `XyzView`, the
+Rust generator mangles the `XyzView` type. Regeneration can therefore change a
+previously referenced identifier; consume the new generated name rather than
+assuming the unmangled form.
 
-Generated `_opt()` accessors return the standard `Option` type in v35 instead
-of `protobuf::Optional`. Update named types, conversions, trait bounds, and
-implementations that depend on the old wrapper.
+## Generic field traits (`35.0`)
 
-When a generated scope has sibling types named `Xyz` and `XyzView`, the v35
-generator mangles the generated `XyzView` identifier. Recompile downstream
-code against the regenerated name.
+Rust adds `Singular` for types permitted as simple fields and revises its map
+traits. `ProxiedInMapValue` is removed in favor of `MapValue`. `f32` and `f64`
+also no longer incorrectly satisfy the map-key trait. Update generic bounds and
+aliases to match the actual field category.
 
-Rust adds the `Singular` trait for types allowed as simple fields and revises
-map traits. Replace `ProxiedInMapValue` with `MapValue`; do not rely on `f32`
-or `f64` satisfying the map-key trait.
+## View ergonomics (`35.0`)
 
-`ProtoStr` can be used in const contexts in v35. `&T` implements `AsView`
-whenever `T` does, so generic view consumers can accept references directly.
+`ProtoStr` is usable in const contexts. In addition, `&T` implements `AsView`
+whenever `T` does, so generic view-taking functions can accept references
+without byte-slice conversions or local adapter traits.
 
-In 36.0-rc1, generated repeated message fields support iteration over mutable
-handles, allowing in-place element mutation during traversal.
+## Go Opaque API default (`edition-2026-guide`)
 
-## Go Editions API shape
-
-`features.(pb.go).api_level` defaults to `API_OPEN` in Edition 2023 and
-`API_OPAQUE` in Editions 2024 and 2026. Opaque generation hides struct fields
-behind accessors. Select:
-
-- `API_OPEN` to preserve direct generated-field access;
-- `API_HYBRID` to expose both fields and accessors while migrating;
-- `API_OPAQUE` for the newer accessor-only shape.
-
-Example:
+`features.(pb.go).api_level` defaults to `API_OPEN` for Edition 2023 and
+`API_OPAQUE` for Editions 2024 and 2026. Opaque generated structs hide fields
+behind accessors. Select `API_HYBRID` to expose fields and accessors during a
+staged migration, or `API_OPEN` to preserve direct access.
 
 ```proto
 edition = "2026";
@@ -55,13 +47,14 @@ import option "google/protobuf/go_features.proto";
 option features.(pb.go).api_level = API_HYBRID;
 ```
 
-## Go enum-prefix stripping
+## Go enum-prefix stripping (`edition-2026-guide`)
 
-Edition 2024 and newer support `features.(pb.go).strip_enum_prefix` at file,
-enum, or enum-value scope:
+Edition 2024 and later expose `features.(pb.go).strip_enum_prefix` at file,
+enum, and enum-value scope:
 
-- `STRIP_ENUM_PREFIX_KEEP` preserves existing generated names;
-- `STRIP_ENUM_PREFIX_GENERATE_BOTH` emits migration-compatible names;
+- `STRIP_ENUM_PREFIX_KEEP` preserves existing generated names and is the
+  default.
+- `STRIP_ENUM_PREFIX_GENERATE_BOTH` emits both forms for migration.
 - `STRIP_ENUM_PREFIX_STRIP` removes the repeated enum-name prefix.
 
 ```proto

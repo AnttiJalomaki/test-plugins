@@ -1,41 +1,42 @@
 # Security, Networking, and Interop
 
-Use this reference for certificates, cryptographic algorithms, TLS, HTTP,
-QUIC, address validation, LDAP, native-library resolution, and COM. It
-contains guidance from `10.0-guides`, `10.0`,
-`11.0-preview.6-compatibility`, and `11.0-preview.6`.
+The items here are organized by operational concern. They originate from the
+`10.0-guides` and `10.0` batches.
 
-## Certificate lookup and PFX export
+## Certificate Lookup by Thumbprint Algorithm
 
 `X509Certificate2Collection.FindByThumbprint` accepts a
-`HashAlgorithmName`. Prefer it over SHA-1-only
-`Find(FindByThumbprint, ...)`; the explicit algorithm also avoids ambiguity
-between same-length hashes.
+`HashAlgorithmName`. Prefer it when looking up a SHA-256 or other non-SHA-1
+thumbprint:
 
 ```csharp
 var matches = certificates.FindByThumbprint(
-    HashAlgorithmName.SHA256,
-    thumbprint);
+    HashAlgorithmName.SHA256, thumbprint);
 ```
 
-`X509Certificate.ExportPkcs12` accepts a `Pkcs12ExportPbeParameters` preset or
-custom `PbeParameters`. This allows an intentional choice between broadly
-compatible 3DES/SHA-1 and modern AES-256/SHA-256 output:
+This avoids the SHA-1-only behavior and same-length hash ambiguity of the
+older `Find(FindByThumbprint, ...)` path.
+
+## Explicit PKCS#12 Export Encryption
+
+`X509Certificate.ExportPkcs12` accepts either a
+`Pkcs12ExportPbeParameters` preset or custom `PbeParameters`:
 
 ```csharp
 byte[] pfx = certificate.ExportPkcs12(
-    Pkcs12ExportPbeParameters.Pbes2Aes256Sha256,
-    password);
+    Pkcs12ExportPbeParameters.Pbes2Aes256Sha256, password);
 ```
 
-Check the target importer before choosing the modern preset.
+Choose deliberately between broadly compatible 3DES/SHA-1 output and modern
+AES-256/SHA-256 output. The strongest output is not necessarily readable by
+every legacy consumer.
 
-## Post-quantum cryptography
+## Post-Quantum Cryptography
 
-`MLKem`, `MLDsa`, and `SlhDsa` expose static key-generation and import methods
-rather than deriving from `AsymmetricAlgorithm`.
-
-Always check each type's `IsSupported` property:
+`MLKem`, `MLDsa`, and `SlhDsa` use static generation and import methods; they
+do not derive from `AsymmetricAlgorithm`. Check each algorithm type's
+`IsSupported` property before use. Availability requires OpenSSL 3.5 or later,
+or Windows CNG with post-quantum support.
 
 ```csharp
 if (MLKem.IsSupported)
@@ -44,23 +45,16 @@ if (MLKem.IsSupported)
 }
 ```
 
-Availability requires OpenSSL 3.5 or later, or Windows CNG with PQC support.
-`MLDsa` and `SlhDsa` remain experimental under `SYSLIB5006`, and some
-`MLKem` methods are experimental (`10.0`).
+`MLDsa` and `SlhDsa` remain experimental under `SYSLIB5006`, and some `MLKem`
+methods are also experimental. Composite ML-DSA follows draft-08. The
+`SecretKey` members on ML-DSA and SLH-DSA were renamed to `PrivateKey`; update
+source and serialized member mappings that used the old name.
 
-Compatibility details from `10.0-guides`:
+## AES KeyWrap with Padding
 
-- Composite ML-DSA moved to draft-08.
-- ML-DSA and SLH-DSA `SecretKey` members were renamed to `PrivateKey`.
-
-Do not persist or exchange draft-specific encodings without an explicit
-format/version strategy.
-
-## Symmetric key wrapping
-
-`Aes` implements RFC 5649 AES KeyWrap with Padding. Methods such as
-`DecryptKeyWrapPadded` can write into a caller-provided destination and return
-the unwrapped key length:
+`Aes` implements RFC 5649 AES-KWP. Span-based methods such as
+`DecryptKeyWrapPadded` write to caller-provided storage and return the actual
+unwrapped length:
 
 ```csharp
 using Aes aes = Aes.Create();
@@ -68,96 +62,70 @@ aes.SetKey(keyEncryptionKey);
 int length = aes.DecryptKeyWrapPadded(wrappedKey, destination);
 ```
 
-Use only the returned prefix of the destination.
+Use the returned length when slicing or consuming the destination buffer.
 
-## X25519
+## Cryptography Compatibility Checklist
 
-`X25519DiffieHellman.GenerateKey()` selects the platform implementation
-(`11.0-preview.6`). The API supports raw keys and PKCS#8,
-SubjectPublicKeyInfo, and PEM import/export, providing a first-party X25519
-key-agreement path.
+- `CoseSigner.Key` may be null. Key parameters on `X509Certificate` and
+  `PublicKey` may also be null. Preserve the nullable contract instead of
+  blindly dereferencing them.
+- Unix cryptography requires OpenSSL 1.1.1 or later.
+- OpenSSL cryptographic primitives are not supported on macOS. Choose native
+  supported paths there.
+- `X500DistinguishedName` validation is stricter; reject or repair malformed
+  distinguished names at the boundary.
+- The OpenSSL override environment variable is
+  `DOTNET_OPENSSL_VERSION_OVERRIDE`. Replace older variable names in launch
+  scripts and deployment manifests.
 
-## Cryptography compatibility
+## macOS Client TLS 1.3
 
-The following `10.0-guides` changes can affect source code, validation, or
-deployment:
-
-- `CoseSigner.Key` can be null.
-- Key parameters on `X509Certificate` and `PublicKey` can be null.
-- Unix requires OpenSSL 1.1.1 or later.
-- OpenSSL cryptographic primitives are unsupported on macOS.
-- `X500DistinguishedName` validation is stricter.
-- The OpenSSL override variable is `DOTNET_OPENSSL_VERSION_OVERRIDE`.
-
-In `11.0-preview.6-compatibility`, DSA is unavailable on macOS.
-
-Treat nullable key properties as an explicit state and validate them before
-use. Re-test distinguished names received from external systems.
-
-## TLS
-
-### Opt-in macOS client TLS 1.3
-
-On macOS, clients can opt into Network.framework for TLS 1.3 in `SslStream`
-and `HttpClient`:
+`SslStream` and `HttpClient` can opt in to Network.framework for client-side
+TLS 1.3. Set either the AppContext switch or environment variable:
 
 ```csharp
-AppContext.SetSwitch(
-    "System.Net.Security.UseNetworkFramework",
-    true);
+AppContext.SetSwitch("System.Net.Security.UseNetworkFramework", true);
 ```
 
-The environment alternative is
-`DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK=1`.
+```text
+DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK=1
+```
 
-This path is client-only. It can remove TLS 1.0/1.1 availability and can
-change buffering, cancellation, zero-byte-read, and IDN behavior. Exercise
-protocol and cancellation tests under the opted-in implementation.
+The opt-in is client-only. It can remove TLS 1.0 and 1.1 availability and can
+change buffering, cancellation, zero-byte-read, and internationalized domain
+name behavior. Exercise those behaviors before enabling it broadly.
 
-### Server-side certificate chains
+## HTTP and Browser Defaults
 
-In `11.0-preview.6-compatibility`, `SslStream` disables server-side AIA
-certificate downloads by default. Servers must not assume missing
-intermediate chain material will be fetched through AIA; supply a complete
-chain or configure validation deliberately.
+Trimmed publications disable HTTP/3 by default. Enable it deliberately only
+when the trimmed deployment contains and supports the required pieces.
 
-## HTTP and QUIC
+Browser HTTP clients stream responses by default. Code that relied on complete
+buffering before a response was returned must request or implement that
+behavior explicitly.
 
-Compatibility defaults from `10.0-guides`:
+## URI and Mail Validation
 
-- trimmed publications disable HTTP/3 by default;
-- browser HTTP clients stream responses by default; and
-- `Uri` no longer imposes its former length limits.
+`Uri` no longer enforces its former length limits. Applications needing a
+resource-exhaustion or business limit must enforce one at their own boundary.
 
-Code that buffered browser responses implicitly should opt into the needed
-behavior or consume streams correctly. Apply application-level URI limits at
-trust boundaries if size constraints are required.
+`MailAddress` rejects addresses containing consecutive dots. Treat rejection
+as input validation rather than attempting to preserve the old permissive
+parsing.
 
-In `11.0-preview.6`, `HttpClient` falls back automatically to HTTP/1.1 when
-NTLM or Negotiate Windows authentication cannot operate over HTTP/2.
+## Native Library Loading
 
-`QuicStream.Priority` ranges from 0 (highest) to 255 (lowest);
-`DefaultPriority` is 127.
+Single-file applications no longer probe the executable directory for native
+libraries. Package native assets correctly or configure an explicit resolver
+or search location.
 
-## Address and LDAP validation
+`DllImportSearchPath.AssemblyDirectory` searches only the assembly directory.
+It no longer implies a broader fallback. Re-test plugins and single-file
+deployments whose managed assembly and native dependency live in different
+directories.
 
-`MailAddress` rejects addresses containing consecutive dots
-(`10.0-guides`). LDAP `DirectoryControl` parsing is also stricter. Treat new
-failures as input incompatibilities and correct the source data or protocol
-encoding instead of bypassing validation.
+## COM Reflection
 
-## Native-library resolution
-
-Single-file apps no longer probe the executable directory for native
-libraries (`10.0-guides`). Package native dependencies or configure an
-explicit supported resolution path.
-
-`DllImportSearchPath.AssemblyDirectory` searches only the assembly directory;
-it no longer implies a broader executable-directory search. Re-test
-deployment layouts in which managed and native artifacts are separated.
-
-## COM reflection
-
-Casting an `IDispatchEx` COM object to `IReflect` now fails
-(`10.0-guides`). Use the supported COM dispatch surface rather than relying on
-that cast.
+Casting an `IDispatchEx` COM object to `IReflect` now fails. Use the COM
+dispatch surface or an explicit adapter; do not use `IReflect` as an assumed
+projection for an `IDispatchEx` object.

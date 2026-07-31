@@ -1,154 +1,72 @@
 # Java, C#, and Objective-C
 
-Use this reference for generated Java layout and JSON behavior, C# package and
-Edition changes, and Objective-C runtime or descriptor migrations.
+## Java generated APIs
 
-## Java generated layout in Edition 2024
+Edition 2024's `nest_in_file_class` feature replaces `java_multiple_files`.
+Classes are emitted in separate files by default, and the outer class defaults
+to the camel-cased proto filename plus `Proto`; override it with
+`java_outer_classname`. (edition-2024-announcement)
 
-The `edition-2024-announcement` replaces `java_multiple_files` with the
-`nest_in_file_class` feature. Edition 2024 generates classes in their own files
-by default.
+The opt-in `large_enum` feature permits more constants than a normal Java enum
+but produces an enum-like type that does not support all enum operations,
+including `switch`. At 34.0, the lite runtime also honors `large_enum` and
+handles aliased large-enum values correctly. (edition-2024-announcement, 34.0)
 
-The default outer class name is always the camel-cased proto filename with
-`Proto` appended. For example, `foo/bar_baz.proto` becomes `BarBazProto`. Set
-`java_outer_classname` when this generated identifier is not suitable.
+Generated `isInitialized()` accessors are deprecated at 34.0 for message types
+without required fields. Calls on those types can produce new deprecation
+diagnostics. (34.0)
 
-## Java large enums
+## Java and C# recursion limits
 
-The Edition 2024 `large_enum` feature permits generated Java enum-like types
-beyond the language's usual enum-constant limit. These types emulate enums but
-do not support every normal enum operation, including `switch`.
+At 34.0, recursion enforcement expands to Java JSON `Any`-inside-`Any` nesting
+and C# JSON well-known types containing deeply nested arrays. Previously
+accepted deep inputs can be rejected; do not treat recursion-limit failures as
+generic parse regressions. (34.0)
 
-`34.0` adds `large_enum` support to the Java lite runtime and correctly handles
-large enums with aliased values. Recompile both full and lite consumers after
-enabling the feature; do not assume source compatibility with code that used
-language `enum` operations.
+## C# runtime and tooling
 
-## Java initialization and recursion
+C# surfaces UTF-8 errors earlier when a protobuf `string` contains invalid
+UTF-8. Validate byte sources before assigning or parsing string fields.
+(30.0-migration)
 
-`34.0` deprecates generated `isInitialized()` accessors on message types that
-have no required fields. Calls on those types can newly trigger deprecation
-diagnostics; remove redundant checks while retaining them where required-field
-semantics still apply.
+At 35.0, the `Google.Protobuf.Tools` NuGet package includes an `include`
+directory containing the well-known-type `.proto` files. Packaged compiler
+invocations can resolve these imports directly from the package.
+(35.0)
 
-The same release extends recursion-limit enforcement to Java JSON containing
-`Any` nested inside `Any`. Deep payloads that previously parsed can fail once
-the configured limit is reached.
+## Objective-C runtime major and unknown fields
 
-## Java timestamp and JSON behavior
+Objective-C's first breaking runtime moves from 3.x to 4.30.x in the 30.0
+migration. It replaces `GPBUnknownFieldSet` with ordering-preserving
+`GPBUnknownFields`; each `GPBUnknownField` represents one value rather than all
+values for a field number. (30.0-migration)
 
-`36.0-rc1` changes `Timestamps.parse()` to attempt strict, non-lenient parsing
-first. If that fails, it warns before accepting an input through lenient
-parsing. Treat the warning as input-normalization or validation work rather
-than assuming the value is clean.
+Use `initFromMessage:` to extract unknown fields,
+`mergeUnknownFields:extensionRegistry:error:` to apply updates, and
+`clearUnknownFields` to remove them. (30.0-migration)
 
-When `JsonFormat` is asked to sort map keys, it now uses natural Java `String`
-comparison instead of UTF-8 `ByteString` comparison. Serialized key order can
-change for non-ASCII or otherwise differently ordered keys. Update golden
-files and signatures that intentionally depend on sorted output.
+## Removed Objective-C APIs and old gencode
 
-`JsonFormat` also gains an opt-in strict JSON parser. Enable it for callers
-that require strict input validation; do not assume the default parser becomes
-strict automatically.
+Apply these replacements from the 30.0 migration:
 
-## Java removed and future APIs
-
-The experimental Java `FieldOrder` enum is removed in `36.0-rc1`. Remove
-references rather than depending on the experimental surface.
-
-Java now warns about possible `OneofDescriptor` naming collisions ahead of Q1
-2027 breaking changes. Resolve names and regenerate before that release rather
-than suppressing the warning.
-
-The compiler also warns on the deprecated `java_generic_service` option in
-`36.0-rc1`. Use the RPC framework's generator plugin.
-
-## C# validation and packages
-
-Since `30.0-migration`, C# reports UTF-8 enforcement failures earlier when a
-protobuf `string` contains invalid UTF-8. Ensure parse and assignment paths
-surface the error at their new point rather than relying on later
-serialization to fail.
-
-`34.0` extends recursion-limit enforcement to C# JSON well-known types
-containing deeply nested arrays. Treat limit failures as parse errors for
-untrusted input.
-
-`35.0` adds an `include` directory containing the well-known-type `.proto`
-files to the `Google.Protobuf.Tools` NuGet package. Packaged compiler
-invocations can resolve those imports from the package instead of requiring a
-separate copy.
-
-`36.0-rc1` adds C# support for Edition 2026 and moves nullable-reference-type
-generation into that edition. Select Edition 2026 when generated C# nullability
-is required, then rebuild with nullable diagnostics enabled.
-
-The compiler warns on deprecated `cc_generic_service` and
-`py_generic_service` alongside `java_generic_service`; remove any shared
-schema options rather than fixing only the Java one.
-
-## Objective-C unknown fields
-
-The first Objective-C breaking runtime in `30.0-migration` moves from 3.x to
-4.30.x and replaces `GPBUnknownFieldSet` with ordering-preserving
-`GPBUnknownFields`.
-
-A `GPBUnknownField` now represents one value instead of collecting values by
-field number. Use:
-
-- `initFromMessage:` to extract unknown fields;
-- `mergeUnknownFields:extensionRegistry:error:` to update a message; and
-- `clearUnknownFields` to remove them.
-
-Review any code that assumed values were grouped or that enumeration could
-discard original ordering.
-
-## Objective-C removed runtime APIs
-
-The `30.0-migration` replacements are:
-
-| Removed or obsolete API | Replacement |
+| Removed or obsolete | Replacement |
 | --- | --- |
 | `mergeFrom:extensionRegistry:` | `mergeFrom:extensionRegistry:error:` |
 | `GPBDuration.timeIntervalSince1970` | `GPBDuration.timeInterval` |
 | `GPBTextFormatForUnknownFieldSet()` | `GPBTextFormatForMessage()` |
-| `GPBFileDescriptor.syntax` | No longer query this obsolete property |
+| `GPBFileDescriptor.syntax` | No syntax query through this obsolete API |
 
-Runtime entry points for generated code older than 3.22 are removed. Regenerate
-those files with a current compiler before updating the Objective-C runtime.
+Runtime entry points for gencode older than 3.22 were removed; regenerate old
+Objective-C generated files with a current compiler. (30.0-migration)
 
-## Objective-C nullability and descriptors
+At the v34 boundary, corrected `GPB*Dictionary` nullability makes affected
+Swift return values `Optional<T>`. `-[GPBFieldDescriptor optional]` is removed;
+test `!required && fieldType == GPBFieldTypeSingle` instead.
+(34.0-announcement)
 
-`34.0-announcement` corrects `GPB*Dictionary` nullability. Affected Swift
-callers now receive `Optional<T>` and must unwrap or propagate absence.
+## Objective-C generation additions
 
-The same change removes `-[GPBFieldDescriptor optional]`. Test:
-
-```text
-!required && fieldType == GPBFieldTypeSingle
-```
-
-This is a cardinality test; use an appropriate presence semantic when the
-question is whether a singular field tracks presence.
-
-## Objective-C generated extensions and oneofs
-
-`34.0` adds three code-generation modes for proto extensions. Select and test
-the intended mode explicitly where build size, registration, or linking
-depends on generated extension output.
-
-The same release emits oneof presence-checking accessors. Prefer those
-generated accessors over hand-derived checks against the oneof case.
-
-## Upgrade checks
-
-- Regenerate Java after file-layout, large-enum, or collision-related changes.
-- Compare strict and default Java JSON parsing and sorted-key output.
-- Exercise deep JSON and invalid UTF-8 failure paths in Java or C# as
-  applicable.
-- Resolve C# well-known imports from the package's `include` directory in a
-  clean build.
-- Regenerate Objective-C code older than 3.22 before changing the runtime.
-- Preserve unknown-field ordering and test merge failures.
-- Compile Swift consumers with the corrected Objective-C optionality.
-- Verify extension registration and oneof presence with regenerated output.
+At 34.0, Objective-C code generation supports three modes for proto extension
+generation and emits oneof presence-checking accessors. Select the extension
+mode deliberately and prefer generated oneof-presence APIs over inspecting
+storage details. (34.0)

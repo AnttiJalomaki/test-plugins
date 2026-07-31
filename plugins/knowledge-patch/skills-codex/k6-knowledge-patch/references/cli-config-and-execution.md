@@ -1,113 +1,107 @@
-# CLI, configuration, and execution
+# CLI, Configuration, and Execution
 
-## Run arguments and overrides
+## Run TypeScript without a separate build
 
-Since 1.0.0-rc1, a comma is part of a `--tag` value rather than a separator
-between tag sets. Repeat the flag:
+k6 directly executes `.ts` test files (since 1.0.0):
 
-```sh
-k6 run --tag 'label=a,b' --tag env=test script.js
+```typescript
+import http from 'k6/http';
+
+interface Target {
+  url: string;
+}
+
+const target: Target = { url: 'https://quickpizza.grafana.com/' };
+
+export default function () {
+  http.get(target.url);
+}
 ```
-
-Since 1.8.0, `http.get()` and `http.head()` warn about extra positional
-arguments. The values remain ignored, but the warning indicates an unsupported
-method signature.
-
-Since 2.1.0, `k6 run script.js --vus N` warns and replaces script-defined
-scenarios with one `shared-iterations` scenario containing `N` VUs and `N`
-iterations. It is no longer silently ignored.
-
-## Human-readable summaries
-
-The redesigned summary introduced in 1.0.0-rc1 has these modes:
-
-- `compact` is the default.
-- `full` includes detailed metrics plus per-group and per-scenario results.
-- `legacy` restores the older format, but was deprecated in 1.3.0 for removal
-  in v2.
-- `disabled`, added in 1.3.0, replaces deprecated `--no-summary` and
-  `K6_NO_SUMMARY`.
-
-```sh
-k6 run --summary-mode=full script.js
-K6_SUMMARY_MODE=disabled k6 run script.js
-```
-
-The 1.0.0-rc1 redesign did not change the `handleSummary` input or
-`--summary-export` data structure. Since 1.0.0-rc2, summaries show threshold
-values even when the values are absent from `summaryTrendStats`.
-
-## Machine-readable summaries
-
-Since 1.5.0, a new structured summary shape is available to
-`--summary-export` and `handleSummary()`. Opt in with
-`--new-machine-readable-summary` or `K6_NEW_MACHINE_READABLE_SUMMARY`; it was
-planned to become the default in v2.
-
-```sh
-k6 run script.js --new-machine-readable-summary --summary-export=summary.json
-```
-
-Do not confuse this opt-in data shape with the human `compact`, `full`, or
-`disabled` modes.
-
-## Templates and script startup
-
-Since 1.0.0-rc1, `k6 new` accepts a Go-template file. The template receives
-`ScriptName` and `ProjectID`:
-
-```sh
-k6 new --template /path/to/my-template.js
-```
-
-Since 1.0.0, `.ts` scripts run directly without a separate transpilation step:
 
 ```sh
 k6 run script.ts
 ```
 
-## Marking a test failed
+## Configure end-of-test summaries
 
-Since 1.0.0-rc2, `execution.test.fail()` marks the test failed but allows
-execution, metric collection, and cleanup to continue:
+### Disable the human-readable summary
 
-```javascript
-import exec from 'k6/execution';
+`--no-summary` and `K6_NO_SUMMARY` are deprecated. Use summary mode `disabled`
+instead (since 1.3.0):
 
-export default function () {
-  exec.test.fail('validation failed');
-}
+```sh
+k6 run --summary-mode=disabled script.js
+K6_SUMMARY_MODE=disabled k6 run script.js
 ```
 
-Since 1.6.0, status consumers can distinguish this outcome through
-`ExecutionStatusMarkedAsFailed`.
+The `legacy` summary mode is also deprecated. Migrate its consumers to
+`compact` or `full`; legacy mode was planned for removal in v2 (1.3.0).
 
-## HTTP API server
+### Opt into the structured machine-readable shape
 
-Since 2.0.0, the HTTP API is opt-in rather than listening on
-`localhost:6565` automatically:
+The newer structured shape is available to both `--summary-export` and
+`handleSummary()` (since 1.5.0). It is planned to become the default in v2, so
+update downstream parsing before opting in:
+
+```sh
+k6 run script.js --new-machine-readable-summary --summary-export=summary.json
+```
+
+Use `K6_NEW_MACHINE_READABLE_SUMMARY` as the environment equivalent.
+
+## Use feature flags
+
+Experimental behavior can be enabled for `k6 run` and `k6 cloud run` with
+repeated or comma-separated `--features`, with `K6_FEATURES`, or with the
+`features` key in `config.json` (since 2.1.0).
+
+```sh
+k6 run --features native-histograms script.js
+K6_FEATURES=native-histograms k6 run script.js
+k6 features --json
+```
+
+Enabled features are attached to metric tags and preserved in archives and
+Cloud workers. Use `k6 features` or its JSON form to inspect flags and their
+lifecycle. The first flag, `native-histograms`, makes trend metrics use
+experimental native histograms.
+
+## Understand `--vus` with configured scenarios
+
+When a script defines scenarios, `k6 run script.js --vus N` now warns and
+replaces them with a `shared-iterations` scenario containing `N` VUs and `N`
+iterations (2.1.0). It is no longer silently ignored. Do not add `--vus` to a
+scenario-based invocation unless replacement is intended.
+
+## Enable the HTTP API intentionally
+
+The k6 HTTP API does not listen on `localhost:6565` by default in v2 (2.0.0).
+Enable it explicitly for control-plane clients:
 
 ```sh
 k6 run --address=localhost:6565 script.js
 ```
 
-`K6_ADDRESS` is the environment-variable equivalent.
+`K6_ADDRESS` is the environment equivalent. Remove health checks or control
+clients that assume the API always exists, or configure the address.
 
-## Feature flags
+## Consume explicit-failure execution status
 
-Since 2.1.0, experimental behavior can be enabled for `k6 run` and
-`k6 cloud run` with:
+Code consuming execution status can distinguish a test explicitly marked as
+failed by handling `ExecutionStatusMarkedAsFailed` (since 1.6.0). Preserve this
+state in reporters instead of merging it with an infrastructure abort or a
+successful completion.
 
-- Repeated or comma-separated `--features` flags.
-- `K6_FEATURES`.
-- A `features` key in `config.json`.
+## Diagnose HTTP call signatures
 
-Enabled features become metric tags and are preserved in archives and Cloud
-workers. Use `k6 features` or `k6 features --json` to inspect flags and their
-lifecycle. The first flag, `native-histograms`, makes trend metrics use
-experimental native histograms:
+`http.get()` and `http.head()` warn when given extra positional arguments
+(since 1.8.0). The extra values are still ignored. Treat the warning as a
+signature bug and move supported options into the documented parameter object
+instead of relying on ignored arguments.
 
-```sh
-k6 run --features native-histograms script.js
-K6_FEATURES=native-histograms k6 run script.js
-```
+## Diagnose automatic extension provisioning
+
+Automatic extension provisioning logs artifact resolution, cache hits,
+downloads, retries, and cache pruning through ordinary k6 log entries (1.8.0).
+Preserve the relevant log levels when diagnosing a provisioned binary; a
+separate provisioning trace is not required.

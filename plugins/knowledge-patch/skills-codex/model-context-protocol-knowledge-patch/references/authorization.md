@@ -1,28 +1,26 @@
 # Authorization
 
-## HTTP authorization profile
+## Choose authorization by transport
 
-Authorization is optional. When an HTTP transport implements it, use OAuth
-2.1; stdio implementations should obtain credentials from the environment.
-PKCE is required for every client. Servers may use authorization-code grants
-for users or client-credentials grants for applications.
+For the HTTP authorization profile introduced in compatibility batch
+`2025-03-26-compat`, authorization remains optional, but an HTTP transport that
+implements it should use OAuth 2.1. A stdio implementation should obtain its
+credentials from the environment instead.
 
-Send `Authorization: Bearer <access-token>` on every HTTP request, including
-requests inside an established MCP session. Never place access tokens in query
-strings. Use:
+Require PKCE for every client. Use HTTP 401 when authorization is required or a
+token is invalid. A server may use authorization-code grants for human users or
+client-credentials grants for applications.
 
-- HTTP 401 when authorization is required or a token is invalid or expired.
-- HTTP 403 when the token is valid but lacks the required scope.
+## Discover authorization metadata
 
-An MCP server that delegates to a third-party authorization server must issue
-its own token bound to the upstream session, synchronize their validity and
-lifecycle, and never pass the inbound token through to the upstream API.
+### Initial profile behavior
 
-The earliest HTTP authorization profile used RFC 8414 discovery at the
-authorization origin, discarding the MCP URL's full path. It recommended
-dynamic registration and fell back to `/authorize`, `/token`, and `/register`
-at that origin. Keep this behavior only for peers targeting
-`2025-03-26-compat`; later protected-resource discovery takes precedence.
+In the initial profile, clients try RFC 8414 authorization-server metadata and
+should send `MCP-Protocol-Version`. The authorization base is the MCP URL's
+origin: discard the entire MCP path. If discovery fails, use `/authorize`,
+`/token`, and `/register` at that origin. Dynamic registration was the preferred
+path, with a server-specific client ID or user-entered registration details as
+fallbacks.
 
 ```text
 MCP URL:  https://api.example.com/v1/mcp
@@ -32,31 +30,32 @@ Fallback: https://api.example.com/authorize
           https://api.example.com/register
 ```
 
-Discovery requests should send `MCP-Protocol-Version`.
+### Protected-resource discovery
 
-## Protected-resource discovery
+Compatibility batch `2025-06-18-compat` makes an authorized MCP server an OAuth
+protected resource. The server must publish RFC 9728 metadata containing at
+least one `authorization_servers` entry. A 401 response points to it through
+the `resource_metadata` parameter of `WWW-Authenticate`. The client parses that
+document, chooses an authorization server when several are advertised, and
+then loads that server's RFC 8414 metadata.
 
-Since `2025-06-18-compat`, an authorized MCP server is an OAuth protected
-resource. It must publish RFC 9728 metadata with at least one
-`authorization_servers` entry and advertise the metadata URL in the 401
-`WWW-Authenticate` challenge. The client parses the protected-resource
-metadata, chooses an authorization server when several are offered, and then
-loads that server's RFC 8414 metadata.
+### Current fallback order
 
-Clients must support both `resource_metadata` in the challenge and well-known
-protected-resource discovery. Since `2025-11-25-compat`, if the challenge omits
-the URL, try:
-
-1. The well-known URI that retains the MCP resource path.
-2. The well-known URI at the origin root.
+Compatibility batch `2025-11-25-compat` requires clients to support both
+`resource_metadata` in the 401 challenge and protected-resource well-known
+discovery. If the challenge omits `resource_metadata`, try the MCP-path form
+first, then the origin root:
 
 ```text
 https://mcp.example.com/.well-known/oauth-protected-resource/public/mcp
 https://mcp.example.com/.well-known/oauth-protected-resource
 ```
 
-For an authorization-server issuer containing a path, try these metadata
-forms in order:
+For an authorization-server issuer containing a path, try these in order:
+
+1. OAuth metadata with the issuer path inserted after the well-known name.
+2. OIDC discovery with the issuer path inserted after the well-known name.
+3. OIDC discovery with the well-known name appended to the issuer path.
 
 ```text
 https://auth.example.com/.well-known/oauth-authorization-server/tenant1
@@ -64,38 +63,20 @@ https://auth.example.com/.well-known/openid-configuration/tenant1
 https://auth.example.com/tenant1/.well-known/openid-configuration
 ```
 
-## Resource indicators and token binding
+Do not conflate the initial authorization-server lookup, which removes the MCP
+path, with protected-resource discovery, whose path form deliberately
+distinguishes MCP resources.
 
-Include the RFC 8707 `resource` parameter in every authorization and token
-request, even when the selected authorization server does not advertise
-support. Use the most specific canonical absolute MCP URI:
+## Register clients
 
-- Include a distinguishing path when needed.
-- Do not include a fragment.
-- Preserve exact protected-resource and issuer strings.
+For clients and authorization servers with no prior relationship, prefer a
+Client ID Metadata Document after pre-registration when
+`client_id_metadata_document_supported` is true. The `client_id` must be an
+HTTPS URL with a path. Its JSON document must contain:
 
-```text
-resource=https%3A%2F%2Fmcp.example.com%2Fserver%2Fmcp
-```
-
-The MCP server must reject a token not issued for its resource and must not
-forward that token upstream.
-
-## Client registration
-
-For a client and authorization server without a prior relationship, use this
-order:
-
-1. Pre-registered client information, when available.
-2. A Client ID Metadata Document when
-   `client_id_metadata_document_supported` is true.
-3. Dynamic Client Registration as a compatibility fallback.
-4. User-entered credentials.
-
-A Client ID Metadata Document uses an HTTPS URL with a path as the `client_id`.
-The JSON at that URL must contain an exactly matching `client_id`, plus
-`client_name` and `redirect_uris`. Supporting authorization servers should
-fetch the document and must validate it and the requested redirect URI.
+- a `client_id` exactly equal to that URL;
+- `client_name`;
+- `redirect_uris`.
 
 ```json
 {
@@ -105,91 +86,53 @@ fetch the document and must validate it and the requested redirect URI.
 }
 ```
 
-Dynamic Client Registration is deprecated in the modern RC and remains only
-for authorization servers that do not support Client ID Metadata Documents.
-Its request must set a suitable `application_type` to avoid OpenID Connect
-redirect-URI conflicts.
+A supporting authorization server should fetch the document and must validate
+both the document and the redirect URI requested by the client. Dynamic Client
+Registration is optional and remains a backwards-compatible fallback;
+user-entered credentials are another fallback.
 
-## Scope selection and step-up
+## Bind tokens to the MCP resource
+
+Every authorization and token request must include the RFC 8707 `resource`
+parameter, even if the authorization server does not support it. Use the most
+specific canonical absolute MCP URI. Include a distinguishing path when
+needed, and never include a fragment.
+
+```text
+resource=https%3A%2F%2Fmcp.example.com%2Fserver%2Fmcp
+```
+
+The MCP server must reject a token not issued for that resource. It must not
+pass the inbound token through to an upstream API.
+
+## Send and validate access tokens
+
+Send `Authorization: Bearer <access-token>` on every HTTP request, even after
+an MCP session has been established. Never put the token in a query string.
+Return 401 for an invalid or expired token and 403 for insufficient scope.
+
+When an MCP server delegates to a third-party authorization server, it must
+issue its own token bound to the upstream session. Keep the MCP token and
+upstream token validity and lifecycle synchronized; do not expose the upstream
+credential as the MCP access token.
+
+## Choose scopes and perform step-up authorization
 
 For initial authorization:
 
-- Use the 401 challenge's `scope` when present.
-- Otherwise request every entry in protected-resource metadata's
-  `scopes_supported`.
-- Omit `scope` when `scopes_supported` is absent.
+1. Use the 401 challenge's `scope` when present. It is authoritative for that
+   request even when it differs from protected-resource metadata.
+2. Otherwise request every value in protected-resource
+   `scopes_supported`.
+3. If `scopes_supported` is absent, omit `scope`.
 
-A challenged scope set is authoritative for that request, whether or not it is
-a subset of `scopes_supported`.
+At runtime, insufficient permission should produce HTTP 403 with a challenge
+containing all of the following:
 
-For insufficient runtime permission, return HTTP 403 with a Bearer challenge
-containing `error="insufficient_scope"`, the required `scope`, and
-`resource_metadata`. A user-facing client should reauthorize with the expanded
-scope and retry the original operation, with a small retry limit.
+```http
+WWW-Authenticate: Bearer error="insufficient_scope", scope="required scopes", resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"
+```
 
-## Authorization response issuer binding
-
-Authorization servers should include `iss` in authorization responses. Before
-the code exchange, a client must compare any returned issuer with the issuer
-recorded for the flow.
-
-Persisted client credentials must be keyed by issuer and never reused with a
-different authorization server. Re-register when the authorization server
-changes.
-
-## TypeScript SDK v2 authorization migration
-
-### Packages and server responsibilities
-
-Express resource-server helpers live in `@modelcontextprotocol/express`;
-Web-standard resource-server helpers live in `@modelcontextprotocol/server`.
-Authorization-server helpers moved to the deprecated, frozen
-`@modelcontextprotocol/server-legacy/auth`. Treat that package only as a
-migration bridge and move authorization-server responsibilities to a dedicated
-OAuth provider or library.
-
-### Error and bearer-provider behavior
-
-The separate OAuth exception classes are replaced by `OAuthError` and
-`OAuthErrorCode`. A verifier used by v2 bearer middleware must throw the v2
-error. A legacy or generic invalid-token error is treated as an internal
-failure and becomes HTTP 500 rather than a 401 challenge.
-
-The minimal `AuthProvider` supports non-OAuth bearer tokens with `token()` and
-optional `onUnauthorized()`. It retries once after a 401.
-
-### Callback and credential safety
-
-Validate `state` in the host, then pass the callback's `URLSearchParams` to
-`finishAuth()` so the SDK can validate `iss`. Non-loopback token endpoints must
-use HTTPS.
-
-Persist token and client-information objects verbatim so their `issuer` stamp
-survives. In a multi-issuer store:
-
-- Key records by `ctx.issuer`.
-- When `ctx` is absent, return the most recently saved token set.
-- Implement `discoveryState()` and `saveDiscoveryState()`.
-- Use `onInsufficientScope` to choose whether insufficient scope reauthorizes
-  by default or throws.
-
-## Python SDK v2 authorization migration
-
-`OAuthClientProvider.callback_handler` returns
-`AuthorizationCodeResult(code, state, iss)`, enabling authorization-response
-issuer validation. Client-credentials providers rename `scopes=` to `scope=`.
-
-The removed `RFC7523OAuthClientProvider` and `JWTParameters` have no direct
-replacement. Choose the provider matching the actual grant:
-
-- `ClientCredentialsOAuthProvider`
-- `PrivateKeyJWTOAuthProvider`
-- `IdentityAssertionOAuthProvider`
-
-When refresh tokens are supported and enabled, the client automatically asks
-for `offline_access` and adds `prompt=consent`. Restrict `grant_types` to
-`["authorization_code"]` to preserve no-refresh behavior.
-
-Pathless OAuth metadata and redirect URLs no longer receive a trailing slash.
-Re-register persisted clients if their exact redirect URI changes, and require
-exact equality for protected-resource and issuer strings.
+A user-facing client should reauthorize with the increased scope set and retry
+the original operation. Apply a small retry limit to avoid an authorization
+loop.

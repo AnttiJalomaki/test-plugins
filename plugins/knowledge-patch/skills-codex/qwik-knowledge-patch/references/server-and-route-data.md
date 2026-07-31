@@ -1,141 +1,98 @@
-# Server functions, requests, and route data
+# Server and Route Data
 
-## Server-function errors and control flow
+Use this reference for server-function failures, request-event behavior,
+runtime origins, redirect responses, and internal rewrites.
 
-Errors from `server$` functions and route loaders use a standardized flow. A
-`server$` failure can be caught by `@plugin` middleware. Client calls throw for
-4xx statuses and statuses above 500, and status 499 is accepted as valid.
+## Server-function error flow
 
-When a non-`ServerError` escapes `server$()`, it is logged on the server.
+*Batch: `v1.8-1.13`*
 
-Returning any of these values from a loader, action, request handler, or server
-function has the same control-flow effect as throwing it:
+Errors are standardized across `server$` functions and route loaders.
+`server$` failures can be caught by `@plugin` middleware, so central
+middleware can observe or translate these failures.
 
-```ts
-return ev.redirect(302, '/login');
-return ev.error(403, 'Forbidden');
-return ev.rewrite('/internal/path');
-```
+For client calls:
 
-This supports direct returns without changing redirect, error, or rewrite
-semantics.
+- 4xx statuses throw;
+- statuses above 500 throw; and
+- 499 is accepted as a valid status.
 
-## Request events and middleware
+Preserve these exact boundaries in tests. Do not write an assertion such as
+“all statuses below 500 return normally,” because 4xx failures throw and 499
+has explicit accepted-status handling.
 
-Request-event types are readonly, but their objects are no longer frozen at
-runtime. Treat readonly typing as the API contract rather than depending on
-runtime `Object.freeze` behavior.
+Test the same failure at three layers:
 
-The send-request event receives a `Response` object even when the upstream
-request redirects.
+1. the server function or route loader creates the intended status;
+2. `@plugin` middleware catches the expected failure; and
+3. the client call observes a thrown error where required.
 
-Middleware can inspect `RequestEvent.internalRequest` to distinguish
-framework-internal JSON requests. Server request-body limits are configurable;
-set them according to endpoint needs instead of assuming one global payload
-size is suitable.
+Component error boundaries address rendering failures and are documented in
+[Components and events](components-and-events.md#error-boundaries).
 
-`RequestEvent.rewrite()` preserves the visible URL while routing internally.
-Invalid absolute rewrite URLs produce `400`. Redirects do not inherit a parent
-layout's `Cache-Control` header and default to `no-store`.
+## Redirect response middleware
 
-## Request origins and locale
+*Batch: `v1.8-1.13`*
+
+The send-request event receives a `Response` object even when the request
+redirects. Middleware can inspect the redirect response through the same
+response-shaped interface as a non-redirecting request.
+
+Review middleware that treated redirects as an absent response or a separate
+sentinel. It should now branch on response status and headers.
+
+## Bun and Deno request origins
+
+*Batch: `v1.14-1.19`*
 
 `QwikCityBunOptions` and `QwikCityDenoOptions` accept `getOrigin` to control
-the origin used when constructing request URLs behind proxies or adapters.
+URL-origin handling.
 
-When the runtime provides it, server-side `withLocale()` uses
-`AsyncLocalStorage`. The request locale therefore remains available throughout
-asynchronous work spawned in that locale context.
+Use it behind proxies or nonstandard runtimes where the origin cannot be
+derived safely from the raw request. The callback should return the
+application's externally meaningful origin, including the correct scheme and
+host.
 
-## Route-loader signals and failures
+## Request-event immutability
 
-The expanded `routeLoader$` signal type and its ESLint rule recognize broader
-signal usage in V2.
+*Batch: `v1.14-1.19`*
 
-Route loaders follow async-signal error semantics:
+Request events use readonly types instead of being frozen at runtime.
+TypeScript prevents supported code from mutating readonly properties, but
+runtime code must not use `Object.isFrozen()` or mutation failure as a feature
+test.
 
-- thrown failures populate `.error`;
-- reading `.value` after such a failure rethrows;
-- calling `fail()` is distinct and sets `.value` to `{ failed }`;
-- `expires`, `poll`, and `allowStale` control result freshness.
+Treat the event as immutable through the public API. If middleware needs
+derived state, store it separately or use the framework's supported request
+interfaces.
 
-A `routeLoader$` cannot read action state. Read the action signal in the
-component, or encode relevant state in the URL so the loader can consume it.
+## Request-event rewrites
 
-## Query-driven reruns
+*Batch: `v1.14-1.19`*
 
-The loader `search` option declares the query parameters it receives and that
-trigger reruns. `qwikRouter` defaults `strictLoaders` to `true`, so a loader
-without `search` receives no query parameters and does not rerun merely because
-the query string changed.
-
-Declare the smallest input surface explicitly:
+`RequestEvent.rewrite()` internally redirects processing while preserving the
+browser-visible URL. Throw the returned value:
 
 ```ts
-export const useResults = routeLoader$(({ query }) => {
-  return loadResults(query.get('q'));
-}, { search: ['q'] });
-```
-
-## Loader transport and browser caching
-
-SPA navigation uses manifest-versioned
-`q-loader-${hash}.${manifestHash}.json` data instead of requesting
-`q-data.json` on every navigation.
-
-Loader `expiry` defaults to two minutes. Setting `expiry: 0` disables browser
-caching and, during SSG, emits the loader data as a static file. Expiring
-responses are private by default. User-specific data should still use a short
-expiry and ETag validation.
-
-## Loader ETags and cache keys
-
-Route loaders accept `eTag` and `cacheKey`. The current cache-key callback
-signature is:
-
-```ts
-cacheKey(requestEv: RequestEvent, eTag: string)
-```
-
-Do not use the earlier `(status, eTag, pathname)` signature.
-
-For SSR, when `routeConfig` supplies `cacheKey` but no `eTag`, Qwik hashes the
-rendered output to create the ETag.
-
-## Background loaders
-
-`blockSSR` defaults to `true`. With the experimental `blockSSR` feature enabled,
-set a loader's `blockSSR` to `false` to run it in the background without
-delaying server rendering. Ensure the component handles pending and failure
-states because the HTML can arrive first.
-
-## Page ETags and in-memory HTML caching
-
-A page module can export `eTag` to emit an ETag header and let the prerender
-check return `304`. It can export `cacheKey` to enable an in-memory cache of
-rendered HTML. Request-handler middleware can invalidate that cache with
-`clearSsrCache`.
-
-Group page behavior under `routeConfig` when appropriate:
-
-```ts
-export const routeConfig = {
-  head,
-  eTag,
-  cacheKey,
+export const onRequest: RequestHandler = async ({ rewrite }) => {
+  throw rewrite('/articles/42');
 };
 ```
 
-`routeConfig` may be a static object or function and resolves with the same
-rules as `head`. When present, it takes precedence over separate `head`, `eTag`,
-and `cacheKey` exports from that module.
+Do not replace this with a client-visible redirect when the original URL must
+remain in the address bar. Multiple source rewrites may share one destination.
 
-## SSG cache and route-plan implications
+The routing implications are documented in
+[Router and navigation](router-and-navigation.md#request-event-rewrites).
 
-Router SSG can rerun against existing server output through
-`server/run-ssg.js`. In the Vite app-builder flow, fully prerendered routes that
-require no server are left out of the production SSR route plan.
+## Request and redirect verification
 
-Test cache behavior in both SSR and SSG output: a static loader file from
-`expiry: 0`, a page-level ETag, and a route-loader transport ETag serve distinct
-purposes and should not share user-specific content accidentally.
+When changing request middleware:
+
+- cover direct, redirected, and rewritten requests;
+- assert the `Response` seen by the send-request event;
+- verify the browser-visible URL after a rewrite;
+- exercise the runtime-specific `getOrigin` callback;
+- avoid runtime-freeze assumptions for readonly request events; and
+- confirm redirect responses default to `no-store` rather than inheriting a
+  parent layout cache header.

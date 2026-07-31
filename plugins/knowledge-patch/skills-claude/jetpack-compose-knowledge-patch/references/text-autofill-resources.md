@@ -1,104 +1,104 @@
 # Text, Autofill, and Resources
 
-## Migrate to semantics-based autofill
+## Semantic autofill
 
-Compose text autofill requires both UI and Foundation 1.8.0 or newer. The old
-autofill APIs are deprecated, and `AutofillManager` is now an abstract class.
-`InputText` exposes the text before output transformation,
-`requestAutofill` is no longer a manager method, the text toolbar can trigger
-autofill, and `LocalAutofillHighlightColor` uses `Color` (1.8.0).
+### Foundation and UI migration (1.8.0)
 
-Autofill is typed from 1.10.0. `FillableData` supports text, Boolean, integer,
-list, and date values. Its factories moved to the companion object, so call
+Text autofill requires both Compose UI and Foundation 1.8 or newer. Migrate
+from the deprecated legacy autofill APIs to semantics-based autofill.
+
+`AutofillManager` is now an abstract class. `InputText` exposes the value
+before output transformation. `requestAutofill` is no longer a manager
+method, and the text toolbar can trigger autofill.
+`LocalAutofillHighlightColor` now uses `Color`.
+
+### Typed fill data (1.10.0)
+
+`FillableData` supports text, Boolean, integer, list, and date values. Its
+factories moved to the companion object, so call
 `FillableData.createFrom(value)`. Read date data through `dateMillisValue`.
-Use the `fillableData` property and `onFillData` action instead of deprecated
-`onAutofillText`. A composition local can customize the highlight brush shown
-after a successful fill.
 
-Remove the old `isSemanticAutofillEnabled` Compose UI flag. Semantic autofill
-is always enabled after its removal in 1.11.0.
+Use the `fillableData` semantics property and `onFillData` action instead of
+deprecated `onAutofillText`. A composition local can customize the highlight
+brush shown after a successful fill.
 
-## Autosize and truncate text
+## Text sizing and overflow
 
-`AutoSize` was renamed to `TextAutoSize`, with public APIs for custom autosize
-implementations. Deprecated `AutoSize` overloads were removed; move callers to
-the corresponding `TextAutoSize` APIs (1.8.0).
+### Autosizing (1.8.0)
+
+`AutoSize` was renamed to `TextAutoSize`, with public APIs for custom sizing
+implementations. Deprecated `AutoSize` overloads were removed; migrate every
+call to its corresponding `TextAutoSize` API.
+
+### Start and middle ellipsis (1.8.0)
 
 Single-line text supports `TextOverflow.StartEllipsis` and
-`TextOverflow.MiddleEllipsis` in addition to end ellipsis. Keep
-`maxLines = 1` for either new mode (1.8.0).
+`TextOverflow.MiddleEllipsis` as well as end ellipsis. Keep `maxLines = 1`
+when selecting either new mode.
 
-## Preserve all annotated-string information
+## Annotated text and output styling
+
+### Paragraph annotations and HTML lists (1.8.0)
 
 `Paragraph` and `ParagraphIntrinsics` receive every `AnnotatedString`
-annotation rather than just span styles. `AnnotatedString` permits fully
-overlapping and nested paragraphs, its builder methods are stable, and
-`AnnotatedString.fromHtml` supports `<ul>` and `<li>` (1.8.0).
+annotation, not only span styles. `AnnotatedString` permits fully overlapping
+and nested paragraphs, its builder methods are stable, and
+`AnnotatedString.fromHtml` supports `<ul>` and `<li>`.
 
-`AnnotatedString` also supplies custom bullet-list construction APIs
-(1.9.0).
-
-## Style state-backed text-field output
+### Styled output and bullets (1.9.0)
 
 For a state-backed text field, `OutputTransformation` can style rendered
-output through `TextFieldBuffer.addStyle`. The interim
-`AnnotatedOutputTransformation` API was removed (1.9.0).
+output with `TextFieldBuffer.addStyle`. The interim
+`AnnotatedOutputTransformation` API was removed.
 
-`TextFieldState.edit {}` creates an independent undo entry rather than
-clearing undo history. Call `TextFieldState.undoState.clearHistory()` when a
-programmatic edit should deliberately reset that history (1.9.0).
+`AnnotatedString` also has APIs for constructing custom bullet lists.
 
-## Customize context menus and smart selection
+## Editing and undo
+
+### Programmatic edits (1.9.0)
+
+`TextFieldState.edit {}` creates a standalone undo entry instead of clearing
+history. When a programmatic edit should reset undo, call
+`TextFieldState.undoState.clearHistory()` explicitly.
+
+## Context menus and smart selection
+
+### Public customization (1.9.0)
 
 Text fields support right-click context menus and Android smart-selection
 items. Control smart selection with
-`ComposeFoundationFlags.isSmartSelectionEnabled` and provide its work context
-through `LocalTextClassifierCoroutineContext` (1.9.0).
+`ComposeFoundationFlags.isSmartSelectionEnabled` and its work context with
+`LocalTextClassifierCoroutineContext`.
 
-Customize menu content through `Modifier.appendTextContextMenuComponents`,
+Customize menus with `Modifier.appendTextContextMenuComponents`,
 `filterTextContextMenuComponents`, and the text-context-menu provider, data,
-and component APIs. Use `ProcessTextKey` for Android `PROCESS_TEXT` actions
-(1.9.0).
+and component APIs. Use `ProcessTextKey` for Android `PROCESS_TEXT` actions.
 
-## Secure text and scrolling
+## Secure text
+
+### Scroll state and system reveal preference (1.9.0)
 
 `BasicSecureTextField` hoists the `ScrollState` used by its internal text
 field. `TextObfuscationMode.RevealLastTyped` follows Android's
-`TEXT_SHOW_PASSWORD` system setting (1.9.0).
+`TEXT_SHOW_PASSWORD` system setting.
 
-## Handle transliteration suggestions
+## Rendering and selection behavior
 
-`InputTextSuggestionState` reports the current replacement suggestions from a
-transliteration IME. `TextCompositionRange` identifies the active
-transliteration composition range; `null` means no composition is active
-(1.11.0).
+### BasicText and cursor rendering (1.8.0)
 
-## Account for BasicText rendering
+`BasicText` no longer adds an implicit `graphicsLayer`; add
+`Modifier.graphicsLayer()` when a layer is required. Tests can turn off cursor
+drawing through `LocalCursorBlinkEnabled`.
 
-`BasicText` no longer inserts an implicit `graphicsLayer`. Add
-`Modifier.graphicsLayer()` when code depends on layer isolation or other layer
-behavior. Tests can suppress cursor drawing through `LocalCursorBlinkEnabled`
-(1.8.0).
+### Double-tap selection (1.10.0)
 
-## Handle missing fonts gracefully
+Double-tap word selection works in `SelectionContainer` and in the
+value/`onValueChange` form of `BasicTextField`.
 
-A resource font that cannot load falls back silently to the default font
-instead of throwing during measurement (1.8.0). Do not rely on a measurement
-exception as the signal for a missing resource font.
+## IME transliteration
 
-## Access configuration-aware resources
+### Suggestion and composition state (1.11.0)
 
-Use `LocalResources.current` for Android resource reads that must react to
-configuration changes. The read invalidates composition, so later lookups see
-the new configuration (1.9.0).
-
-## Use common clipboard and tooltip APIs
-
-Foundation and UI expose a common `Clipboard` interface through a composition
-local. `BasicTooltip` is also available to common Foundation code (1.8.0).
-
-## Parse text enums defensively
-
-`TextDirection`, `TextAlign`, `Hyphens`, and `FontSynthesis` `valueOf`
-functions throw `IllegalArgumentException` for unknown input from 1.10.0.
-Validate external strings or handle the exception.
+`InputTextSuggestionState` exposes replacement-suggestion state from
+transliteration IMEs. `TextCompositionRange` identifies the active
+transliteration composition range; `null` means no composition is active.

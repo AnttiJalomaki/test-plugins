@@ -1,206 +1,199 @@
 ---
 name: aspnet-core-knowledge-patch
 description: ASP.NET Core
-version: 11.0 Preview 6
+version: 10.0
 license: MIT
 metadata:
   author: Nevaberry
 ---
 
 
+
 # ASP.NET Core Knowledge Patch
 
-Use this skill when implementing, migrating, reviewing, or debugging ASP.NET
-Core applications. Inspect the app's target framework, package versions,
-render modes, hosting stack, and generated templates before applying guidance.
-For preview APIs, confirm that the project uses the matching preview and prefer
-the newest API name described here.
+Use this skill when designing, upgrading, debugging, or reviewing ASP.NET Core applications.
+Inspect the project file and target framework before applying version-sensitive guidance.
+When the project targets a later release than the frontmatter version, prefer the project's
+code, package APIs, generated output, and current documentation where they differ.
 
-## Reference Index
+## How to use this skill
+
+1. Identify the affected surface: Blazor components, forms and state, hosting and HTTP,
+   migrations and assets, observability and identity, or OpenAPI and Minimal APIs.
+2. Read the matching reference file before proposing code. Several changes alter defaults,
+   generated assets, or compatibility behavior without producing a compiler error.
+3. For upgrades, search the project for removed properties, old router fragments, custom JSON
+   converters, OpenAPI transformer types, and a manually declared partial `Program` class.
+4. Preserve explicit compatibility switches only as temporary migration aids. Prefer the new
+   behavior in newly written code.
+5. Validate browser-specific Blazor behavior in a published build when work involves
+   fingerprinting, streaming, bundlers, globalization, reconnection, or static web assets.
+
+## Reference index
 
 | Reference | Topics |
 | --- | --- |
-| [components-navigation-and-interop.md](references/components-navigation-and-interop.md) | Blazor rendering, routing, circuits, virtualization, JavaScript interop, culture, browser startup |
-| [forms-validation-and-persistence.md](references/forms-validation-and-persistence.md) | Blazor and Minimal API validation, labels, TempData, session, SSR forms |
-| [hosting-http-caching-and-security.md](references/hosting-http-caching-and-security.md) | Kestrel, HTTP.sys, compression, output caching, CSRF, certificates, memory pools |
-| [migrations-assets-and-tooling.md](references/migrations-assets-and-tooling.md) | Upgrade removals, static assets, WebAssembly Gateway, templates, workers, tests |
-| [observability-identity-and-signalr.md](references/observability-identity-and-signalr.md) | OpenTelemetry, diagnostics, authentication metrics, passkeys, SignalR, development JWTs |
-| [openapi-minimal-apis-and-json.md](references/openapi-minimal-apis-and-json.md) | OpenAPI 3.1/3.2, transformers, schemas, Minimal API binding, JSON parsing, unions |
+| [Components, Navigation, and Interop](references/components-navigation-and-interop.md) | Navigation, routing, reconnection, circuits, JavaScript interop, globalization |
+| [Forms, Validation, and Persistence](references/forms-validation-and-persistence.md) | Recursive validation, form binding, prerendered state, serializers, restoration |
+| [Hosting, HTTP, Caching, and Security](references/hosting-http-caching-and-security.md) | Browser HTTP streaming, exception diagnostics, Kestrel, JSON parsing, memory pools, HTTP.sys |
+| [Migrations, Assets, and Tooling](references/migrations-assets-and-tooling.md) | Upgrade removals, Blazor environment selection, boot assets, fingerprinting, bundlers, testing |
+| [Observability, Identity, and SignalR](references/observability-identity-and-signalr.md) | Authentication and Identity metrics, passkey migration, Identity redirects |
+| [OpenAPI, Minimal APIs, and JSON](references/openapi-minimal-apis-and-json.md) | OpenAPI 3.1, OpenAPI.NET 2, XML comments, transformer schemas, form binding |
 
-## Working Rules
+## Breaking changes and migration traps
 
-1. Identify whether the project is stable or preview before copying an API.
-2. Treat later preview renames and defaults as authoritative for later previews.
-3. Preserve explicit compatibility switches only as temporary migration aids.
-4. Check render mode before applying Blazor guidance; static SSR, Interactive
-   Server, and WebAssembly do not share every behavior.
-5. Check OpenAPI document version and `Microsoft.OpenApi` package generation
-   before editing transformers.
-6. Test proxy, cache, antiforgery, compression, and request-target changes at
-   the HTTP boundary rather than only through application-level unit tests.
-7. Load the narrow reference file for implementation details and edge cases.
+### Configure standalone WebAssembly environments in the project
 
-## Breaking and Migration Quick Reference
+Do not use the `Blazor-Environment` response header, `launchSettings.json`, or
+`ASPNETCORE_ENVIRONMENT` to select a standalone Blazor WebAssembly environment. Set:
 
-### Remove obsolete Blazor boot assumptions
+```xml
+<WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
+```
 
-- Do not read or patch `blazor.boot.json`; boot configuration is in
-  `dotnet.js`, and direct-file customization has no documented replacement.
-- Remove `BlazorCacheBootResources`; fingerprinted browser caching replaced
-  the custom boot-resource cache.
-- Select a standalone WebAssembly environment with
-  `WasmApplicationEnvironmentName` in the project file.
-- Do not depend on the `Blazor-Environment` header, launch settings, or
-  `ASPNETCORE_ENVIRONMENT` for that selection.
+Builds otherwise use `Development`; publishes use `Production`.
 
-### Update Identity navigation during migration
+### Stop depending on `blazor.boot.json`
 
-When enabling `BlazorDisableThrowNavigationException` in an older Individual
-Accounts app, remove the explicit `InvalidOperationException` from
-`IdentityRedirectManager.RedirectTo` and remove its five `DoesNotReturn`
-annotations. Follow the dedicated migration path when adding passkeys to an
-existing app.
+Boot configuration is inlined into `dotnet.js`; the separate `blazor.boot.json` asset no
+longer exists. Do not port workflows that inspect or mutate it unless a supported replacement
+is available. Remove `BlazorCacheBootResources`; fingerprinted browser assets now provide the
+cache behavior.
 
-### Update routing behavior deliberately
+### Force the Blazor script only for component-free projects
 
-- Replace the removed router `<NotFound>` fragment with
-  `Router.NotFoundPage`, `NavigationManager.NotFound()`, and optionally
-  `NavigationManager.OnNotFound`.
-- `NavLinkMatch.All` compares only the path. Use its AppContext compatibility
-  switch only if query-string and fragment matching is required.
-- Same-page `NavigateTo` calls retain scroll position.
-- For relative links resolved from the current page, set
-  `NavigationOptions.RelativeToCurrentUri` or the matching `NavLink` property.
+The compressed, fingerprinted Blazor script is automatically included when the project has a
+`.razor` file. A project that needs the script but has no component must opt in:
 
-### Account for WebAssembly response streaming
+```xml
+<RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
+```
 
-WebAssembly response streaming is enabled by default. `ReadAsStreamAsync`
-returns `BrowserHttpReadStream`, which cannot perform synchronous reads. Opt
-out per request with `SetBrowserResponseStreamingEnabled(false)`, or use the
-project property or environment switch described in the components reference.
+### Account for response streaming in WebAssembly
+
+`ReadAsStreamAsync` returns a `BrowserHttpReadStream` by default and synchronous reads fail.
+Keep consumers asynchronous, or opt out for a specific request:
+
+```csharp
+requestMessage.SetBrowserResponseStreamingEnabled(false);
+```
+
+Global compatibility controls are `WasmEnableStreamingResponse=false` and
+`DOTNET_WASM_ENABLE_STREAMING_RESPONSE=0`.
+
+### Update routing assumptions
+
+- Same-page `NavigateTo` calls preserve scroll position when only the query or fragment changes.
+- `NavLinkMatch.All` compares the path and ignores query strings and fragments.
+- Use `NavigationManager.NotFound()`, `Router.NotFoundPage`, and `OnNotFound`; the router's old
+  `<NotFound>` fragment is unsupported.
+
+Temporarily restore query-and-fragment matching with the
+`Microsoft.AspNetCore.Components.Routing.NavLink.EnableMatchAllForQueryStringAndFragment`
+AppContext switch.
 
 ### Migrate OpenAPI transformers
 
-- OpenAPI entities use interfaces plus inline and reference implementations.
-- Replace `OpenApiSchema.Nullable` checks with `JsonSchemaType.Null`.
-- Replace `OpenApiAny` values with `JsonNode`.
-- Expect `Microsoft.OpenApi` dependency upgrades to require integration
-  changes even when emitting an older document version.
-- Later previews generate OpenAPI 3.2 by default; pin an earlier
-  `OpenApiVersion` when downstream tooling requires it.
+OpenAPI entities are interfaces with separate inline and reference implementations.
+Replace `OpenApiSchema.Nullable` checks with `JsonSchemaType.Null` checks and replace
+`OpenApiAny` with `JsonNode`. These API migrations are required even when emitting an
+OpenAPI 3.0 document.
 
 ### Make custom JSON converters sequence-safe
 
-ASP.NET Core JSON input now commonly uses `PipeReader`. A converter must read
-`Utf8JsonReader.ValueSequence` when `HasValueSequence` is true instead of
-assuming `ValueSpan` contains the entire token. The stream-parsing AppContext
-switch is only a temporary fallback.
+ASP.NET Core deserializes MVC, Minimal API, and `ReadFromJsonAsync` payloads through
+`PipeReader`. A converter must handle segmented values:
 
-### Adopt preview API renames
+```csharp
+var span = reader.HasValueSequence
+    ? reader.ValueSequence.ToArray()
+    : reader.ValueSpan;
+```
 
-- Use `EnvironmentView`, not the earlier `EnvironmentBoundary` name.
-- Use `NavigationManager.GetUriWithFragment`, not `GetUriWithHash`.
-- Use `WithBrowserOptions`, not `WithBrowserConfiguration`.
-- Use `PreserveDom` with positive semantics and the `TimeSpan`-valued
-  `CircuitInactivityTimeout`.
-- Custom Minimal API validation resolvers must use the specialized type,
-  parameter, and property interfaces and call
-  `ValidateContext.AddValidationError`.
+The temporary `Microsoft.AspNetCore.UseStreamBasedJsonParsing` AppContext switch restores
+stream-based parsing.
 
-## Security and Hosting Quick Reference
+### Remove a manual test-visible `Program` declaration
 
-### Review automatic cross-origin CSRF rejection
+Top-level-statement web apps now receive a generated `public partial class Program` for test
+projects. Remove the manual declaration to avoid duplication.
 
-Apps built with `WebApplication.CreateBuilder` reject unsafe cross-origin
-browser form requests using Fetch Metadata and `Origin` information. Blazor
-Web Apps no longer need an explicit `UseAntiforgery()` call. Use endpoint or
-application opt-outs only after confirming the cross-origin trust model, or
-replace it with `ICsrfProtection`.
+## High-value capabilities
 
-### Handle changed exception diagnostics
+### Enable recursive Blazor validation
 
-Handled exceptions no longer emit diagnostics by default. Configure
-`ExceptionHandlerOptions.SuppressDiagnosticsCallback` when handled failures
-must still be logged or traced.
+Register validation, keep model types in C# files, and mark the root model:
 
-### Check compression and cache correctness
+```csharp
+builder.Services.AddValidation();
 
-Zstandard is enabled by the standard response-compression and
-request-decompression middleware. Tune its quality from 1 through 22.
-Compression middleware now emits `Vary: Accept-Encoding` even when a response
-is not compressed, preventing shared-cache variant confusion.
+[ValidatableType]
+public sealed class Order
+{
+    [Required]
+    public string? Number { get; set; }
+}
+```
 
-### Preserve request-target and timeout protections
+Nested objects and collections are then validated without reflection. Use `[SkipValidation]`
+for exclusions; validation across assemblies requires registration in both assemblies.
 
-- Kestrel preserves `%2F` in absolute-form HTTP/1.1 paths.
-- `RequestHeadersTimeout` applies to incomplete HTTP/2 and HTTP/3 trailer
-  header blocks.
-- Register `UseTlsClientHelloListener` before `UseHttps`; the older TLS Client
-  Hello callback property is obsolete.
-- An HTTP.sys request-queue security descriptor applies only when a new queue
-  is created.
+### Use direct JavaScript object interop
 
-## Components and Forms Quick Reference
+Construct JavaScript objects and access their properties through `IJSRuntime` and
+`IJSObjectReference`:
 
-### Use source-generated recursive validation
+```csharp
+var instance = await JSRuntime.InvokeConstructorAsync("jsInterop.TestClass", "Blazor!");
+var text = await instance.GetValueAsync<string>("text");
+await instance.SetValueAsync("text", "updated");
+```
 
-Call `AddValidation`, place the root model in a C# file, and annotate it with
-`ValidatableType`. Use `SkipValidation` where traversal must stop. Both the app
-and a model-providing assembly must register validation when models cross
-assembly boundaries.
+In-process references provide synchronous equivalents.
 
-### Await asynchronous validation
+### Persist and resume component state deliberately
 
-Blazor `EditForm` awaits tasks registered through
-`EditContext.AddValidationTask`; use `ValidateAsync` and observe pending,
-faulted, cancellation, and supersession behavior. Minimal APIs also execute
-the asynchronous DataAnnotations contracts after `AddValidation`.
+Use `[PersistentState]` for declarative prerender persistence. Set `AllowUpdates = true` for
+enhanced-navigation updates, select `RestoreBehavior.SkipInitialValue` or `SkipLastSnapshot`
+when restoration is inappropriate, and register `PersistentComponentStateSerializer<T>` for
+custom serialization. Server circuits can resume after extended disconnects or proactive pauses
+as long as the browser does not perform a full-page refresh.
 
-### Distinguish SSR persistence scopes
+### Generate richer OpenAPI documents
 
-- `[PersistentState]` persists prerendered component or service state.
-- `[SupplyParameterFromTempData]` uses one-time TempData semantics.
-- `[SupplyParameterFromSession]` uses configured HTTP session and JSON
-  serialization.
-- TempData is cascaded as `ITempData` during server-side rendering.
+Generated documents default to OpenAPI 3.1. Enable `GenerateDocumentationFile` to flow XML
+summaries, remarks, parameter descriptions, returns, and referenced-project comments into the
+document. Use documented methods rather than Minimal API lambdas when XML metadata matters.
+Transformer contexts can call `GetOrCreateSchemaAsync`; operation and schema contexts expose
+the document so generated schemas can be registered with `AddComponent`.
 
-### Configure virtualization by user intent
+### Control handled-exception diagnostics
 
-`Virtualize<TItem>` measures variable-height items, anchors viewport edges,
-and can start or scroll to an index. Use `ItemComparer` for refreshed
-reference objects, choose `AnchorMode.End` for append-following experiences,
-and call `ScrollToIndexAsync` only after the first interactive render.
+Exceptions handled by `IExceptionHandler` suppress logs and other diagnostics by default.
+Restore reporting globally, or choose exceptions selectively, with:
 
-### Configure browser startup from the server
+```csharp
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    SuppressDiagnosticsCallback = context => false
+});
+```
 
-Use `WithBrowserOptions` to serialize Server, WebAssembly, Auto, logging,
-reconnection, SSR DOM-preservation, and environment options from C#.
-JavaScript startup also accepts unified nested `circuit` and `webAssembly`
-objects.
+### Observe authentication and Identity
 
-## API and Observability Quick Reference
+Use the built-in authentication duration and event counters for challenge, forbid, sign-in,
+sign-out, and authorization. Identity emits through the `Microsoft.AspNetCore.Identity` meter,
+including user-creation, password-check, and sign-in instruments.
 
-### Generate accurate OpenAPI
+## Review checklist
 
-- Documentation XML can populate endpoint summaries, remarks, parameters,
-  returns, and referenced-project comments.
-- Advertise concrete file-result types to generate binary response schemas.
-- `QUERY` operations are native in 3.2 and use
-  `x-oai-additionalOperations` in 3.0 and 3.1.
-- Multiple response declarations for one status code are preserved by media
-  type or `anyOf`.
-- C# unions generate `anyOf` without a discriminator and are JSON-only in the
-  supported ASP.NET Core surfaces.
-
-### Collect framework-native tracing
-
-Subscribe OpenTelemetry to the `Microsoft.AspNetCore` activity source.
-Framework request activities already carry HTTP server semantic-convention
-attributes; suppress them only with the dedicated AppContext switch.
-
-### Refresh SignalR authentication intentionally
-
-Enable authentication refresh on the mapped hub and configure the .NET client
-with `WithAuthenticationRefresh`. Cancellation of a regular .NET
-`InvokeAsync` now reaches the hub method's `CancellationToken`.
-
+- Confirm standalone WebAssembly environment and asset properties in the project file.
+- Test published static assets and import maps, not only development output.
+- Keep browser stream consumers asynchronous.
+- Exercise query, fragment, not-found, reconnect, and full-refresh navigation paths.
+- Validate nested models and nullable form values with realistic submissions.
+- Inspect generated OpenAPI schemas under the configured JSON number handling.
+- Update custom converters for multi-segment `Utf8JsonReader` input.
+- Decide explicitly whether handled exceptions should emit diagnostics.
+- Re-trust the development certificate after adopting a `*.dev.localhost` template domain.
+- Verify HTTP.sys queue ACL changes are applied only when creating a new request queue.

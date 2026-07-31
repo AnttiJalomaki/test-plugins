@@ -1,67 +1,67 @@
 # Migrations, Assets, and Tooling
 
-## Contents
+Use this reference while upgrading an application or changing Blazor WebAssembly build output.
+Treat project properties and generated assets as build contracts, and verify them in published
+output.
 
-- [Standalone WebAssembly migration](#standalone-webassembly-migration)
-- [Blazor script and asset fingerprinting](#blazor-script-and-asset-fingerprinting)
-- [Bundler-friendly output](#bundler-friendly-output)
-- [WebAssembly Gateway](#webassembly-gateway)
-- [Project and service templates](#project-and-service-templates)
-- [Web Workers](#web-workers)
-- [Testing top-level-statement applications](#testing-top-level-statement-applications)
+## Standalone WebAssembly environment selection
 
-## Standalone WebAssembly migration
-
-### Select the environment in the project file
-
-Standalone Blazor WebAssembly no longer uses the `Blazor-Environment` header,
-`Properties/launchSettings.json`, or `ASPNETCORE_ENVIRONMENT` to choose its
-environment (10.0-migration). Set it in the project:
+Batch `10.0-migration` moves environment selection into the client project file:
 
 ```xml
-<WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
+<PropertyGroup>
+  <WasmApplicationEnvironmentName>Staging</WasmApplicationEnvironmentName>
+</PropertyGroup>
 ```
 
-Without an explicit value, builds default to `Development` and publishes
-default to `Production`.
+Standalone Blazor WebAssembly apps no longer select the environment from the
+`Blazor-Environment` header, `Properties/launchSettings.json`, or `ASPNETCORE_ENVIRONMENT`.
+Without the property, builds default to `Development` and publishes default to `Production`.
+Check both local builds and published artifacts during migration.
 
-### Stop reading `blazor.boot.json`
+## Boot configuration is part of `dotnet.js`
 
-The separate `blazor.boot.json` file no longer exists; its content is inlined
-into `dotnet.js` (10.0-migration). Workflows that inspect or alter the old
-file—including published-asset integrity scripts and DLL-extension
-customization—have no documented replacement.
+In batch `10.0-migration`, the contents formerly written to `blazor.boot.json` are inlined into
+`dotnet.js`; the separate file no longer exists. Workflows that inspect or alter that file,
+including the published-asset integrity script and DLL-extension customization, have no
+documented replacement. Remove assumptions about the old file rather than silently fabricating
+one.
 
-### Remove the custom boot cache property
+## Remove the custom boot-resource cache property
 
-Browser caching of fingerprinted client assets replaces Blazor's custom
-boot-resource caching (10.0-migration). Remove
-`BlazorCacheBootResources`; it is unavailable or ineffective.
+Browser caching of fingerprinted client files replaces Blazor's custom boot-resource cache.
+`BlazorCacheBootResources` is unavailable or ineffective and must be removed from upgraded
+client project files (batch `10.0-migration`).
 
 ```diff
 - <BlazorCacheBootResources>...</BlazorCacheBootResources>
 ```
 
-## Blazor script and asset fingerprinting
+Do not replace it with an equivalent service-worker customization unless the application has a
+separate product requirement for one.
 
-### Force script inclusion when there are no components
+## Blazor script static-asset inclusion
 
-The Blazor script is a compressed, fingerprinted static web asset. It is
-included automatically only when a project contains a `.razor` file
-(10.0). A project that needs the script without a component must opt in:
+The Blazor script is a compressed, fingerprinted static web asset in batch `10.0`. It is included
+automatically only when the project contains at least one `.razor` file. A component-free project
+that still needs the script must force inclusion:
 
 ```xml
 <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
 ```
 
-### Fingerprint standalone assets
+Do not add the property routinely to component projects; automatic discovery already includes
+the asset there.
 
-Standalone WebAssembly apps can opt into build-time fingerprinting by enabling
-HTML placeholder replacement, adding an import map, and placing the
-fingerprint marker in the framework script name (10.0).
+## Standalone WebAssembly asset fingerprinting
+
+To opt into build-time fingerprinting, enable HTML placeholder replacement, add an import map,
+and put the fingerprint marker in the framework script name:
 
 ```xml
-<OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+<PropertyGroup>
+  <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+</PropertyGroup>
 ```
 
 ```html
@@ -70,103 +70,53 @@ fingerprint marker in the framework script name (10.0).
 ```
 
 Developer modules can use the same `#[.{fingerprint}]` marker through a
-`StaticWebAssetFingerprintPattern`.
+`StaticWebAssetFingerprintPattern`. Inspect the published HTML, import map, and filenames
+together; a placeholder without its corresponding map and generated asset is incomplete.
 
-## Bundler-friendly output
+## Bundler-friendly WebAssembly output
 
-Set `WasmBundlerFriendlyBootConfig` when published WebAssembly output must be
-consumed by a JavaScript bundler such as Webpack or Rollup (10.0):
+Published output can be shaped for JavaScript bundlers such as Webpack and Rollup:
 
 ```xml
 <WasmBundlerFriendlyBootConfig>true</WasmBundlerFriendlyBootConfig>
 ```
 
-## WebAssembly Gateway
+This is an explicit publishing mode. Test the downstream bundler against published output and
+retain any application-specific asset-copy rules only when they still match the new boot layout.
 
-### Replace the development server
+## Identity navigation migration
 
-Standalone WebAssembly projects can replace
-`Microsoft.AspNetCore.Components.WebAssembly.DevServer` with
-`Microsoft.AspNetCore.Components.Gateway`, a lightweight full ASP.NET Core
-development host (11.0-preview.5).
+The Blazor Web App template uses:
 
 ```xml
-<PackageReference Include="Microsoft.AspNetCore.Components.Gateway"
-                  Version="11.0.0-preview.5.26302.115"
-                  PrivateAssets="all" />
+<BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
 ```
 
-The Gateway setup uses static-web-asset SPA fallback endpoints. Refreshing or
-directly opening a client route serves `index.html` without custom fallback
-middleware.
-
-### Proxy the backend
-
-The Gateway can use its built-in YARP reverse proxy so browser-to-backend
-calls stay same-origin and do not require client or backend CORS configuration
-(11.0-preview.6).
-
-Configure standard `ReverseProxy` routes and clusters for the separate Gateway
-process through launch-profile environment variables or command-line
-arguments. Do not put those settings in the application's `appsettings.json`.
-Cluster destinations may use .NET service-discovery names.
-
-## Project and service templates
-
-### Container-enabled Blazor template
-
-The Blazor Web App project template in Visual Studio includes an
-**Enable container support** option (11.0-preview.1).
-
-### WebAssembly service defaults
-
-The `blazor-wasm-servicedefaults` template creates an Aspire-oriented client
-library that configures OpenTelemetry with OTLP export, service discovery, and
-standard HTTP resilience (11.0-preview.4). Reference it from the WebAssembly
-client and call its generated startup extension.
-
-```bash
-dotnet new blazor-wasm-servicedefaults -o MyApp.ServiceDefaults
-```
-
-```csharp
-builder.AddBlazorClientServiceDefaults();
-```
-
-### MCP server template
-
-The .NET SDK bundles the MCP server template, so a separate
-`Microsoft.McpServer.ProjectTemplates` installation is not required
-(11.0-preview.4).
-
-```bash
-dotnet new mcpserver -o MyMcpServer
-```
-
-## Web Workers
-
-The Web Worker template supplies a `WebWorkerClient` for moving expensive
-WebAssembly work off the UI thread. Export worker methods with `[JSExport]`,
-then create and invoke the worker using the method's qualified name
-(11.0-preview.2).
-
-The original template name `webworker` was renamed to `blazorwebworker` in
-11.0-preview.4. Existing projects generated with the old name remain valid.
-The later client also supports `InvokeVoidAsync`, cancellation, and timeouts
-for worker creation and invocation.
-
-```bash
-dotnet new blazorwebworker -o MyApp.Worker
-```
-
-```csharp
-await using var worker = await WebWorkerClient.CreateAsync(JSRuntime);
-var result = await worker.InvokeAsync<string>(
-    "MyApp.MyWorker.Greet", ["World"]);
-```
+When an older Individual Accounts app adopts this setting, update
+`Components/Account/IdentityRedirectManager.cs` as described in
+[Observability, Identity, and SignalR](observability-identity-and-signalr.md). Navigation helpers
+must no longer claim that every redirect exits by throwing.
 
 ## Testing top-level-statement applications
 
-The ASP.NET Core source generator emits the `public partial class Program`
-needed by test projects (10.0). Remove a manually declared partial `Program`
-from applications that use top-level statements.
+The ASP.NET Core source generator emits the `public partial class Program` needed by test
+projects in batch `10.0`. Remove an application's manual declaration when upgrading.
+
+## Upgrade search checklist
+
+Search for these migration-sensitive tokens and assumptions:
+
+```text
+Blazor-Environment
+ASPNETCORE_ENVIRONMENT
+blazor.boot.json
+BlazorCacheBootResources
+RequiresAspNetWebAssets
+blazor.webassembly#[.{fingerprint}].js
+WasmBundlerFriendlyBootConfig
+BlazorDisableThrowNavigationException
+partial class Program
+```
+
+Review each occurrence in context. Some tokens are required new configuration; others identify
+behavior or assets that must be removed.

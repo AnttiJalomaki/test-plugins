@@ -1,18 +1,9 @@
-# Streamable HTTP, sessions, and subscriptions
+# Streamable HTTP, Sessions, and Resumption
 
-Use this reference to implement HTTP message flow, legacy sessions and SSE
-recovery, modern cancellation and routing, origin checks, and change streams.
-
-Relevant protocol attributions: `2025-03-26-compat`,
-`2025-06-18-compat`, `2025-11-25-compat`, `2025-11-25`, and
-`2026-07-28-rc`.
-
-## Implement legacy Streamable HTTP
+## Endpoint and POST framing (`2025-03-26-compat`)
 
 Streamable HTTP replaces the split HTTP+SSE transport with one MCP endpoint
-supporting POST and GET.
-
-Send every client message in a fresh POST:
+that supports POST and optional GET. Send every client message in a fresh POST:
 
 ```http
 POST /mcp HTTP/1.1
@@ -22,136 +13,78 @@ Content-Type: application/json
 {"jsonrpc":"2.0","id":1,"method":"ping"}
 ```
 
-The `Accept` value lists both required media types. For an accepted notification
-or response-only message, return an empty HTTP 202. For a request, return either
-one JSON response or an SSE stream; clients must support both.
+The `Accept` header must list both response media types. For accepted
+notification or response-only input, return an empty HTTP 202. For request
+input, return either one `application/json` response or an SSE stream. Clients
+must support both forms.
 
-A client may separately GET the endpoint with
-`Accept: text/event-stream` for server-initiated traffic. A server without that
-stream returns 405. The GET stream must not carry ordinary JSON-RPC responses
-except while replaying a previous request's stream.
+As clarified in `2025-06-18-compat`, each POST body is exactly one JSON-RPC
+request, notification, or response. A top-level JSON-RPC array is invalid.
 
-## Frame and version legacy POSTs
+## Optional GET stream (`2025-03-26-compat`)
 
-Each POST body contains one JSON-RPC request, notification, or response. A
-top-level batch is invalid on this transport.
+A client may make a separate GET with `Accept: text/event-stream` for
+server-initiated traffic. A server without that stream returns 405. The GET
+stream does not carry ordinary JSON-RPC responses, except while replaying the
+stream of a previous request.
 
-After initialization, send the negotiated revision on every later HTTP
+## Protocol-version header (`2025-06-18-compat`)
+
+After initialization, send the negotiated version on every subsequent HTTP
 request:
 
 ```http
 MCP-Protocol-Version: 2025-06-18
 ```
 
-Without other version information, a missing header means `2025-03-26`. An
-invalid or unsupported header value receives HTTP 400.
+When no other version information is available, an absent header means
+`2025-03-26`. An invalid or unsupported value produces HTTP 400.
 
-## Manage legacy HTTP sessions
+## Stateful sessions (`2025-03-26-compat`)
 
-A legacy server may return `Mcp-Session-Id` with its initialization response.
-The client repeats it on every later HTTP request.
+A server may return `Mcp-Session-Id` with the initialization response. Repeat
+the value on every later HTTP request. If the server requires a session and the
+header is missing, return 400. If the ID has expired or was terminated, return
+404; the client then starts a new initialization without an ID.
 
-- A required but missing ID produces HTTP 400.
-- A terminated or expired ID produces HTTP 404.
-- After 404, initialize a new session without an ID.
-- Request cleanup with DELETE; the server may reject deletion with 405.
+Clients should request explicit cleanup with DELETE. Servers may decline that
+operation with 405.
 
-Do not apply these rules to the modern stateless protocol, which removes
-protocol-level sessions and this header.
+## SSE event IDs, replay, and cancellation (`2025-03-26-compat`)
 
-## Resume legacy SSE streams
+Servers may attach event IDs that are unique across a session, or across a
+client when sessions are absent. A reconnecting client sends `Last-Event-ID` on
+a GET. Replay only the disconnected stream; do not mix events from unrelated
+streams.
 
-A legacy server may assign SSE event IDs unique across the session, or across
-the client when sessions are absent. On reconnect, the client sends
-`Last-Event-ID` in a GET. Replay is confined to the disconnected logical
-stream.
+A dropped stream does not cancel the JSON-RPC request that created it. To stop
+the operation, send an explicit `CancelledNotification`.
 
-A dropped legacy stream does not cancel its request. Send an explicit
-`CancelledNotification` when cancellation is intended.
+## Pollable SSE responses (`2025-11-25-compat`)
 
-For the 2025-11-25 polling form:
+For an SSE response that can be resumed, first send an event ID with empty data.
+Once the stream has an ID, the server may close the HTTP connection while
+keeping the logical stream alive. Before closing, it should send an SSE `retry`
+delay. The client honors that delay and reconnects with GET plus
+`Last-Event-ID`, regardless of whether the original stream came from POST or
+GET.
 
-1. The server first emits an event ID with empty data.
-2. After assigning the ID, it may close the HTTP connection without terminating
-   the logical stream.
-3. Before closing, it should emit an SSE `retry` delay.
-4. The client honors the delay and reconnects with GET plus `Last-Event-ID`,
-   whether the original stream began with POST or GET.
+## Legacy HTTP+SSE compatibility
 
-## Detect legacy HTTP+SSE carefully
+To serve older clients, keep the legacy SSE and POST endpoints alongside the
+Streamable HTTP endpoint. A client given an unknown server URL first POSTs an
+`InitializeRequest` with the Streamable HTTP `Accept` header. Success selects
+Streamable HTTP. An allowed probe failure triggers a GET; an initial `endpoint`
+event identifies the `2024-11-05` HTTP+SSE transport and supplies the endpoint
+used for later communication.
 
-To support old clients, a server can retain legacy SSE and POST endpoints next
-to the Streamable HTTP endpoint.
+The original `2025-03-26-compat` rule described any 4xx as a probe failure.
+`2025-11-25-compat` narrows this: only 400, 404, or 405 permit the legacy GET
+fallback. Treat every other 4xx as the operation's real error.
 
-An unknown server URL is probed with a Streamable HTTP initialization POST. On
-the 2025-11-25 behavior, fall back to GET only when that initial POST fails with
-400, 404, or 405. Other 4xx responses do not trigger transport fallback. An
-initial `endpoint` SSE event identifies the 2024-11-05 HTTP+SSE transport and
-selects it for later communication.
+## Connection security and Origin failures
 
-This narrows the earlier 2025-03-26 compatibility rule, which treated any 4xx
-as a fallback signal.
-
-## Handle modern response streams
-
-Modern Streamable HTTP removes SSE event IDs, `Last-Event-ID`, and message
-redelivery. If a response stream breaks, the in-flight request is lost. Retry
-the operation with a new request ID rather than attempting to resume it.
-
-Aborting a modern HTTP request closes that request's response stream; it does
-not POST `notifications/cancelled`. Legacy connections and stdio in either era
-still use the cancellation notification. A custom one-request-per-message
-transport can declare `hasPerRequestStream = true` to adopt the modern
-behavior.
-
-## Send and validate modern routing headers
-
-Every modern Streamable HTTP POST identifies its protocol method with
-`Mcp-Method`. Named tool-like operations also send `Mcp-Name`:
-
-```http
-Mcp-Method: tools/call
-Mcp-Name: weather
-```
-
-An input-schema property marked `x-mcp-header` can mirror its argument into an
-`Mcp-Param-*` header. The server cross-checks the routing and parameter headers
-against the body. A mismatch returns HTTP 400 with protocol error `-32020`.
-
-Browser clients may be unable to mirror dynamic parameter headers; design tool
-schemas and CORS policy with that limitation in mind.
-
-## Open modern change subscriptions
-
-The modern protocol replaces the general GET event stream and
-`resources/subscribe`/`resources/unsubscribe` with
-`subscriptions/listen`, a long-lived POST-response stream.
-
-A subscription can request:
-
-- `toolsListChanged`;
-- `promptsListChanged`;
-- `resourcesListChanged`;
-- `resourceSubscriptions`.
-
-The server acknowledges the subscription and tags its notifications with
-`io.modelcontextprotocol/subscriptionId`. Request-scoped progress and logging
-notifications remain on the response stream for their originating request;
-they are not moved onto the subscription.
-
-For a multi-process or multi-replica server, publish changes through a shared
-event bus so a subscription opened on one process can observe changes made by
-another.
-
-## Validate HTTP boundaries
-
-Parse `Content-Type` and return HTTP 415 unless the media type is
-`application/json`.
-
-Validate every present `Origin` to prevent DNS rebinding. Return HTTP 403 when
-an origin is invalid. Local deployments should bind to `127.0.0.1`, enable
-transport-level rebinding protection, authenticate requests, and explicitly
-allow trusted browser origins. Opaque `Origin: null` must remain rejected.
-
-See [authorization.md](authorization.md) for bearer tokens, redirect safety,
-and protected-resource discovery.
+Validate `Origin` on every incoming connection. Local servers bind to
+`127.0.0.1` rather than `0.0.0.0` and authenticate clients. Authorization
+endpoints use HTTPS, and redirect URIs are localhost or HTTPS. Under
+`2025-11-25`, an invalid `Origin` response is HTTP 403 Forbidden.

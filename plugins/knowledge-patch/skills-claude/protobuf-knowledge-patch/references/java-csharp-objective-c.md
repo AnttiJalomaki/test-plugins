@@ -1,93 +1,74 @@
 # Java, C#, and Objective-C runtimes
 
-Source batches represented here: 30.0-migration, edition-2024-announcement,
-34.0-announcement, 34.0, 35.0, 36.0-rc1.
+## Objective-C unknown fields (`30.0-migration`)
 
-## Java generation and reflection
+Objective-C runtime 4.30 replaces `GPBUnknownFieldSet` with the
+ordering-preserving `GPBUnknownFields`. Each `GPBUnknownField` represents one
+value instead of grouping all values with the same field number.
 
-Edition 2024 removes `java_multiple_files` in favor of the
-`nest_in_file_class` feature. Classes are generated into their own files by
-default. The default outer class is the camel-cased proto filename plus
-`Proto`; use `java_outer_classname` for an explicit name.
+- Extract unknown fields with `initFromMessage:`.
+- Update them with `mergeUnknownFields:extensionRegistry:error:`.
+- Remove them with `clearUnknownFields`.
 
-The Edition 2024 `large_enum` feature opts into enum-like generated types
-beyond Java's ordinary enum constant limit. These do not support every enum
-operation, including `switch`. Java lite honors this feature in v34 and
-correctly handles aliased large-enum values.
+## Objective-C API removals (`30.0-migration`)
 
-Generated `isInitialized()` is deprecated in v34 for message types without
-required fields. Remove redundant calls or tolerate deprecation diagnostics
-only while supporting older output.
+- Replace `mergeFrom:extensionRegistry:` with
+  `mergeFrom:extensionRegistry:error:` and handle its failure.
+- Replace `GPBDuration.timeIntervalSince1970` with `GPBDuration.timeInterval`.
+- Replace `GPBTextFormatForUnknownFieldSet()` with
+  `GPBTextFormatForMessage()`.
+- Stop using the obsolete `GPBFileDescriptor.syntax` property.
 
-The experimental Java `FieldOrder` enum is removed in 36.0-rc1. Stop compiling
-against it.
+Runtime entry points for generated code older than 3.22 are removed. Regenerate
+such Objective-C outputs with a current compiler before adopting the newer
+runtime.
 
-Java warns about potential `OneofDescriptor` collisions in 36.0-rc1 ahead of
-Q1 2027 breaking changes. Treat the warning as a schema naming/regeneration
-task.
+## Earlier UTF-8 failures (`30.0-migration`)
 
-## Java JSON and timestamp parsing
+C# now surfaces UTF-8 enforcement errors earlier when a protobuf `string`
+contains invalid UTF-8. Do not depend on invalid data surviving until a later
+serialization step.
 
-Java `JsonFormat` gains an opt-in strict JSON parser mode in 36.0-rc1. Select
-it when strict validation is part of the input contract.
+## Objective-C Swift nullability (`34.0-announcement`)
 
-When sorted map output is requested, `JsonFormat` now compares keys using
-natural Java `String` ordering instead of UTF-8 `ByteString` ordering. Golden
-JSON output can change even though map contents do not.
+Corrected nullability on `GPB*Dictionary` APIs changes affected Swift results to
+`Optional<T>`. Update call sites to unwrap or propagate the optional value.
 
-`Timestamps.parse()` attempts non-lenient parsing first and warns if it must
-fall back to lenient parsing. Normalize inputs that only the lenient parser
-accepts.
+`-[GPBFieldDescriptor optional]` is removed. Express the equivalent test as:
 
-Java JSON recursion limits now cover nested `Any` values containing `Any`.
-Deep payloads that escaped earlier checks can fail.
+```text
+!required && fieldType == GPBFieldTypeSingle
+```
 
-## C# behavior
+## Java initialization checks (`34.0`)
 
-C# surfaces UTF-8 enforcement errors earlier for invalid bytes in protobuf
-`string` fields beginning with the v30 migration.
+Generated `isInitialized()` accessors are deprecated for message types that do
+not contain required fields. Calls on those types can newly trigger deprecation
+diagnostics; remove them or restrict checks to messages whose required-field
+semantics need them.
 
-Recursion-limit enforcement expands in v34 to C# JSON well-known types
-containing deep arrays.
+## Java large enums (`34.0`)
 
-The `Google.Protobuf.Tools` package includes well-known-type `.proto` files
-under `include` in v35.
+The Java lite runtime now honors the `large_enum` feature and correctly handles
+large enums containing aliased values. These generated enum-like types still do
+not support every ordinary Java enum operation, including `switch`.
 
-C# advertises Edition 2026 support in 36.0-rc1, and nullable-reference-type
-generation belongs to that edition. Select Edition 2026 when generated
-nullability is required.
+## Recursion-limit coverage (`34.0`)
 
-## Objective-C unknown fields
+Java JSON parsing now applies recursion limits to `Any` containing nested
+`Any` values. C# JSON parsing also guards well-known types that contain deeply
+nested arrays. Inputs that previously bypassed recursion accounting can now be
+rejected; keep limits and failure handling in untrusted-input tests.
 
-Objective-C's first breaking runtime line moves from 3.x to 4.30.x in the v30
-migration. `GPBUnknownFields` replaces `GPBUnknownFieldSet` and preserves
-unknown-field ordering. A `GPBUnknownField` represents one value instead of
-grouping all values by field number.
+## Objective-C generated extensions and oneofs (`34.0`)
 
-Use:
+Objective-C code generation supports three modes for proto extension
+generation. It also emits presence-checking accessors for oneofs. Generator
+wrappers should choose the intended extension mode explicitly and use the new
+accessors rather than inferring oneof presence indirectly.
 
-- `initFromMessage:` to extract unknown fields;
-- `mergeUnknownFields:extensionRegistry:error:` to update them;
-- `clearUnknownFields` to remove them.
+## C# packaged well-known types (`35.0`)
 
-## Objective-C removed and changed APIs
-
-At the v30 boundary:
-
-- replace `mergeFrom:extensionRegistry:` with
-  `mergeFrom:extensionRegistry:error:`;
-- replace `GPBDuration.timeIntervalSince1970` with
-  `GPBDuration.timeInterval`;
-- replace `GPBTextFormatForUnknownFieldSet()` with
-  `GPBTextFormatForMessage()`;
-- stop using obsolete `GPBFileDescriptor.syntax`.
-
-Runtime entry points for generated code older than 3.22 are removed.
-Regenerate those files with a current compiler.
-
-At the v34 boundary, corrected `GPB*Dictionary` nullability makes affected
-Swift return values `Optional<T>`. `-[GPBFieldDescriptor optional]` is removed;
-test `!required && fieldType == GPBFieldTypeSingle`.
-
-Objective-C codegen gains three modes for proto extension generation in v34
-and emits oneof presence-checking accessors.
+The `Google.Protobuf.Tools` NuGet package includes an `include` directory with
+the well-known-type `.proto` files. Compiler invocations sourced from the
+package can resolve those imports directly from that directory.

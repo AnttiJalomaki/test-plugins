@@ -1,175 +1,173 @@
 # Input, Focus, and Scrolling
 
-## Semantic autofill
+## Focus
 
-Semantics-based autofill arrived in 1.8.0. Text autofill requires both Compose
-UI and Foundation at 1.8 or newer. The legacy autofill APIs are deprecated,
-and several contracts changed:
+### Focus navigation and restoration (1.8.0)
 
-- `AutofillManager` is an abstract class.
-- `InputText` exposes the value before output transformation.
-- `requestAutofill` is no longer a method on the manager.
-- The text toolbar can initiate autofill.
-- `LocalAutofillHighlightColor` uses `Color`.
+Use receiver-based `FocusProperties.onEnter` and `onExit` instead of the former
+`enter` and `exit` properties. `FocusRequester` and `FocusTargetModifierNode`
+support `requestFocus(FocusDirection)`. `Modifier.focusRestorer()` takes a
+non-null `FocusRequester` parameter named `fallback`, defaulting to
+`FocusRequester.Default`; it no longer takes a fallback lambda.
 
-Typed autofill in 1.10.0 expands `FillableData` to text, Boolean, integer, list,
-and date values. Factories moved to the companion object; create data with
-`FillableData.createFrom(value)` and read a date through `dateMillisValue`.
-Replace deprecated `onAutofillText` with the `fillableData` semantics property
-and `onFillData` action. A composition local can customize the highlight brush
-shown after a successful fill.
+### Pointer-down and child focus behavior (1.10.0)
 
-In 1.11.0, the `isSemanticAutofillEnabled` UI flag is removed because semantic
-autofill is always enabled. Delete flag assignments rather than trying to
-restore legacy autofill behavior.
+Mouse or touchpad presses outside the focused node clear focus by default on
+Android. Set `AbstractComposeView.isClearFocusOnPointerDownEnabled = false` to
+opt out. A non-focusable `FocusTargetModifierNode.requestFocus()` routes to a
+child. `DelegatableNode.requestFocusForChildInRootBounds()` finds an overlapping
+child, while `ComposeUiFlags.isInitialFocusOnFocusableAvailable` enables
+non-touch initial focus.
 
-## Focus navigation and restoration
+## Indications and delayed presses
 
-Stable focus APIs in 1.8.0 replace `FocusProperties.enter` and `exit` with
-receiver-based `onEnter` and `onExit`. `FocusRequester` and
-`FocusTargetModifierNode` support `requestFocus(FocusDirection)`.
+### `IndicationNodeFactory` migration (1.9.0)
 
-`Modifier.focusRestorer()` takes a non-null `FocusRequester` parameter named
-`fallback`, defaulting to `FocusRequester.Default`; it no longer takes a
-lambda.
+After recompiling against Foundation 1.9, no-explicit-indication overloads of
+`clickable`, `combinedClickable`, `selectable`, `toggleable`, and
+`triStateToggleable` require an `IndicationNodeFactory` from `LocalIndication`.
+A deprecated `Indication` there can crash at runtime. Migrate it, use an
+explicit-indication overload as a bridge, or—only on a version that still
+contains it—temporarily disable
+`ComposeFoundationFlags.isNonComposedClickableEnabled`.
 
-Further focus behavior in 1.10.0:
+### Removed interaction flags (1.10.0)
 
-- A mouse or touchpad press outside the focused node clears focus by default.
-  Set `AbstractComposeView.isClearFocusOnPointerDownEnabled = false` to opt out.
-- Calling `FocusTargetModifierNode.requestFocus()` on a non-focusable target
-  routes focus to a child.
-- `DelegatableNode.requestFocusForChildInRootBounds()` targets a child that
-  overlaps the supplied root bounds.
-- `ComposeUiFlags.isInitialFocusOnFocusableAvailable` can enable non-touch
-  initial focus.
+The non-composed-clickable bridge flag is removed, so the indication migration
+can no longer be postponed. Flags controlling scroll callbacks, fling
+continuation, drag pickup, automatic nested prefetch, pointer velocity, and
+pointer/nested-scroll interoperability fixes were also removed. Delete those
+assignments and rely on the finalized behavior.
 
-The text-field D-pad navigation and keep-in-view focus-observation behavior
-are always enabled in 1.11.0. Delete assignments to the removed
-`ComposeFoundationFlags.isTextFieldDpadNavigationEnabled` and
-`isKeepInViewFocusObservationChangeEnabled` flags.
+### Delayed presses in drag containers (1.11.0)
 
-## Haptic feedback
+`ComposeFoundationFlags.isDelayPressesUsingGestureConsumptionEnabled` opts
+drag containers into delaying press handling according to gesture consumption.
+It also affects `Modifier.draggable`, which previously did not delay presses.
 
-`LocalHapticFeedback` supplies a default Android implementation when the
-vibrator reports support (since 1.8.0). Available `HapticFeedbackType` values
-include `Confirm`, `ContextClick`, `GestureEnd`, `GestureThresholdActivate`,
-`Reject`, `SegmentFrequentTick`, `SegmentTick`, `ToggleOn`, `ToggleOff`, and
-`VirtualKey`.
+## Gesture dispatch and pointer input
 
-## IndicationNodeFactory migration
+### Immediate tap dispatch and nested hand-off (1.8.0)
 
-After recompilation against 1.9.0, the `clickable`, `combinedClickable`,
-`selectable`, `toggleable`, and `triStateToggleable` overloads without an
-explicit `Indication` only accept an `IndicationNodeFactory` supplied through
-`LocalIndication`. Supplying a deprecated `Indication` can crash at runtime.
+Tap detectors use immediate coroutine dispatch by default. On releases that
+still expose the bridge, its name is
+`ComposeFoundationFlags.isDetectTapGesturesImmediateCoroutineDispatchEnabled`.
+A parent draggable or scrollable can take over a gesture abandoned by a child;
+a fling reaching a bound hands remaining velocity to the next scrollable.
 
-Migrate the indication implementation or use an overload with an explicit
-indication as a compatibility bridge. In 1.9, code could temporarily set
-`ComposeFoundationFlags.isNonComposedClickableEnabled = false`; that escape
-hatch is removed in 1.10.0 and assignments must be deleted.
+### Two-axis gestures (1.9.0)
 
-## Overscroll and anchored dragging
+Use `Modifier.scrollable2D`, `Scrollable2DState`, its state factories, and the
+common scroll extensions for two-axis scrolling. The final `canScroll` contract
+takes an `Offset`, not an angle. A `detectDragGestures` overload controls touch
+slop and orientation locking. `ViewConfiguration.minimumFlingVelocity` exposes
+the minimum fling threshold.
+
+### Indirect-pointer rename (1.10.0)
+
+All indirect-touch APIs were renamed to indirect-pointer counterparts. Update
+imports, modifier calls, and event types together.
+
+### Trackpad events and injection (1.11.0)
+
+Cursor-driving trackpad gestures generally appear as mouse input. Platform pan
+and scale gestures use `PanStart`, `PanMove`, `PanEnd`, `ScaleStart`,
+`ScaleChange`, and `ScaleEnd`. Tests can inject them with
+`performTrackpadInput` or `MultiModalInjectionScope.trackpad`. Multimodal key
+and rotary injection APIs are stable; pan/scale end injection accepts
+`delayMillis`.
+
+## Overscroll and draggable state
+
+### Overscroll factories and split ownership (1.8.0)
 
 Replace `OverscrollConfiguration` and `LocalOverscrollConfiguration` with
-`rememberPlatformOverscrollFactory` and `LocalOverscrollFactory` (since
-1.8.0). Disable overscroll by providing `null`, or customize it by providing a
-factory:
+`rememberPlatformOverscrollFactory` and `LocalOverscrollFactory`.
 
-```kotlin
-CompositionLocalProvider(
-    LocalOverscrollFactory provides
-        rememberPlatformOverscrollFactory(color, padding)
-) {
-    content()
-}
-```
+- Disable overscroll with `LocalOverscrollFactory provides null`.
+- Customize it with `rememberPlatformOverscrollFactory(color, padding)`.
+- Supply an `OverscrollEffect` directly to scroll, lazy, grid,
+  staggered-grid, and pager APIs.
+- Use `withoutVisualEffect` and `withoutEventHandling` when separate components
+  own input and rendering. Never render the same effect twice.
 
-Scroll, lazy, grid, staggered-grid, and pager APIs accept a custom
-`OverscrollEffect`. `withoutVisualEffect` and `withoutEventHandling` allow
-event handling and drawing to live in separate components. Never draw the
-same effect from both components.
+### Anchored-draggable validation (1.8.0)
 
-`AnchoredDraggableState.confirmValueChange` is deprecated. Remove forbidden
-values from the active anchor set, and use an `OverscrollEffect` to signal that
+`AnchoredDraggableState.confirmValueChange` is deprecated. Omit disallowed
+values from the current anchor set. An `OverscrollEffect` can communicate that
 the requested action is unavailable.
 
-## Gesture dispatch and nested hand-off
+## Scrolling and lazy layout infrastructure
 
-Tap gesture detectors use immediate coroutine dispatch by default in 1.8.0;
-the compatibility switch was
-`ComposeFoundationFlags.isDetectTapGesturesImmediateCoroutineDispatchEnabled`.
-That flag is removed in 1.11.0, so delete assignments.
+### Custom lazy layouts and prefetch (1.9.0)
 
-Also delete 1.11.0 assignments to the removed
-`ComposeFoundationFlags.isNonSuspendingPointerInputInClickableEnabled` flag.
+`LazyLayout`, `LazyLayoutItemProvider`, and `LazyLayoutMeasureScope` are stable,
+along with `LazyLayoutMeasurePolicy`. The empty `LazyLayoutPrefetchState`
+constructor and its precomposition and premeasure scheduling methods are stable.
+Custom `PrefetchScheduler` implementations are deprecated; use automatic
+internal scheduling.
 
-A parent draggable or scrollable can pick up a gesture that a child abandons,
-and a fling reaching a bound hands remaining velocity to the next scrollable
-in the chain. The flags for fling continuation and drag pickup are removed in
-1.10.0, along with flags for pointer-velocity adjustment and pointer/nested-
-scroll interop fixes; the corrected behaviors no longer need opt-ins.
+### Scroll indicators and scrollable areas (1.10.0)
 
-The 1.9.0 `detectDragGestures` overload exposes touch-slop and orientation-lock
-control. `ViewConfiguration.minimumFlingVelocity` exposes the lower fling
-threshold.
+`ScrollIndicatorState` describes scrollbar position through
+`ScrollableState.scrollIndicatorState`. Implementations exist for
+`ScrollState`, `LazyListState`, `LazyGridState`, `LazyStaggeredGridState`, and
+`PagerState`. `Modifier.scrollableArea()` combines scrolling and clipping and
+derives content direction from orientation, RTL, and `reverseScrolling`.
 
-`ComposeFoundationFlags.isDelayPressesUsingGestureConsumptionEnabled` in
-1.11.0 lets drag containers delay press handling according to gesture
-consumption. This changes `Modifier.draggable`, which did not previously delay
-presses.
+### Scrolling and selection behavior (1.10.0)
 
-## Two-dimensional scrolling
+`SnapFlingBehavior` permits an overshooting `snapAnimationSpec`, enabling a
+bouncy snap while ignoring overshoot during approach. Mouse wheels support
+two-dimensional deltas, with matching `MouseInjectionScope` support. Double-tap
+word selection works in `SelectionContainer` and value/callback `BasicTextField`.
 
-`Modifier.scrollable2D`, `Scrollable2DState`, its state factories, and common
-scroll extensions add two-axis scrolling in 1.9.0. The finalized
-`Scrollable2DState.canScroll` contract receives an `Offset`, not an angle.
+### Frequently changing values (1.10.0)
 
-In 1.10.0, mouse-wheel scrolling understands two-dimensional deltas, with
-matching `MouseInjectionScope` test support. `Modifier.scrollableArea()`
-combines scrolling with bounds clipping and derives content direction from
-orientation, RTL, and `reverseScrolling`.
+`PagerState.currentPageOffsetFraction` and `ScrollState.value` carry
+`@FrequentlyChangingValue`, so the corresponding lint rule treats direct
+composition reads as frequently invalidating state.
 
-`SnapFlingBehavior` accepts an overshooting `snapAnimationSpec`, allowing a
-bouncy snap spring; overshoot is still ignored during the approach phase.
+### Scroll indicators and draw visibility (1.11.0)
 
-## Scroll indicators
+Render custom indicators with `Modifier.scrollIndicator` and
+`ScrollIndicatorFactory`. `Modifier.visible` suppresses drawing while retaining
+the composable's layout space.
 
-`ScrollableState.scrollIndicatorState` exposes a `ScrollIndicatorState` in
-1.10.0. Implementations exist for `ScrollState`, `LazyListState`,
-`LazyGridState`, `LazyStaggeredGridState`, and `PagerState`.
+## Visibility callbacks
 
-For a custom indicator, use `Modifier.scrollIndicator` and
-`ScrollIndicatorFactory` (since 1.11.0). Material 3's scrollbar parameter is a
-separate component contract and is non-nullable in
-material3-1.5.0-alpha24.
+### Scroll and visibility notifications (1.9.0)
 
-## Scroll and visibility callbacks
+Compose can dispatch `ViewTreeObserver.OnScrollChanged` when its then-current
+scroll callback bridge is enabled, and a `DelegatableNode` can call
+`dispatchOnScrollChanged`. `Modifier.onFirstVisible` and
+`Modifier.onVisibilityChanged` support impression logging and autoplay.
 
-Compose 1.9.0 can dispatch `ViewTreeObserver.OnScrollChanged` under
-`isOnScrollChangedCallbackEnabled`; modifier nodes can explicitly call
-`DelegatableNode.dispatchOnScrollChanged`. That temporary behavior flag is
-removed in 1.10.0, so remove assignments to it.
+### Corrected visibility behavior (1.10.0)
 
-`Modifier.onFirstVisible` and `Modifier.onVisibilityChanged` were introduced
-for list impressions, autoplay, and related work. In 1.10.0,
 `onVisibilityChanged` no longer calls back for an initially invisible node and
-correctly emits `false` after a nonzero `minDurationMs`.
-`onVisibilityChangedNode()` exposes the mechanism for a delegatable custom
-`Modifier.Node`.
+correctly reports `false` after a nonzero `minDurationMs`.
+`onVisibilityChangedNode()` exposes the machinery to a custom delegatable
+modifier node.
 
-As of 1.11.0, `Modifier.onFirstVisible()` is deprecated because it fires each
-time an item becomes visible, not just once. Use `onVisibilityChanged()` and
-store prior visibility explicitly when the event must be one-shot.
+### `onFirstVisible` deprecation (1.11.0)
 
-## Indirect pointer and trackpad input
+`Modifier.onFirstVisible()` is deprecated because it can fire each time an item
+becomes visible, not literally only once. Use `onVisibilityChanged()` and track
+prior visibility according to the product requirement.
 
-All indirect-touch APIs are renamed to indirect-pointer equivalents in
-1.10.0.
+## Removed flags in newer releases
 
-In 1.11.0, trackpad gestures that drive a cursor generally arrive as mouse
-input. Platform pan and scale gestures use `PanStart`, `PanMove`, `PanEnd`,
-`ScaleStart`, `ScaleChange`, and `ScaleEnd` pointer-event types. Tests can
-inject these through `SemanticsNodeInteraction.performTrackpadInput` or
-`MultiModalInjectionScope.trackpad`. Multimodal key and rotary injection APIs
-are stable, and pan/scale end injection accepts `delayMillis`.
+### Foundation, UI, and Runtime cleanup (1.11.0)
+
+Delete assignments to removed Foundation flags:
+
+- `isDetectTapGesturesImmediateCoroutineDispatchEnabled`
+- `isNonSuspendingPointerInputInClickableEnabled`
+- `isTextFieldDpadNavigationEnabled`
+- `isKeepInViewFocusObservationChangeEnabled`
+
+Also remove the UI flag `isSemanticAutofillEnabled` and Runtime flags
+`isMovingNestedMovableContentEnabled` and
+`isMovableContentUsageTrackingEnabled`. Semantic autofill, text-field D-pad
+navigation, and keep-in-view focus observation are always enabled.

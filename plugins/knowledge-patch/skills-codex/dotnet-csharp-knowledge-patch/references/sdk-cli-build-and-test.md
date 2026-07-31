@@ -1,140 +1,116 @@
 # SDK, CLI, Build, Restore, and Test
 
-Use this reference for CLI contracts, tools, file-based applications, MSBuild,
-SDK evaluation, workloads, NuGet, testing, solution filters, and run/watch
-workflows. It consolidates `10.0-guides`, `10.0`,
-`11.0-preview.6-compatibility`, and `11.0-preview.6`.
+This workflow-oriented reference draws on `10.0-guides` and `10.0`.
 
-## CLI defaults and automation
+## CLI Defaults and Output Contracts
 
-The following defaults changed in `10.0-guides`:
+The CLI's `--interactive` option defaults to `true` in user scenarios. Pass an
+explicit noninteractive choice in CI or any automation that cannot answer a
+prompt.
 
-- `--interactive` defaults to `true` in user scenarios.
-- Output not directly relevant to the command goes to standard error.
-- `dotnet watch` logs to standard error.
-- `dotnet new sln` creates SLNX by default.
-- `dotnet package list` performs a restore.
-- `dotnet tool install --local` creates a tool manifest if one is absent.
+Output not directly relevant to a command's result goes to standard error.
+`dotnet watch` logging also goes to standard error. Scripts should parse
+standard output as the result channel while preserving standard error for
+diagnostics instead of merging them indiscriminately.
 
-Automation should capture stdout and stderr separately and should explicitly
-select noninteractive behavior where prompts are unacceptable. Scripts that
-expect `.sln` should request or preserve that format rather than relying on
-the new template default.
+`dotnet new sln` creates SLNX by default. Specify another format when tooling
+still requires the older solution representation.
 
-Every CLI command accepts `--cli-schema` to emit a JSON description of its
+`dotnet package list` performs a restore. Account for network access, audit
+failures, and changed assets when treating a list operation as read-only.
+
+`dotnet tool install --local` creates a tool manifest if none exists. Check in
+the manifest when it is intended to define repository tooling.
+
+## One-Shot Tool Execution
+
+`dotnet tool exec` downloads and runs a tool without installing it:
+
+```bash
+dotnet tool exec --source ./artifacts/package dotnetsay@0.1.0 "Hello"
+```
+
+Without `@version`, it selects the latest version. It prompts before a new
+download and honors the version in a nearby local tool manifest. Pin a version
+and control sources in reproducible or security-sensitive automation.
+
+## Portable Tool Fallback Packages
+
+Tool packaging creates runtime-identifier-specific packages. Include the
+`any` RID alongside platform RIDs to provide a framework-dependent,
+platform-neutral fallback when no platform-specific binary matches:
+
+```xml
+<RuntimeIdentifiers>linux-x64;win-x64;any</RuntimeIdentifiers>
+```
+
+The fallback is not a native binary; ensure the destination has a suitable
+runtime.
+
+## Machine-Readable CLI and Native Completion
+
+Every CLI command accepts `--cli-schema` and emits a JSON description of its
 arguments, options, and subcommands:
 
 ```bash
 dotnet clean --cli-schema
 ```
 
-Use the schema for shell integration and tooling rather than scraping help
+Use this contract for shell integration and tooling instead of scraping help
 text.
 
-Noun-first aliases coexist with older verb-first forms:
+Noun-first aliases coexist with the older verb-first commands:
 
-```text
-dotnet package add|list|remove
-dotnet reference add|list|remove
-```
+- `dotnet package add|list|remove`
+- `dotnet reference add|list|remove`
 
-`dotnet completions script` emits native completion scripts for Bash, Fish,
-Nushell, PowerShell, and Zsh:
+Generate native completion scripts for Bash, Fish, Nushell, PowerShell, or Zsh
+with `dotnet completions script <shell>`:
 
 ```bash
 dotnet completions script bash
 ```
 
-## Tool execution and packaging
+## SDK and Workload Selection
 
-Run a package as a one-shot tool without installing it:
+Workload management defaults to workload-set mode rather than loose manifests.
+Pin or update the workload set as a unit when reproducibility matters.
 
-```bash
-dotnet tool exec \
-  --source ./artifacts/package \
-  dotnetsay@0.1.0 "Hello"
-```
+Target-framework `DefineConstants` values are not available during project
+evaluation. Do not branch evaluation-time logic on constants that only exist
+for compilation.
 
-`dotnet tool exec` uses the latest version unless `package@version` is
-specified, prompts before a new download, and honors the version in a nearby
-local tool manifest (`10.0`).
+Dynamic native code-coverage instrumentation defaults to false. Enable it
+explicitly when a coverage workflow requires dynamic native instrumentation.
 
-.NET tool packaging creates runtime-identifier-specific packages
-(`10.0-guides`). Include the `any` RID with platform RIDs to provide a
-framework-dependent, platform-agnostic fallback:
+Double quotes in file-level directives are rejected. Use the supported
+directive syntax rather than relying on permissive parsing.
 
-```xml
-<RuntimeIdentifiers>linux-x64;win-x64;any</RuntimeIdentifiers>
-```
+`dnx` scripts bypass `global.json` SDK selection. Do not assume a repository's
+SDK pin automatically controls them. `dnx.ps1` is no longer shipped, so remove
+automation that invokes that script.
 
-## File-based applications
+## NuGet Restore, Audit, and Pruning
 
-Publishing a file-based app with `dotnet publish app.cs` produces a native
-executable because native AOT is the default. Disable it for incompatible
-dependencies:
+`dotnet restore` audits transitive packages. Surface and triage audit results
+in restore workflows rather than assuming only direct references are checked.
 
-```csharp
-#!/usr/bin/env dotnet
-#:project ../ClassLib/ClassLib.csproj
-#:property PublishAot=false
-Console.WriteLine(new ClassLib.Greeter().Greet());
-```
+- A versionless `PackageReference` is an error.
+- Direct references that NuGet can prune produce NU1510.
+- `PrunePackageReference` makes direct prunable references private.
+- Packages with no runtime assets are omitted from `deps.json`.
+- HTTP warnings in package list and search operations are errors.
+- Invalid package IDs are errors.
+- SHA-1 package-signing fingerprints are deprecated.
+- `NUGET_ENABLE_ENHANCED_HTTP_RETRY` has been removed. Delete it from build
+  environments and use supported retry behavior.
 
-File-based apps accept `#:project` references and executable extensionless
-shebang files (`10.0`).
+Review tools that inspect `deps.json`, and decide whether an NU1510 reference
+is intentionally direct before removing it.
 
-In `11.0-preview.6`, `#:include` composes an app from source files or prebuilt
-DLL references:
+## .NET Tasks in .NET Framework MSBuild
 
-```csharp
-#:include helpers.cs
-#:include ./libs/MyLibrary.dll
-```
-
-Matching duplicate `#:sdk`, `#:property`, and `#:package` directives are
-allowed across included files.
-
-Double quotes in file-level directives are rejected (`10.0-guides`). Use the
-directive's supported unquoted syntax.
-
-`dnx` scripts bypass `global.json` SDK selection, and `dnx.ps1` is no longer
-included. Do not assume script execution uses the repository-pinned SDK or
-that the PowerShell shim exists.
-
-## Solution filters
-
-`dotnet sln` can create and edit `.slnf` solution filters
-(`11.0-preview.6`):
-
-```bash
-dotnet new slnf --name MyApp.slnf
-dotnet sln MyApp.slnf add src/Lib/Lib.csproj
-```
-
-Use solution filters for a CLI-managed subset of the main solution.
-
-## Run and watch
-
-`dotnet run -e KEY=VALUE` passes environment variables to the launched
-application and exposes them to MSBuild as `RuntimeEnvironmentVariable`
-items:
-
-```bash
-dotnet run -e ASPNETCORE_ENVIRONMENT=Development
-```
-
-`dotnet watch` integrates with Aspire, relaunches a crashed application after
-the next relevant edit, and supports mobile device selection:
-
-```bash
-dotnet watch --device device-id
-```
-
-These workflows are from `11.0-preview.6`.
-
-## MSBuild and SDK evaluation
-
-Visual Studio 2026 and `msbuild.exe` can run .NET-built MSBuild tasks through
+Visual Studio 2026 and `msbuild.exe` can run tasks built for .NET through
 `TaskHostFactory`:
 
 ```xml
@@ -144,59 +120,29 @@ Visual Studio 2026 and `msbuild.exe` can run .NET-built MSBuild tasks through
            TaskFactory="TaskHostFactory" />
 ```
 
-This path runs out of process and does not support task Host Objects. A
-conditional second `UsingTask` without the factory can preserve in-process
-execution under Core MSBuild.
+The task runs out of process, and task Host Objects are not supported on this
+path. When Core MSBuild should keep the task in process, add a conditional
+second `UsingTask` without the factory.
 
-Target-framework `DefineConstants` are not available during evaluation
-(`10.0-guides`). Do not make evaluation-time conditions depend on values
-created only after target-framework processing.
+## File-Based Applications
 
-When `DOTNET_CLI_USE_MSBUILD_SERVER` is unset, the CLI no longer forces
-`MSBUILDUSESERVER=0` (`11.0-preview.6`). Preserve an explicit environment
-setting when build-server use must be deterministic.
+`dotnet publish app.cs` produces a native executable because file-based apps
+publish with native AOT by default. Disable AOT for incompatible dependencies:
 
-Any standard `OTEL_EXPORTER_OTLP_*` variable enables the CLI's OTLP exporter,
-in addition to the dedicated exporter flag.
+```csharp
+#!/usr/bin/env dotnet
+#:project ../ClassLib/ClassLib.csproj
+#:property PublishAot=false
+Console.WriteLine(new ClassLib.Greeter().Greet());
+```
 
-## Workloads and code coverage
-
-Workload management defaults to workload-set mode instead of loose manifests
-(`10.0-guides`). Keep the workload-set version under source control where
-reproducibility matters.
-
-Dynamic native code-coverage instrumentation defaults to `false`. Enable it
-explicitly if native dynamic instrumentation is part of the test contract.
-
-## NuGet restore and package validation
-
-Restore and packaging changes from `10.0-guides`:
-
-- `dotnet restore` audits transitive packages.
-- A versionless `PackageReference` is an error.
-- A direct reference pruned by NuGet raises NU1510.
-- `PrunePackageReference` makes direct prunable references private.
-- Packages without runtime assets are omitted from `deps.json`.
-- HTTP warnings in package list and search are errors.
-- Invalid package IDs are errors.
-- SHA-1 signing fingerprints are deprecated.
-- `NUGET_ENABLE_ENHANCED_HTTP_RETRY` has been removed.
-
-Treat audit and validation failures as part of restore's contract. Do not
-expect the removed retry variable to change HTTP behavior.
-
-Additional package compatibility diagnostics in
-`11.0-preview.6-compatibility`:
-
-- NU1703 is emitted when a package falls back to deprecated MonoAndroid
-  framework assets.
-- `NuGet pack` warns with NU5052 for restricted characters in a package ID.
-- .NET template-engine packages no longer support `netstandard2.0`, a source
-  and binary compatibility break for consumers on that target.
+File-based apps accept `#:project` references and support executable,
+extensionless shebang files. Because `dnx` does not inherit `global.json` SDK
+selection, record any required SDK assumptions in the invocation environment.
 
 ## Microsoft.Testing.Platform
 
-Select Microsoft.Testing.Platform for `dotnet test` in `global.json`:
+`dotnet test` uses Microsoft.Testing.Platform when selected in `global.json`:
 
 ```json
 {
@@ -206,32 +152,5 @@ Select Microsoft.Testing.Platform for `dotnet test` in `global.json`:
 }
 ```
 
-Alternatively, `DOTNET_TEST_RUNNER` selects `VSTest` or
-`Microsoft.Testing.Platform` without editing `global.json`.
-
-MTP controls in `11.0-preview.6` include:
-
-- `--no-dependencies`;
-- `--use-current-runtime`;
-- exclusion patterns in `--test-modules`;
-- two-stage Ctrl+C cancellation;
-- live output; and
-- MAUI `--device`.
-
-The xUnit template can create a v3 project that defaults to MTP, while NUnit
-can opt in explicitly:
-
-```bash
-dotnet new xunit --xunit-version v3
-dotnet new nunit --test-runner Microsoft.Testing.Platform
-```
-
-VSTest no longer brings in `Newtonsoft.Json` transitively
-(`11.0-preview.6-compatibility`). Integrations that use it must declare their
-own compatible dependency.
-
-## .NET Framework launch compatibility
-
-The SDK no longer sets the Mono launch target for .NET Framework applications
-(`11.0-preview.6-compatibility`). Workflows that relied on that inferred
-target must specify their launch path explicitly.
+Make the runner choice repository-visible so local and CI test discovery and
+execution agree.

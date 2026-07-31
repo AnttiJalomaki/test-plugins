@@ -1,116 +1,38 @@
-# Async computation, reactivity, and state
+# Async Reactivity and State
 
-## Choosing an async primitive
+Use this reference for computed values, tasks, stores, tracking, and reactive
+notification behavior.
 
-The recommended primitive changed during the V2 prereleases. Keep the target
-generation clear:
+## Async computed functions
 
-- In V1, async callbacks to `useComputed$()` are deprecated and will not work
-  in V2-era semantics. Signals first read after `await` are not tracked, and an
-  initial promise restarts rendering. Use `useTask$()` or `useResource$()` in a
-  V1 application.
-- Early V2 introduced `useAsync$()` as the async-computation replacement and
-  added explicit invalidation plus configurable `always` or `never`
-  serialization.
-- Current V2 accepts async functions in `useComputed$()`. `useAsync$()`,
-  `createAsync$()`, and `AsyncSignal` are deprecated in its favor.
+*Batch: `v1.8-1.13`*
 
-Current computed signals accept a compute context with `track()`. Use it for a
-dependency first read after an `await`. The `clientOnly` option skips server
-computation. Failures are exposed through `.error`, and reading `.value` for a
-failed computation rethrows.
+Async callbacks to `useComputed$` are deprecated and will stop working in the
+next major generation. Their dependency tracking is incomplete: a signal first
+read after an `await` is not tracked. Returning an initial promise also
+restarts rendering.
 
-```ts
-const data = useComputed$(async ({ abortSignal, track }) => {
-  const id = track(idSignal);
-  const response = await fetch(`/api/items/${id}`, { signal: abortSignal });
-  return response.json();
-});
-```
+Move asynchronous work to `useTask$` or `useResource$`.
 
-## Migrating resources
+Before migrating, inspect every signal read in the callback. A callback that
+appears to rerun correctly can still miss dependencies that are first touched
+after asynchronous control resumes.
 
-`useResource$()` and `<Resource />` are deprecated in favor of the async
-computed model. During migration:
+## `useTask$` eagerness
 
-- Automatic signal tracking covers reads before the first `await`; use context
-  `track()` for reads after it.
-- Use the context `abortSignal` instead of manual cancellation cleanup.
-- Read `.value` as `T`, not `Promise<T>`.
-- Test `.pending` before reading unresolved `.value`, because that read throws.
-- Read failures through `.error`.
-- Use the context's `previous` value when an update depends on the prior result.
-- Configure `initial`, `expires`, and `poll` for startup and refresh behavior.
-- Set `concurrency: 0` when resource-style unlimited parallel work is required.
+*Batch: `v1.8-1.13`*
 
-```tsx
-export const Item = component$(() => {
-  const idSignal = useSignal('42');
-  const data = useComputed$(async ({ abortSignal }) => {
-    const response = await fetch(`/api/items/${idSignal.value}`, {
-      signal: abortSignal,
-    });
-    return response.json() as Promise<{ name: string }>;
-  }, { concurrency: 0 });
+The `eagerness` option of `useTask$` is deprecated as of 1.13 and is removed
+in the next major generation. Remove the option instead of building new task
+scheduling around it.
 
-  if (data.pending) return <p>Loading...</p>;
-  if (data.error) return <p>{data.error.message}</p>;
-  return <p>{data.value.name}</p>;
-});
-```
+## Raw store access
 
-## Compatibility behavior for `useAsync$`
+*Batch: `v1.8-1.13`*
 
-When maintaining code that has not yet migrated, use these final semantics:
-
-- `.promise()` replaced `.resolve()`, and later returns `Promise<void>` rather
-  than the calculated value. Consume the result from `.value` and failures from
-  `.error`.
-- An async-signal error is thrown only once.
-- Writable results, an optional initial value, eager cleanup, and `clientOnly`
-  loading at document-idle are supported.
-- The former mutable `interval` polling option was renamed to `expires`; use
-  `poll` to request automatic reruns after expiry.
-- An interval created during SSR resumes polling on the client.
-- `concurrency` defaults to `1` and queues excess work; `0` is unlimited.
-- A stale completion does not overwrite a newer result that already completed.
-- Starting a new computation triggers the previous computation's
-  `abortSignal`; calling `.abort()` cancels the current one and runs cleanup.
-- `invalidate(info)` forwards the invalidation reason to the calculation.
-- The default serialization strategy became `always`.
-
-Early V2 async signals also expose `loading` and `error`. Computed-like signals
-can be invalidated explicitly even when their serialized-value policy is
-`never`.
-
-## Signal control
-
-Signals expose `.untrackedValue` for reads and writes that must not create a
-subscription. After an untracked write or in-place mutation, call `.trigger()`
-to run subscribers explicitly:
-
-```ts
-const current = signal.untrackedValue;
-signal.untrackedValue = next;
-signal.trigger();
-```
-
-The optimizer permits an `AsyncSignal` computation to refer to and write to
-itself.
-
-Computed signals notify listeners only when the computed result changes. A
-dependency update that produces an equal result does not notify them.
-
-V2 var props participate in additional reactive updates, so changes propagate
-more consistently to consuming components.
-
-## Stores and untracked access
-
-The expression `"prop" in store` creates a subscription and reacts when the
-property's presence changes.
-
-Use `unwrapStore()` when an API needs the underlying object, such as structured
-cloning or IndexedDB:
+`unwrapStore()` exposes the underlying content of a store. Use it when a
+platform API needs plain data rather than a reactive proxy, including
+structured cloning and IndexedDB storage.
 
 ```ts
 import { unwrapStore } from '@builder.io/qwik';
@@ -118,59 +40,55 @@ import { unwrapStore } from '@builder.io/qwik';
 const copy = structuredClone(unwrapStore(store));
 ```
 
-`untrack()` accepts a signal or store directly, or a callback plus arguments:
+Use this low-level API when the receiving operation needs the store's
+underlying content.
+
+## Reactive store membership
+
+*Batch: `v1.8-1.13`*
+
+The `in` operator participates in tracking for stores:
 
 ```ts
-const value = untrack(signal);
-const result = untrack((a, b) => a + b, 1, 2);
+const hasStatus = 'status' in store;
 ```
 
-These reads do not establish reactive subscriptions.
+When this expression runs in a reactive consumer, it subscribes to the
+presence of that property. Adding or removing the property can rerun the
+consumer even if no property value was read.
 
-## Custom and platform serialization
+Review code that used membership checks as supposedly untracked probes. Wrap
+the read in the appropriate untracked flow when a subscription is unwanted.
 
-`useSerializer$()` and `createSerializer$()` create signals for values that need
-custom serialization. A value carrying `NoSerializeSymbol` is omitted. A
-`SerializerSymbol` function returns the object literal to serialize.
-`SerializationWeakRef` represents a value that may remain unserialized.
+## Expanded `untrack()`
 
-Built-in serialization also supports Temporal values.
+*Batch: `v1.14-1.19`*
 
-## Task scheduling and cleanup
-
-`useTask$()` accepts `deferUpdates`:
+`untrack()` accepts a signal or store directly:
 
 ```ts
-useTask$(() => {}, { deferUpdates: true });
+const signalValue = untrack(signal);
+const storeValue = untrack(store);
 ```
 
-Its `eagerness` option was deprecated in 1.13 and is removed from V2 usage. The
-`eagerness: 'load' | 'idle'` option on `useVisibleTask$()` is also removed in
-V2.
-
-Both `useTask$()` and `useVisibleTask$()` await a returned cleanup promise
-before the next invocation. If overlapping cleanup and rerun work is intended,
-do not return that promise. `render()` does not await `useVisibleTask$`
-callbacks; they execute independently as post-flush effects.
-
-After a resumable application resumes, visible tasks wait until their component
-is actually visible. In a client-side-rendered application, they still run
-immediately.
-
-## Conditional and suspense rendering
-
-The experimental `Show` component chooses between a `then$` branch and an
-optional `else$` branch according to `when$`.
-
-Enable experimental Suspense explicitly:
+Its callback form also accepts arguments:
 
 ```ts
-qwikVite({ experimental: ['suspense'] });
+const total = untrack((a, b) => a + b, 1, 2);
 ```
 
-On the client, `<Suspense>` displays its fallback after the configured delay.
-`showStale` keeps the last resolved content visible while an update is pending.
-`Reveal` coordinates sibling boundaries with `parallel`, `sequential`,
-`reverse`, or `together` order; its `collapsed` setting hides boundaries that
-are waiting. Out-of-order Suspense streaming is also available experimentally
-for SSR.
+Use these forms to read reactive values without subscribing the current
+consumer.
+
+## Computed-signal notifications
+
+*Batch: `v1.14-1.19`*
+
+Computed signals notify listeners only when the computed result changes. A
+dependency update that produces an equivalent result no longer triggers those
+listeners.
+
+Tests should assert effects from meaningful computed-value changes, not from
+every upstream write. If code relied on an upstream write as an implicit
+notification pulse, model that pulse explicitly instead of depending on an
+unchanged computed value.

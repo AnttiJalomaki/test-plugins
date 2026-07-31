@@ -1,70 +1,117 @@
 # Ecosystem SDK and Styled Components
 
-## Component registry and source ownership
+## SDK crate layout
 
-Dioxus Primitives provides unstyled, accessible foundational components; the styled registry layers shadcn-style source on top. `dx components add <name>` copies the chosen component into the application's local `components` directory, so it becomes application-owned code. On the first addition, DX prompts for a root-level link to `/assets/dx-components.css`, which supplies the default theme.
+`dioxus-sdk` is a facade over capability crates, not a module namespace. The
+individual packages are `dioxus-sdk-storage`, `dioxus-sdk-geolocation`,
+`dioxus-sdk-time`, `dioxus-sdk-window`, `dioxus-sdk-notification`,
+`dioxus-sdk-sync`, and `dioxus-sdk-util`. Depend on one directly or enable its
+suffix as a facade feature:
+
+```toml
+dioxus-sdk = { version = "0.7", features = ["storage", "time"] }
+```
+
+Imports still use the capability crate, such as
+`dioxus_sdk_time::use_interval`, never `dioxus_sdk::time::...`. SDK minor
+versions track Dioxus minor versions.
+
+Platform gaps generally appear as runtime `Err(Unsupported)` rather than compile
+errors. Geolocation supports web and Windows; notifications are desktop-only.
+Test the target behavior rather than treating a successful build as proof of
+support.
+
+## Persistence, time, and device services
+
+`use_persistent(key, || default)` returns a signal backed by browser local
+storage or the platform data directory. Read and write it like any other signal.
+
+Timing services include `use_interval`, `use_timeout`, `sleep`, and
+`use_debounce`. Debounce returns a handle; fire it with `.action(arg)` instead of
+wrapping an existing callback:
+
+```rust
+let mut debounce = use_debounce(Duration::from_millis(2000), move |text| {
+    tracing::info!(%text, "settled");
+});
+
+button { onclick: move |_| debounce.action("clicked"), "Run" }
+```
+
+Geolocation has two phases: call `init_geolocator(PowerMode)` in an ancestor,
+then `use_geolocation()` below it. The hook yields
+`Err(Error::NotInitialized)` until the first fix.
+
+Desktop notifications use a builder rather than a hook:
+
+```rust
+Notification::new()
+    .app_name("Example")
+    .summary("Complete")
+    .body("The task finished")
+    .show();
+```
+
+Other facilities include window theme/size, sync channels, and
+`dioxus-sdk-util::use_root_scroll`.
+
+Internationalization is not maintained in-tree; use the community
+`dioxus-i18n` crate from the `dioxus-community` organization.
+
+## Primitive and styled-component distribution
+
+The first-party `dioxus-primitives` crate supplies an unstyled accessible layer
+with 28 Radix-like components and keyboard/ARIA behavior across web, desktop,
+and mobile. The
+styled shadcn-like layer is not a dependency crate. Instead:
 
 ```sh
-dx components add button
+dx components add <name>
 ```
 
-## Composite primitive ordering
+copies Rust and CSS source into the project's `components/` directory. The
+first add prompts for `/assets/dx-components.css`, which carries the theme. You
+own the copied source; upgrades are explicit re-adds rather than Cargo version
+bumps.
 
-Many ordered or roving-focus composites require explicit zero-based `index` props rather than inferring order from RSX position. This includes accordion items, menu/navigation entries, radio/select options, tab triggers and panels, toggle items, and toolbar buttons. Matching tab triggers and panels also share a `value`.
+Styled plain controls are HTML elements, not capitalized components—there is no
+`Button` primitive. Apply `dx-*` classes and use `data-*` attributes for variants:
 
 ```rust
-Tabs {
-    TabList {
-        TabTrigger { index: 0, value: "account", "Account" }
-    }
-    TabContent { index: 0, value: "account", "Settings" }
+button {
+    class: "dx-button",
+    "data-style": "outline",
+    "data-size": "default",
+    "Save"
 }
 ```
 
-Recompute indices after filtering, sorting, or conditionally rendering entries.
+## Ordered children and generic props
 
-## Combobox control and filtering
+Components with roving focus do not infer order from the DOM. Pass a unique,
+zero-based `index` to each ordered child; it controls display and keyboard focus
+order. This applies to:
 
-`Combobox<T>` can be controlled with `value` and `query`. Its built-in filter preserves the rendered `ComboboxOption` order; query-dependent ranking must sort data before rendering and then assign indices in that sorted order.
+- `AccordionItem`;
+- `TabTrigger` and `TabContent`;
+- `RadioItem`, `ToggleItem`, and `ToolbarButton`;
+- `SelectOption` and `ComboboxOption`;
+- `Tag`, `MenubarMenu`, and dropdown/context-menu item families.
 
-```rust
-let mut value = use_signal(|| None::<String>);
-let mut query = use_signal(String::new);
+Duplicate or stale indexes misorder the list rather than failing to compile.
+Combobox filtering preserves index order; for relevance ranking, sort the data
+and reassign indexes before rendering.
 
-Combobox::<String> {
-    value: Some(value.into()),
-    on_value_change: move |next| value.set(next),
-    query: Some(query()),
-    on_query_change: move |next| query.set(next),
-    ComboboxOption::<String> {
-        index: 0,
-        value: "rust".to_string(),
-        text_value: "Rust",
-        "Rust"
-    }
-}
-```
+Orientation uses `horizontal: bool` on `Separator`, `ToggleGroup`, and
+`ToolbarSeparator`, not an orientation enum. Generic components require a
+turbofish in RSX, for example `Select::<String> {}` and
+`ComboboxOption::<String> {}`.
 
-## Calendar and date-picker compositions
+## Rendering a primitive as another element
 
-`Calendar` and `RangeCalendar` render full month views. `DatePicker` and `DateRangePicker` precompose an editable input, trigger, popover, and calendar. `month_count` displays adjacent months; date pickers accept day/month/year placeholder formatter callbacks.
-
-```rust
-let mut selected_date = use_signal(|| None::<Date>);
-
-DatePicker {
-    selected_date: selected_date(),
-    on_value_change: move |date: Option<Date>| selected_date.set(date),
-    month_count: 2,
-    on_format_day_placeholder: || "D",
-    on_format_month_placeholder: || "M",
-    on_format_year_placeholder: || "Y",
-}
-```
-
-## Attribute-preserving custom rendering
-
-`SheetClose` and several sidebar controls accept an `as` closure similar to an `asChild` API. Spread the received attributes onto the replacement element or the wrapper will lose merged classes, state data, ARIA values, and event handlers.
+The `as` prop is the `asChild` equivalent. It is a closure that receives merged
+attributes, including built-in handlers, and returns the node that should carry
+them:
 
 ```rust
 SheetClose {
@@ -74,116 +121,52 @@ SheetClose {
 }
 ```
 
-## Sidebar state and interaction
+Spread every received attribute or close/toggle/focus behavior silently
+disappears. This convention appears on `SheetClose` and the `Sidebar*` family,
+including trigger, menu button/action, group label/action, and submenu button.
 
-`SidebarProvider` owns open, side, and collapse state and installs Cmd/Ctrl+B as its toggle shortcut. `SidebarCollapsible` supports `Offcanvas`, `Icon`, and `None`; `SidebarRail` is an optional resize handle. `SidebarMenuButton` wraps itself in a tooltip only when `tooltip: Option<Element>` is `Some`.
+## Dynamic attribute vectors
 
-```rust
-SidebarProvider {
-    Sidebar {
-        side: SidebarSide::Left,
-        variant: SidebarVariant::Inset,
-        collapsible: SidebarCollapsible::Icon,
-        SidebarContent { /* groups and menus */ }
-    }
-    SidebarRail {}
-    SidebarInset { /* main content */ }
-}
-```
-
-## Context-driven toasts
-
-Place `ToastProvider` above consumers, call `consume_toast()` in a descendant, and invoke severity methods with `ToastOptions`. Users can move keyboard focus to rendered toasts with F6.
-
-```rust
-button {
-    onclick: |_| {
-        consume_toast().error(
-            "Critical error".to_string(),
-            ToastOptions::new()
-                .description("More information")
-                .duration(Duration::from_secs(10))
-                .permanent(false),
-        );
-    },
-    "Show toast"
-}
-```
-
-## Dynamic-height virtual lists
-
-`VirtualList` renders visible rows plus a configurable approximate-row buffer and supports rows with dynamic heights. The render closure receives the absolute item index; give each row a stable key derived from the item when possible.
-
-```rust
-VirtualList {
-    count: rows.len(),
-    buffer: 8,
-    render_item: move |idx| rsx! {
-        article { key: "{rows[idx].id}", "{rows[idx].title}" }
-    },
-}
-```
-
-## Dynamic attribute lists
-
-The separate `dioxus-attributes` crate supplies `attributes!`, which uses element-like syntax to produce a `Vec<Attribute>` for `..` spreads. It supports listeners and quoted custom data attributes.
+`dioxus-attributes::attributes!` builds the `Vec<Attribute>` consumed by RSX
+spread syntax:
 
 ```rust
 let attrs = attributes!(div {
     class: "card",
     "data-state": "open",
-    onclick: |_| println!("clicked"),
+    onclick: |_| tracing::info!("clicked"),
 });
 
 rsx! { div { ..attrs } }
 ```
 
-## SDK feature aggregation
+This complements forwarding attributes received through props by allowing a
+component to construct them dynamically.
 
-`dioxus-sdk` re-exports separate geolocation, storage, time, window, notification, sync, and utility crates behind same-named features; `notification` is singular. SDK minor versions track Dioxus minor versions. Most APIs return `Err(Unsupported)` at runtime on targets the selected package does not support, so a successful build does not prove runtime support.
+## Toasts and extended widgets
 
-```toml
-[dependencies]
-dioxus-sdk = { version = "0.7", features = ["geolocation", "storage", "time"] }
-```
+Toasts are consumed from a `ToastProvider` inside a handler, not obtained from a
+hook. `consume_toast()` returns the API; methods such as `.error(title,
+ToastOptions::new().description(...).duration(...).permanent(...))` enqueue a
+toast. The `F6` key moves focus to the toast region.
 
-## Geolocation and notifications
+Beyond the Radix-like set, the component library includes:
 
-Geolocation currently supports Web and Windows. Initialize it with a `PowerMode`, then read `use_geolocation()` as a result that may initially be `Error::NotInitialized`.
+- `VirtualList` with `count`, `buffer`, and `render_item: |index|`;
+- `DragAndDropList`;
+- `ColorPicker`;
+- `DatePicker`, `DateRangePicker`, `Calendar`, and `RangeCalendar`;
+- `TagGroup`, `Sidebar`, `Navbar`, `Pagination`, and `Skeleton`;
+- `Item` and `ItemGroup` families.
 
-```rust
-let _geolocator = init_geolocator(PowerMode::High).unwrap();
-match use_geolocation() {
-    Ok(coords) => rsx! { "{coords.latitude}, {coords.longitude}" },
-    Err(Error::NotInitialized) => rsx! { "Initializing..." },
-    Err(error) => rsx! { "{error}" },
-}
-```
+`ColorPicker::on_color_change` returns the `palette` crate's
+`Hsv<encoding::Srgb, f64>` directly. `SidebarProvider` installs Cmd/Ctrl+B as a
+toggle shortcut.
 
-Desktop notifications support Windows, macOS, and Linux. Configure application name, summary, and body through the builder before calling `show()`.
+## Accessibility checks
 
-```rust
-Notification::new()
-    .app_name("Example".to_string())
-    .summary("Finished".to_string())
-    .body("The operation completed".to_string())
-    .show()
-    .unwrap();
-```
-
-## Persistent signals and time handles
-
-`dioxus-sdk-storage::use_persistent(key, init)` exposes local persistent state through the usual readable/writable signal interface.
-
-The time package provides `use_interval`, `use_timeout`, and `sleep`. `use_debounce` returns a handle whose `.action(value)` restarts the delay and eventually passes the newest value to its callback.
-
-```rust
-let mut count = use_persistent("count", || 0);
-*count.write() += 1;
-
-let mut save = use_debounce(
-    Duration::from_millis(500),
-    |text| println!("{text}"),
-);
-save.action("draft");
-```
+- Keep each ordered child's `index` synchronized with visual order.
+- Preserve merged attributes in every `as` closure.
+- Test keyboard navigation after filtering or reordering.
+- Treat runtime `Unsupported` from SDK services as a normal platform branch.
+- Verify copied styled-component source and theme CSS are upgraded together.

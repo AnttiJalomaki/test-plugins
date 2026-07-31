@@ -1,50 +1,28 @@
-# Authorization, registration, and security
+# Authorization, Registration, and Security
 
-Use this reference for HTTP authorization, metadata discovery, client
-registration, token validation, scopes, issuer safety, and SDK migration.
+## Transport authorization profile (`2025-03-26-compat`)
 
-Relevant protocol attributions: `2025-03-26-compat`,
-`2025-06-18-compat`, `2025-11-25-compat`, and `2026-07-28-rc`.
+Authorization is optional. HTTP transports that implement it use OAuth 2.1;
+stdio deployments obtain credentials from the environment instead. Require
+PKCE for every client. Authorization-required and invalid-token responses use
+HTTP 401. Use authorization-code grants for user authorization or
+client-credentials grants for application authorization as appropriate.
 
-## Choose the authorization profile
+Send `Authorization: Bearer <access-token>` on every HTTP request, including
+requests made after an MCP session is established. Never put the token in the
+query string. Invalid or expired tokens receive 401; insufficient scope
+receives 403.
 
-Authorization is optional. When an HTTP transport implements it, use OAuth 2.1;
-stdio implementations should obtain credentials from the environment. PKCE is
-required for every client. Servers may use authorization-code grants for user
-delegation or client-credentials grants for applications.
+When an MCP server delegates authorization to a third-party authorization
+server, issue an MCP-specific token bound to the upstream session. Keep the
+upstream and MCP token validity and lifecycle synchronized; do not expose the
+upstream token to the client.
 
-Return HTTP 401 when authorization is required or a token is invalid or
-expired. Return HTTP 403 when a valid token lacks scope.
+## Original authorization discovery and registration (`2025-03-26-compat`)
 
-Send `Authorization: Bearer <access-token>` on every HTTP request, even during
-an established legacy session. Never put an access token in the query string.
-
-If the MCP server delegates to another service, issue an MCP access token bound
-to the upstream session and synchronize the two lifecycles. Never pass the
-inbound MCP token directly to an upstream API.
-
-## Discover the protected resource
-
-Authorized servers publish RFC 9728 protected-resource metadata containing at
-least one `authorization_servers` entry. A 401 response points to it with
-`resource_metadata` in `WWW-Authenticate`.
-
-Clients must support both that challenge parameter and well-known discovery.
-Without the header, try the MCP-path form before the origin root:
-
-```text
-https://mcp.example.com/.well-known/oauth-protected-resource/public/mcp
-https://mcp.example.com/.well-known/oauth-protected-resource
-```
-
-If several authorization servers are advertised, let the client choose one,
-then discover that issuer's authorization-server metadata.
-
-## Discover the authorization server
-
-For the older authorization profile, try RFC 8414 metadata and send
-`MCP-Protocol-Version` where applicable. Its authorization base is the MCP
-URL's origin—the entire MCP path is discarded:
+Clients try RFC 8414 authorization-server metadata and should include
+`MCP-Protocol-Version`. For this discovery profile, derive the authorization
+origin by discarding the entire path of the MCP URL:
 
 ```text
 MCP URL:  https://api.example.com/v1/mcp
@@ -54,43 +32,41 @@ Fallback: https://api.example.com/authorize
           https://api.example.com/register
 ```
 
-When an issuer includes a path, use this discovery order:
+If discovery fails, use `/authorize`, `/token`, and `/register` at that origin.
+Dynamic Client Registration was the recommended first choice in this profile;
+a server-specific client ID or user-entered registration details were the
+fallback. Later revisions refine both discovery and registration preference.
 
-1. OAuth metadata with well-known path insertion.
-2. OIDC discovery with well-known path insertion.
-3. OIDC discovery with well-known path appending.
+## Protected-resource discovery and audience binding (`2025-06-18-compat`)
 
-```text
-https://auth.example.com/.well-known/oauth-authorization-server/tenant1
-https://auth.example.com/.well-known/openid-configuration/tenant1
-https://auth.example.com/tenant1/.well-known/openid-configuration
-```
-
-Only fall back to the origin's `/authorize`, `/token`, and `/register` endpoints
-when the metadata flow for the older profile fails.
-
-## Bind tokens to the MCP resource
+Treat an authorized MCP server as an OAuth protected resource. It publishes
+RFC 9728 metadata containing at least one `authorization_servers` entry and
+points to that document from a 401 `WWW-Authenticate` header. The client parses
+the metadata, selects an authorization server when several are advertised, and
+then reads that server's RFC 8414 metadata.
 
 Every authorization and token request includes the RFC 8707 `resource`
-parameter, even if the authorization server ignores it. Use the most specific
-canonical absolute MCP URI, retain a distinguishing path, and omit fragments:
+parameter even if the authorization server ignores it:
 
 ```text
 resource=https%3A%2F%2Fmcp.example.com%2Fserver%2Fmcp
 ```
 
-The resource server must reject a token not issued for that exact resource.
-Keep protected-resource and issuer strings exact; path normalization or an
-added trailing slash can change identity.
+Choose the most specific canonical absolute MCP URI. Preserve a path that
+distinguishes this server from other resources and omit fragments. The MCP
+server rejects a token not issued for that resource. It must never pass the
+inbound token through to an upstream API.
 
-## Register clients
+## Client ID Metadata Documents (`2025-11-25-compat`)
 
-For clients and authorization servers without a prior relationship, prefer
-Client ID Metadata Documents after pre-registration when
-`client_id_metadata_document_supported` is true.
+For a client and authorization server without a prior relationship, perform
+pre-registration and then use a Client ID Metadata Document when
+`client_id_metadata_document_supported` is true. Fall back first to optional
+Dynamic Client Registration and then to user-entered credentials.
 
-The client ID is an HTTPS URL with a path. Its JSON document must contain an
-exactly matching `client_id`, plus `client_name` and `redirect_uris`:
+The `client_id` is an HTTPS URL containing a path. That URL serves JSON whose
+`client_id` exactly matches the URL and which also declares `client_name` and
+`redirect_uris`:
 
 ```json
 {
@@ -100,83 +76,48 @@ exactly matching `client_id`, plus `client_name` and `redirect_uris`:
 }
 ```
 
-An authorization server that supports this mechanism should fetch and validate
-the document and the requested redirect URI.
+An authorization server that supports this mechanism fetches and validates
+the document and verifies that the authorization request's redirect URI is one
+of its declared values.
 
-Dynamic Client Registration is optional and deprecated. Retain it only as a
-compatibility fallback, followed by server-specific or user-entered
-credentials. A dynamic-registration request must set an appropriate
-`application_type` to avoid OIDC redirect-URI conflicts.
+## Current discovery fallback order (`2025-11-25-compat`)
 
-## Select and increase scopes
+Support a `resource_metadata` URL in the 401 bearer challenge as well as
+protected-resource well-known discovery. If the challenge omits the URL, try
+the MCP-path form first and then the origin root:
 
-For initial authorization, choose scopes in this order:
-
-1. Use the 401 challenge's `scope` when present.
-2. Otherwise request all `scopes_supported` from protected-resource metadata.
-3. If that field is absent, omit `scope`.
-
-A challenged scope set is authoritative for that request even when it differs
-from `scopes_supported`.
-
-For runtime step-up, return:
-
-```http
-HTTP/1.1 403 Forbidden
-WWW-Authenticate: Bearer error="insufficient_scope", scope="files.write", resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"
+```text
+https://mcp.example.com/.well-known/oauth-protected-resource/public/mcp
+https://mcp.example.com/.well-known/oauth-protected-resource
 ```
 
-A user-facing client should reauthorize for the increased set, retry the
-original operation, and enforce a small retry limit.
+When the authorization-server issuer contains a path, try these metadata forms
+in order: OAuth path insertion, OIDC path insertion, then OIDC path appending.
 
-## Validate issuer and stored credentials
+```text
+https://auth.example.com/.well-known/oauth-authorization-server/tenant1
+https://auth.example.com/.well-known/openid-configuration/tenant1
+https://auth.example.com/tenant1/.well-known/openid-configuration
+```
 
-Authorization servers should return `iss`. Record the selected issuer before
-redirecting, validate any returned `iss` before code exchange, and key
-persisted client credentials by issuer. Never reuse credentials with another
-authorization server; re-register when the server changes.
+## Scope selection and step-up (`2025-11-25-compat`)
 
-Non-loopback token endpoints must use HTTPS. Validate host-managed OAuth
-`state` before handing callback parameters to an SDK. Accept only localhost or
-HTTPS redirect URIs, and re-register a client if an SDK migration changes its
-exact redirect URI by removing a trailing slash.
+For initial authorization, request the 401 challenge's `scope` when present.
+Otherwise request every `scopes_supported` value from protected-resource
+metadata. Omit `scope` if that metadata field is absent. A scope set supplied
+by a challenge is authoritative for its request even when it differs from
+`scopes_supported`.
 
-## TypeScript SDK v2 authorization details
+For an operation that needs more permission, return HTTP 403 with a bearer
+challenge containing `error="insufficient_scope"`, the required `scope`, and
+`resource_metadata`. A user-facing client reauthorizes for the increased scope
+set and retries the original operation. Apply a small retry limit so repeated
+challenges cannot create an authorization loop.
 
-- Resource-server middleware lives in the Express adapter for Express or the
-  Web-standard server package for fetch-shaped hosts.
-- Authorization-server helpers survive only in the deprecated frozen legacy
-  auth package. Move that responsibility to a dedicated OAuth provider.
-- OAuth exception classes collapse into `OAuthError` and `OAuthErrorCode`.
-  Bearer middleware must receive the v2 error; a generic or legacy invalid-token
-  exception can become HTTP 500 instead of a 401 challenge.
-- The minimal `AuthProvider` supports arbitrary bearer tokens through
-  `token()` and optional `onUnauthorized()`, with one retry after 401.
-- Pass callback `URLSearchParams` to `finishAuth()` for `iss` validation after
-  the host validates `state`.
-- Persist token and client-information objects verbatim so the issuer stamp is
-  retained. For multi-issuer stores, key by `ctx.issuer`, return the latest
-  token set when context is absent, and implement
-  `discoveryState()`/`saveDiscoveryState()`.
-- Decide explicitly whether `onInsufficientScope` reauthorizes or throws.
+## HTTP endpoint security
 
-## Python SDK v2 authorization details
-
-- `OAuthClientProvider.callback_handler` returns
-  `AuthorizationCodeResult(code, state, iss)` so issuer validation can run.
-- Client-credentials providers rename `scopes=` to singular `scope=`.
-- `RFC7523OAuthClientProvider` and `JWTParameters` are removed. Choose
-  `ClientCredentialsOAuthProvider`, `PrivateKeyJWTOAuthProvider`, or
-  `IdentityAssertionOAuthProvider` for the actual grant.
-- When refresh tokens are enabled and supported, the client requests
-  `offline_access` and adds `prompt=consent`. Restrict `grant_types` to
-  `["authorization_code"]` to keep no-refresh behavior.
-- Pathless metadata and redirect URLs no longer gain a trailing slash. Make
-  persisted registration, resource, issuer, and redirect values match exactly.
-
-## HTTP boundary safety
-
-Validate `Origin` on every incoming HTTP connection to prevent DNS rebinding.
-Local servers should bind to `127.0.0.1`, not `0.0.0.0`, authenticate
-connections, and serve authorization endpoints over HTTPS. An invalid present
-origin must receive HTTP 403.
+Validate `Origin` on every incoming Streamable HTTP connection to prevent DNS
+rebinding. Bind local servers to `127.0.0.1`, not `0.0.0.0`; authenticate all
+connections; serve authorization endpoints over HTTPS; and accept only
+localhost or HTTPS redirect URIs. Since `2025-11-25`, rejecting an invalid
+`Origin` specifically returns HTTP 403 Forbidden.

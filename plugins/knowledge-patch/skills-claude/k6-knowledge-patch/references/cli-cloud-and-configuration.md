@@ -1,77 +1,43 @@
 # CLI, Cloud, and Configuration
 
-## CLI parsing and script scaffolding
+## Container execution
 
-Commas are literal parts of `--tag` values as of `1.0.0-rc1`; they no longer
-separate multiple tag-value sets. Repeat the flag:
+### Account for the numeric image user (since 1.1.0)
 
-```sh
-k6 run --tag 'label=a,b' --tag env=test script.js
-```
+The container image selects numeric UID `12345` instead of the named `k6`
+user. Kubernetes pods therefore do not need a separate `runAsUser` setting
+just to match the image's selected user.
 
-`k6 new` accepts a Go-template file in `1.0.0-rc1`. Templates receive
-`ScriptName` and `ProjectID`:
+### Pin the intended Docker major line (since 2.0.0)
 
-```sh
-k6 new --template /path/to/my-template.js
-```
+Prereleases and maintenance releases from older major lines do not update the
+Docker `:latest` tag or the GitHub latest-release marker. Use a floating major
+tag such as `grafana/k6:v1` when deployment should track a chosen major line.
 
-In `2.1.0`, `k6 run script.js --vus N` warns and replaces configured scenarios
-with one `shared-iterations` scenario containing `N` VUs and `N` iterations.
-The flag is no longer silently ignored when the script defines scenarios.
+## Summary modes
 
-## Configuration file location
+### Disable the end-of-test summary (since 1.3.0)
 
-`k6 cloud login` and the deprecated `k6 login` began creating
-`{USER_CONFIG_DIR}/k6/config.json` in `1.0.0-rc1`. At that point, login
-migrated `{USER_CONFIG_DIR}/loadimpact/config.json`, while `k6 run` preferred
-the new path, fell back to the old one, and warned.
-
-The fallback and migration were removed in `2.0.0`. Move an old file manually
-or rerun `k6 cloud login`.
-
-## Human end-of-test summaries
-
-The redesigned summary in `1.0.0-rc1` introduced:
-
-- `compact`, the default;
-- `full`, with detailed metrics plus per-group and per-scenario results;
-- `legacy`, which reproduced the old output.
-
-The `handleSummary` input and `--summary-export` structure did not change in
-that release. Threshold values became visible even when absent from
-`summaryTrendStats` in `1.0.0-rc2`.
-
-In `1.3.0`, use `disabled` instead of deprecated `--no-summary` or
-`K6_NO_SUMMARY`:
+`--no-summary` and `K6_NO_SUMMARY` are deprecated. Select the `disabled`
+summary mode instead:
 
 ```sh
 k6 run --summary-mode=disabled script.js
 K6_SUMMARY_MODE=disabled k6 run script.js
 ```
 
-The `legacy` mode was also deprecated in `1.3.0`; choose `compact` or `full`.
+### Leave legacy mode (since 1.3.0)
 
-## Cloud binary provisioning transition
+The `legacy` summary mode is deprecated and was planned for removal in v2.
+Select `compact` or `full` instead.
 
-In `1.0.0-rc2`, experimental Cloud binary provisioning required
-`K6_BINARY_PROVISIONING=true`. It could build only a supported extension set
-for `k6 cloud`; it did not apply to `k6 run`. Local execution still required a
-Cloud token from the normal login flow:
+## Default Cloud stack and project resolution
 
-```sh
-K6_BINARY_PROVISIONING=true k6 cloud script.js
-K6_BINARY_PROVISIONING=true k6 cloud --local-execution script.js
-```
+### Save a default stack (since 1.6.0)
 
-Automatic extension resolution replaced this opt-in flow later. Do not copy
-the release-candidate commands into current v2 automation.
-
-## Stacks, projects, and tests
-
-Cloud commands can save a default stack during login as of `1.6.0`. The stack
-slug or ID resolves its default project. Override the saved choice with
-`K6_CLOUD_STACK_ID` or `options.cloud.stackID`; stack information was announced
+Cloud login can save a default stack by slug or ID. Cloud commands use that
+stack to find the default project. Override the stack for a run with
+`K6_CLOUD_STACK_ID` or `options.cloud.stackID`. Stack information was announced
 as mandatory for v2.
 
 ```sh
@@ -79,63 +45,122 @@ k6 cloud login --token "$MY_TOKEN" --stack my-stack-slug
 K6_CLOUD_STACK_ID=12345 k6 cloud run script.js
 ```
 
-Project discovery became available in `2.0.0`:
+### Move script configuration to `options.cloud` (since 2.0.0)
+
+`options.ext.loadimpact` is rejected. Move its fields under `options.cloud`:
+
+```javascript
+export const options = {
+  cloud: { projectID: 12345, name: 'My Test' },
+};
+```
+
+## Cloud command migration
+
+### Use explicit Cloud commands (since 2.0.0)
+
+The top-level `k6 login`, positional `k6 cloud script.js`, and `--upload-only`
+interfaces were removed. Use:
+
+```sh
+k6 cloud login
+k6 cloud run script.js
+k6 cloud upload script.js
+```
+
+Supply InfluxDB credentials through `K6_INFLUXDB_*` environment variables;
+`k6 login influxdb` is no longer available.
+
+### List projects (since 2.0.0)
+
+List Grafana Cloud k6 projects as a table or JSON:
 
 ```sh
 k6 cloud project list
 k6 cloud project list --format=json
 ```
 
-`k6 cloud test list` was added in `2.1.0`. It resolves a project in this order:
+### List tests and resolve the project (since 2.1.0)
 
-1. `--project-id`;
-2. `K6_CLOUD_PROJECT_ID` or cloud `projectID`;
-3. the configured stack's default project.
+`k6 cloud test list` lists load tests in a Grafana Cloud k6 project. Project
+resolution checks, in order:
 
-Output is a table unless `--json` is supplied:
+1. `--project-id`.
+2. `K6_CLOUD_PROJECT_ID` or cloud `projectID` configuration.
+3. The configured stack's default project.
+
+The default output is a table; use `--json` for structured output.
 
 ```sh
 k6 cloud test list --project-id 12345
 k6 cloud test list --json
 ```
 
-## Cloud local execution
+## Local Cloud execution
 
-As of `2.0.0`, `k6 cloud run --local-execution` automatically enables the
-built-in Cloud secret source, so it does not require
+### Load Cloud secrets automatically (since 2.0.0)
+
+`k6 cloud run --local-execution` enables the built-in Cloud secret source, so
+`k6/secrets` can retrieve Grafana Cloud secrets without
 `--secret-source=cloud`. Pass `--no-cloud-secrets` to opt out.
 
-As of `1.8.0`, `K6_CLOUD_PUSH_REF_ID` can point local execution at an existing
-Cloud run instead of creating a new one:
+### Reuse an existing Cloud run (since 1.8.0)
+
+Set `K6_CLOUD_PUSH_REF_ID` during local execution to reuse that Cloud test run
+instead of creating a new one:
 
 ```sh
 K6_CLOUD_PUSH_REF_ID="$RUN_ID" k6 cloud run --local-execution script.js
 ```
 
-## HTTP API and web dashboard
+## Exit statuses
 
-The k6 HTTP API became opt-in in `2.0.0`; use `--address` or `K6_ADDRESS`.
+### Treat a Cloud abort as failure (since 2.0.0)
 
-The web dashboard was built into the binary in `2.0.0`, replacing the need for
-a separate xk6-dashboard extension:
+A Cloud run aborted by the system, a limit, a script error, the user, or a
+timeout exits with status `97` instead of `0`. Successful runs remain `0`, and
+threshold aborts remain `99`. CI should treat `97` as failure.
+
+## Configuration paths and services
+
+### Move the legacy configuration file (since 2.0.0)
+
+k6 no longer reads or migrates
+`{USER_CONFIG_DIR}/loadimpact/config.json`. Move it to
+`{USER_CONFIG_DIR}/k6/config.json`, or regenerate configuration with
+`k6 cloud login`.
+
+### Opt in to the HTTP API (since 2.0.0)
+
+The HTTP API does not listen on `localhost:6565` by default. Enable it with
+`--address` or `K6_ADDRESS`:
 
 ```sh
-k6 run --out=web-dashboard script.js
+k6 run --address=localhost:6565 script.js
 ```
 
 ## Feature flags
 
-`2.1.0` introduced a unified feature interface for `k6 run` and
-`k6 cloud run`. Enable flags with repeated or comma-separated `--features`,
-`K6_FEATURES`, or the `features` key in `config.json`.
+### Enable and inspect experimental features (since 2.1.0)
+
+Enable features for `k6 run` and `k6 cloud run` with repeated or
+comma-separated `--features` flags, `K6_FEATURES`, or the `features` key in
+`config.json`. Inspect available flags and their lifecycle with `k6 features`
+or `k6 features --json`.
+
+Enabled features are added to metric tags and preserved in archives and Cloud
+workers. See [Native histograms](outputs-and-observability.md#native-histograms)
+for the first feature's metric behavior.
 
 ```sh
 k6 run --features native-histograms script.js
 K6_FEATURES=native-histograms k6 run script.js
-k6 features --json
 ```
 
-Enabled flags are added to metric tags and retained in archives and Cloud
-workers. `native-histograms`, the first flag, makes Trend metrics use
-experimental native histograms. Use `k6 features` to inspect each flag and its
-lifecycle rather than assuming an experimental flag remains available.
+## Execution overrides
+
+### Understand `--vus` with configured scenarios (since 2.1.0)
+
+When the script defines scenarios, `k6 run script.js --vus N` warns and
+replaces them with a `shared-iterations` scenario containing `N` VUs and `N`
+iterations. The flag is no longer silently ignored in that situation.
